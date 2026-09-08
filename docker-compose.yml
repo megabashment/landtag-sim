@@ -1,0 +1,37 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: landtag
+      POSTGRES_PASSWORD: landtag
+      POSTGRES_DB: landtag_sim
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U landtag"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Hinweis: Docker-Build-Kontext fuer ../sim funktioniert nur, wenn dieser
+  # Service mit Kontext auf Repo-Root gebaut wird (siehe README "Lokal starten").
+  # Fuer taegliche Entwicklung ist `uvicorn` direkt auf dem Host meist schneller
+  # (Hot-Reload) -- dieser Service ist optional fuer einen "docker-compose up"-
+  # Rundumschlag ohne lokale Python-Installation.
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg2://landtag:landtag@db:5432/landtag_sim
+      FRONTEND_ORIGIN: http://localhost:5173
+    ports:
+      - "8000:8000"
+
+volumes:
+  postgres-data:

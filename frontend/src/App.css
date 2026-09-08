@@ -1,0 +1,165 @@
+.layout {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+  font-family: system-ui, sans-serif;
+}
+
+.status-bar {
+  display: flex;
+  gap: 1.5rem;
+  font-weight: 600;
+  margin: 1rem 0;
+  padding: 0.75rem 1rem;
+  background: #f2f2f5;
+  border-radius: 8px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+}
+
+.panel {
+  border: 1px solid #e0e0e5;
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.panel ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.panel li {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid #f0f0f3;
+}
+
+.policy-list li {
+  display: block;
+}
+
+.policy-list label {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  font-weight: normal;
+}
+
+.requirement-hint {
+  margin: 0.15rem 0 0.4rem 1.5rem;
+  font-size: 0.8rem;
+}
+
+.events {
+  margin-top: 1rem;
+  background: #fff8e6;
+  border-color: #f0d98c;
+}
+
+.error {
+  color: #b3261e;
+  font-weight: 600;
+}
+
+.hint {
+  color: #555;
+  font-size: 0.9rem;
+  margin-top: 0.5rem;
+}
+
+.stat-value {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.delta {
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.delta-up {
+  color: #1e7a34;
+}
+
+.delta-down {
+  color: #b3261e;
+}
+
+.attributions {
+  margin-top: 1rem;
+  background: #eef3fb;
+  border-color: #b9cdea;
+}
+
+.election-banner {
+  margin: 1rem 0;
+  text-align: center;
+}
+
+.election-banner.won {
+  background: #e8f7ec;
+  border-color: #8fd6a4;
+}
+
+.election-banner.lost {
+  background: #fceceb;
+  border-color: #e0a49e;
+}
+
+.dilemma-banner {
+  margin: 1rem 0;
+  background: #fdf1e6;
+  border-color: #e8b980;
+}
+
+.dilemma-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+}
+
+.dilemma-options li {
+  display: block;
+  border-bottom: none;
+  padding: 0;
+}
+
+.dilemma-options button {
+  width: 100%;
+  text-align: left;
+}
+
+.button-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+button {
+  margin-top: 0.75rem;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  border: 1px solid #444;
+  background: #222;
+  color: #fff;
+  cursor: pointer;
+}
+
+button.secondary {
+  background: #fff;
+  color: #222;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

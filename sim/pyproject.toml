@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "landtag-sim-engine"
+version = "0.1.0"
+description = "Reine Simulationslogik (keine DB-Abhaengigkeit) fuer den Democracy-artigen Regio-Sim. Wird vom FastAPI-Backend UND vom headless Balance-Runner genutzt."
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.setuptools.packages.find]
+include = ["landtag_sim*"]

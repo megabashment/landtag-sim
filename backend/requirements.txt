@@ -1,0 +1,12 @@
+# Reine Sim-Engine als editable local package (siehe ../sim/pyproject.toml)
+-e ../sim
+
+fastapi>=0.115
+uvicorn[standard]>=0.30
+sqlmodel>=0.0.22
+psycopg2-binary>=2.9
+alembic>=1.13
+pydantic-settings>=2.4
+python-dotenv>=1.0
+pytest>=8.0
+httpx>=0.27

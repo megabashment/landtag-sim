@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Node / frontend
+node_modules/
+frontend/dist/
+frontend/.vite/
+npm-debug.log*
+
+# DB
+*.sqlite3
+postgres-data/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Data downloads (large, regenerable — see data/README.md)
+data/geo/*.geojson
+data/raw/
