@@ -44,6 +44,7 @@ from __future__ import annotations
 
 from landtag_sim.dilemmas import evaluate_dilemmas
 from landtag_sim.events import evaluate_events
+from landtag_sim.situations import evaluate_situations
 from landtag_sim.models import (
     DilemmaOption,
     DilemmaPendingError,
@@ -58,6 +59,7 @@ from landtag_sim.models import (
     PolicyNotActiveError,
     PolicyRequiredByActivePolicyError,
     SimState,
+    SituationRule,
     TermSummary,
     TurnResult,
     UnmetPrerequisiteError,
@@ -254,6 +256,7 @@ def advance_turn(
     newly_enacted_keys: list[str] | None = None,
     dilemma_rules: list[DilemmaRule] | None = None,
     newly_repealed_keys: list[str] | None = None,
+    situation_rules: list[SituationRule] | None = None,
 ) -> TurnResult:
     """Rechnet genau eine Runde. Gibt ein TurnResult zurueck (state, events,
     attributions, ggf. election_result/pending_dilemma).
@@ -291,6 +294,7 @@ def advance_turn(
     newly_enacted_keys = newly_enacted_keys or []
     newly_repealed_keys = newly_repealed_keys or []
     dilemma_rules = dilemma_rules or []
+    situation_rules = situation_rules or []
 
     active_keys = {ep.policy_key for ep in state.active_policies if ep.repealed_turn is None}
     _validate_prerequisites(policy_catalog, active_keys, newly_enacted_keys, newly_repealed_keys)
@@ -365,6 +369,42 @@ def advance_turn(
                 attributions.append(
                     EffectAttribution(source=policy.key, statistic_key=effect.statistic_key, delta=delta)
                 )
+
+    # 1b) Situation-Effekte anwenden (B2 "Situations-Layer", BACKLOG.md) -- NACH
+    # Policies, damit sich die selbstverstaerkende Spirale aufbauen kann, aber
+    # VOR Dilemmas/Events (damit ein Dilemma noch die aktuelle Liste sieht).
+    # Hysterese-Logik: Situations aktivieren/deaktivieren per evaluate_situations,
+    # dann Effekte pro aktiver Situation anwenden (konstant pro Runde, solange
+    # aktiv -- kein exponentielles Aufbauen wie Policies).
+    new_state.active_situations, situation_activated_texts = evaluate_situations(
+        new_state, situation_rules
+    )
+
+    for active_sit in new_state.active_situations:
+        # Alle aktiven Situations durchwuehlen: Effekte anwenden (mit _effect_delta
+        # für exponentielles Aufbauen/Abklingen, nicht für Situations selbst, die
+        # ja konstant-statisch sind, aber fuer ihre Politik-ähnliche Einbindung).
+        # Moment: Situations sind nicht wie Policies mit enacted_turn -- sie haben
+        # since_turn, was der Aktivierungs-Turn ist. Fuer Effekte gilt: _effect_delta
+        # braucht enacted_turn (wann die Policy/Situation begann). Hier ist das
+        # active_sit.since_turn. Aber Situations haben keinen repealed_turn, nur
+        # while-sie-aktiv sind.
+        # => Einfach: Effekte sind _konstant_ pro Runde, solange die Situation
+        # aktiv ist (kein exponentielles Aufbauen wie Policies, sondern sofortiger,
+        # konstanter Druck). Das ist die "selbstverstaerkende Spirale".
+        rule = next((r for r in situation_rules if r.key == active_sit.rule_key), None)
+        if rule is None:
+            continue
+        for effect in rule.effects:
+            # Konstante Wirkung, solange aktiv (kein _effect_delta, das waere
+            # exponentielles Aufbauen). Die Situation selbst ist "an" und wirkt
+            # voll, solange Bedingung erfuellt.
+            new_state.statistics[effect.statistic_key] = (
+                new_state.statistics.get(effect.statistic_key, 0.0) + effect.magnitude
+            )
+            attributions.append(
+                EffectAttribution(source=f"situation:{active_sit.rule_key}", statistic_key=effect.statistic_key, delta=effect.magnitude)
+            )
 
     # 2) Dilemmas auswerten -- VOR Events, denn ein ausgeloestes Dilemma ist
     # der "Headline"-Moment dieser Runde (Frostpunk/Suzerain-Vorbild) und

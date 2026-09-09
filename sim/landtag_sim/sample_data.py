@@ -13,7 +13,16 @@ from __future__ import annotations
 
 import random
 
-from landtag_sim.models import DilemmaOption, DilemmaRule, EventRule, Policy, PolicyEffect, SimState, VoterGroup
+from landtag_sim.models import (
+    DilemmaOption,
+    DilemmaRule,
+    EventRule,
+    Policy,
+    PolicyEffect,
+    SimState,
+    SituationRule,
+    VoterGroup,
+)
 
 STARTING_STATISTICS = {
     "unemployment_rate": 6.0,
@@ -310,6 +319,48 @@ SAMPLE_DILEMMA_RULES = [
                     PolicyEffect(statistic_key="unemployment_rate", magnitude=0.3, delay_turns=0, inertia=1),
                 ],
             ),
+        ],
+    ),
+]
+
+
+# B2 "Situations-Layer (mittlerer Zeithorizont, mit Hysterese)" (BACKLOG.md):
+# Zustaende mit self-reinforcing Spiralen-Effekt. Im Gegensatz zu Events sind
+# Situations nicht einmalig, sondern bleiben aktiv, solange eine Bedingung
+# erfuellt ist (Hysterese: unterschiedliche Aktivierungs-/Deaktivierungs-
+# Schwellen). Ihre Effekte wirken konstant pro Runde und spiegeln Dynamics
+# ohne expliziten Text ("Story ohne Text", L2/L3).
+
+SAMPLE_SITUATION_RULES = [
+    SituationRule(
+        key="abwanderung",
+        statistic_key="gdp_growth",
+        activate_op="<",
+        activate_threshold=-0.5,
+        deactivate_op=">",
+        deactivate_threshold=0.5,
+        template_text="Wirtschaftsflaute: Fachkraefte verlassen das Land.",
+        effects=[
+            # Spirale: wenn gdp_growth faellt, steigt unemployment als Nebeneffekt
+            # (abwanderung von hochqualifizierten Arbeitsplaetzen). Das drueckt
+            # gdp_growth weiter nach unten -> Zirkellauf, bis Gegen-Hebel
+            # (bildungsoffensive/gesundheitsreform) gdp_growth wieder hebt.
+            PolicyEffect(statistic_key="unemployment_rate", magnitude=0.5, delay_turns=0, inertia=1),
+        ],
+    ),
+    SituationRule(
+        key="gruenes_wachstum",
+        statistic_key="renewable_share",
+        activate_op=">",
+        activate_threshold=65.0,
+        deactivate_op="<",
+        deactivate_threshold=55.0,
+        template_text="Energiewende wirkt: Gruendungen boomen.",
+        effects=[
+            # Positive Spirale: hohe renewable_share foerdert GDP-Wachstum
+            # und sauberer Betrieb senkt Emissionen weiter.
+            PolicyEffect(statistic_key="gdp_growth", magnitude=0.4, delay_turns=0, inertia=1),
+            PolicyEffect(statistic_key="co2_emissions", magnitude=-2.0, delay_turns=0, inertia=1),
         ],
     ),
 ]

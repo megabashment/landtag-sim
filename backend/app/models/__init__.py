@@ -5,12 +5,14 @@ from app.models.dilemma import DilemmaDefinition
 from app.models.event import EventDefinition, EventLog
 from app.models.game import GameSession, SessionStatus
 from app.models.policy import EnactedPolicy, PolicyDefinition
+from app.models.situation import ActiveSituation
 from app.models.statistic import StatisticDefinition, StatisticValue
 from app.models.voter_group import VoterGroup
 
 __all__ = [
     "AdminLevel",
     "AdminUnit",
+    "ActiveSituation",
     "DilemmaDefinition",
     "EventDefinition",
     "EventLog",

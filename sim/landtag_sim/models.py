@@ -227,6 +227,42 @@ class ElectionResult:
 
 
 @dataclass
+class ActiveSituation:
+    """B2 "Situations-Layer (mittlerer Zeithorizont, mit Hysterese)"
+    (BACKLOG.md): eine momentan aktive Situation (ausgeloest, weil die
+    Schwelle erreicht wurde, und seitdem am Wirken). Die Situation bleibt
+    aktiv, bis ihr UNTERER Schwellenwert (mit Hysterese) unterschritten wird
+    (siehe SituationRule.deactivate_threshold / deactivate_op)."""
+
+    rule_key: str
+    since_turn: int
+
+
+@dataclass
+class SituationRule:
+    """B2: ein Zustand, der bei Statistik-Schwelle X EINTRITT und erst bei
+    einer ANDEREN, niedrigeren Schwelle Y wieder AUSTRITT (Hysterese) --
+    selbsttragende Spirale mit eigenem Effekt auf Statistiken. Anders als
+    EventRule: Events sind passiv/einmalig, Situations sind aktiv/periodisch
+    und selbstverstärkend.
+
+    Beispiel `abwanderung`: aktiviert bei gdp_growth < -0.5, bleibt aktiv
+    solange, bremst unemployment_rate weiter, deaktiviert erst wieder bei
+    gdp_growth > 0.5. Mit explizitem Gegen-Hebel (z.B. bildungsoffensive
+    hebt gdp_growth) ist die Spirale durchbrechbar (L3).
+    """
+
+    key: str
+    statistic_key: str
+    activate_op: str  # einer von >, <, >=, <=, ==, !=
+    activate_threshold: float
+    deactivate_op: str  # muss "entgegengesetzt" zu activate_op sein
+    deactivate_threshold: float
+    effects: list[PolicyEffect] = field(default_factory=list)
+    template_text: str = ""
+
+
+@dataclass
 class TermSummary:
     """B1 "Legislatur-Bogen & Amtszeit-Debrief" (BACKLOG.md): Rueckblick auf
     eine gerade abgeschlossene Legislaturperiode, von advance_turn() genau am
@@ -312,6 +348,14 @@ class SimState:
     dilemma_cooldowns: dict[str, int] = field(default_factory=dict)
     pending_dilemma: PendingDilemma | None = None
 
+    # B2 "Situations-Layer (mittlerer Zeithorizont, mit Hysterese)" (BACKLOG.md):
+    # liste von momentan aktiven Situations (ausgeloeste Zustaende mit Hysterese,
+    # die sich selbst verstaerken und graduelle Spiralen erzeugen -- "Story ohne
+    # Text"). regelbasiert ausgeloest wie Events, aber mit Deaktivierungs-
+    # Schwellenwert < Aktivierungs-Schwelle und eigenen Effekten pro Runde
+    # (weich via _effect_delta, wie Policies).
+    active_situations: list[ActiveSituation] = field(default_factory=list)
+
     # B1 "Legislatur-Bogen & Amtszeit-Debrief" (BACKLOG.md): Schnappschuss der
     # Werte zu Beginn der laufenden Legislaturperiode plus laufende Zaehler.
     # advance_turn() befuellt sie beim ersten Aufruf lazy und setzt sie nach
@@ -337,6 +381,7 @@ class SimState:
             turns_until_election=self.turns_until_election,
             dilemma_cooldowns=dict(self.dilemma_cooldowns),
             pending_dilemma=self.pending_dilemma,
+            active_situations=list(self.active_situations),
             term_start_turn=self.term_start_turn,
             term_start_budget=self.term_start_budget,
             term_start_statistics=dict(self.term_start_statistics),

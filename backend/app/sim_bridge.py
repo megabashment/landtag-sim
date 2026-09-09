@@ -11,6 +11,7 @@ from app.models import (
     EnactedPolicy as DbEnactedPolicy,
 )
 from app.models import (
+    ActiveSituation as DbActiveSituation,
     DilemmaDefinition,
     EventDefinition,
     PolicyDefinition,
@@ -190,6 +191,14 @@ def load_sim_state(
         for ep in db.exec(select(DbEnactedPolicy).where(DbEnactedPolicy.session_id == session_id))
     ]
 
+    # B2 "Situations-Layer": aktive Situations laden
+    from landtag_sim.models import ActiveSituation as SimActiveSituation
+
+    active_situations = [
+        SimActiveSituation(rule_key=s.rule_key, since_turn=s.since_turn)
+        for s in db.exec(select(DbActiveSituation).where(DbActiveSituation.session_id == session_id))
+    ]
+
     return SimState(
         turn=turn,
         budget=budget,
@@ -201,6 +210,7 @@ def load_sim_state(
         event_cooldowns=dict(event_cooldowns or {}),
         dilemma_cooldowns=dict(dilemma_cooldowns or {}),
         pending_dilemma=deserialize_pending_dilemma(pending_dilemma),
+        active_situations=active_situations,
         term_start_turn=term_start_turn,
         term_start_budget=term_start_budget,
         term_start_statistics=dict(term_start_statistics or {}),
@@ -234,3 +244,19 @@ def persist_sim_state(db: Session, session_id: int, new_state: SimState) -> None
             db_group.satisfaction = sim_group.satisfaction
             db_group.satisfaction_momentum = sim_group.satisfaction_momentum
             db.add(db_group)
+
+    # B2 "Situations-Layer": aktive Situations persistieren. Loeschen und
+    # neu schreiben ist einfacher als Update-Logik (analog EnactedPolicy bei
+    # Repeal, siehe routes_game.py).
+    db.exec(select(DbActiveSituation).where(DbActiveSituation.session_id == session_id)).all()
+    for old_situation in db.exec(
+        select(DbActiveSituation).where(DbActiveSituation.session_id == session_id)
+    ):
+        db.delete(old_situation)
+
+    for sim_situation in new_state.active_situations:
+        db.add(
+            DbActiveSituation(
+                session_id=session_id, rule_key=sim_situation.rule_key, since_turn=sim_situation.since_turn
+            )
+        )

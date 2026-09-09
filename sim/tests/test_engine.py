@@ -27,6 +27,7 @@ from landtag_sim.sample_data import (
     SAMPLE_DILEMMA_RULES,
     SAMPLE_EVENT_RULES,
     SAMPLE_POLICIES,
+    SAMPLE_SITUATION_RULES,
     SAMPLE_VOTER_GROUPS,
     STARTING_STATISTICS,
     build_initial_state,
@@ -787,3 +788,81 @@ def test_term_tracking_resets_after_an_election():
     # Der naechste Rundenwechsel liefert noch keine neue Bilanz.
     result2 = advance_turn(ns, SAMPLE_POLICIES, SAMPLE_EVENT_RULES)
     assert result2.term_summary is None
+
+
+# --- B2: Situations-Layer (mittlerer Zeithorizont, mit Hysterese) -------
+
+
+def test_situation_activates_when_threshold_reached():
+    """Situation `abwanderung` aktiviert sich bei gdp_growth < -0.5."""
+    state = build_initial_state()
+    state.statistics["gdp_growth"] = -1.0
+    result = advance_turn(
+        state, SAMPLE_POLICIES, SAMPLE_EVENT_RULES, situation_rules=SAMPLE_SITUATION_RULES
+    )
+    assert len(result.state.active_situations) > 0
+    assert any(s.rule_key == "abwanderung" for s in result.state.active_situations)
+
+
+def test_situation_remains_active_within_hysteresis_band():
+    """Hysterese: `abwanderung` bleibt aktiv, solange gdp_growth zwischen
+    -0.5 (Aktivierungs-Schwelle) und 0.5 (Deaktivierungs-Schwelle) liegt."""
+    state = build_initial_state()
+    state.statistics["gdp_growth"] = -1.0
+    result = advance_turn(
+        state, SAMPLE_POLICIES, SAMPLE_EVENT_RULES, situation_rules=SAMPLE_SITUATION_RULES
+    )
+    state = result.state
+    assert len(state.active_situations) == 1
+
+    # gdp_growth steigt auf -0.2 (noch zwischen -0.5 und 0.5)
+    state.statistics["gdp_growth"] = -0.2
+    result = advance_turn(state, [], [], situation_rules=SAMPLE_SITUATION_RULES)
+    # Situation muss NOCH aktiv sein
+    assert len(result.state.active_situations) == 1
+    assert result.state.active_situations[0].rule_key == "abwanderung"
+
+
+def test_situation_deactivates_when_upper_threshold_crossed():
+    """Situation deaktiviert sich erst bei der OBEREN Schwelle (gdp_growth > 0.5)."""
+    state = build_initial_state()
+    state.statistics["gdp_growth"] = -1.0
+    result = advance_turn(
+        state, SAMPLE_POLICIES, SAMPLE_EVENT_RULES, situation_rules=SAMPLE_SITUATION_RULES
+    )
+    state = result.state
+    assert len(state.active_situations) == 1
+
+    # gdp_growth > 0.5 -> deaktivieren
+    state.statistics["gdp_growth"] = 0.6
+    result = advance_turn(state, [], [], situation_rules=SAMPLE_SITUATION_RULES)
+    # Situation sollte jetzt weg sein
+    assert len(result.state.active_situations) == 0
+
+
+def test_situation_effects_are_applied_and_attributed():
+    """Situation-Effekte wirken auf Statistiken und werden attributiert."""
+    state = build_initial_state()
+    state.statistics["gdp_growth"] = -1.0
+    result = advance_turn(
+        state, [], SAMPLE_EVENT_RULES, situation_rules=SAMPLE_SITUATION_RULES
+    )
+    # `abwanderung` sollte unemployment_rate erhöht haben
+    assert result.state.statistics["unemployment_rate"] > state.statistics["unemployment_rate"]
+    assert any(
+        a.source == "situation:abwanderung" and a.statistic_key == "unemployment_rate"
+        for a in result.attributions
+    )
+
+
+def test_positive_situation_gruenes_wachstum():
+    """Positive Situation: bei renewable_share > 65 aktiviert sich
+    `gruenes_wachstum` und verbessert gdp_growth + co2_emissions."""
+    state = build_initial_state()
+    state.statistics["renewable_share"] = 70.0
+    result = advance_turn(
+        state, [], SAMPLE_EVENT_RULES, situation_rules=SAMPLE_SITUATION_RULES
+    )
+    assert any(s.rule_key == "gruenes_wachstum" for s in result.state.active_situations)
+    assert result.state.statistics["gdp_growth"] > state.statistics["gdp_growth"]
+    assert result.state.statistics["co2_emissions"] < state.statistics["co2_emissions"]
