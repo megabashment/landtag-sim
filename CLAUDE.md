@@ -6,6 +6,12 @@ stehen in `docs/architecture.md` (Game-Director-Review) und
 `docs/game-design-roadmap.md` (Senior-Game-Designer-Review) — diese Datei
 fasst nur zusammen, was für den nächsten Arbeitsschritt wichtig ist.
 
+**Nächste Arbeitsschritte stehen in `BACKLOG.md`** (Wurzelverzeichnis):
+priorisierte Milestone-Liste M2–M4, gespeist aus der Community-Recherche
+2026-09-09 (Democracy-3/4-Diskussionen, Positech-Devblog, Genre-Nachbarn).
+Die 10-Punkte-Roadmap in `docs/game-design-roadmap.md` ist komplett
+abgearbeitet; alles Weitere läuft über `BACKLOG.md`.
+
 Siehe auch `mistakes.md` für bereits gefundene und behobene Bugs —
 **vor größeren Refactors dort nachsehen**, damit dieselben Fehler nicht
 zweimal gemacht werden.
@@ -144,9 +150,12 @@ Dilemma-Events, Policy-Voraussetzungen, Fast-Forward (P1), Namens-Vignetten,
 Zufriedenheits-Momentum/Glättung, randomisierte Startbedingungen,
 Dominante-Strategie-Check im Balance-Runner (P2). Details und
 Umsetzungsnotizen direkt in der Roadmap-Datei je Punkt. Es gibt aktuell
-keine offenen Roadmap-Punkte — nächste Schritte wären neue, über die
-Roadmap hinausgehende Ideen (z.B. mehr Dilemma-Inhalte, überlappende
-Wählergruppen, Balance-Tuning, siehe "Bekannte Vereinfachungen" unten).
+keine offenen Roadmap-Punkte. Die über die Roadmap hinausgehenden Ideen
+sind seit der Community-Recherche 2026-09-09 in `BACKLOG.md` erfasst und
+priorisiert (Milestone M2: Situations-Layer, Legislatur-Bogen/Debrief,
+narrative Presseschau, Wahlprognose mit Turnout, zustandsgekoppelte
+Risiko-Events, Trigger-Telemetrie im Balance-Runner). M2 ist der nächste
+Arbeitsblock; empfohlene Reihenfolge B1→B6 steht im Backlog.
 
 Zusätzlich (nach P2, außerhalb der Roadmap-Liste) umgesetzt: `GET /policies`
 — dynamischer Policy-Katalog aus der DB (`backend/app/api/routes_game.py::

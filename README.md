@@ -148,11 +148,16 @@ der letzten (`App.jsx`, Sektion "Verlauf").
 
 ## Naechste Schritte fuer die Spielmechanik
 
-Eine gewichtete 10-Punkte-Liste (Impact x Aufwand, Genre-Best-Practices von
-Democracy/Frostpunk/Suzerain) steht in
-[docs/game-design-roadmap.md](./docs/game-design-roadmap.md) -- Stand:
-**alle 10 Punkte (P0/P1/P2) umgesetzt**, Details und Umsetzungsnotizen je
-Punkt direkt dort.
+Die urspruengliche gewichtete 10-Punkte-Liste
+([docs/game-design-roadmap.md](./docs/game-design-roadmap.md)) ist
+**komplett umgesetzt** (P0/P1/P2). Die naechste Ausbaustufe steht in
+**[BACKLOG.md](./BACKLOG.md)** -- priorisierte Milestones M2-M4 aus der
+Community-Recherche vom 2026-09-09 (Democracy-3/4-Diskussionen,
+Positech-Devblog, Frostpunk/Suzerain). Kernpunkte M2: ein
+"Situations"-Layer als mittlerer Zeithorizont (selbstverstaerkende
+Zustaende mit Hysterese), ein Legislatur-Bogen mit Amtszeit-Bilanz, eine
+narrative Presseschau als Konsequenz-Ebene, eine transparente Wahlprognose
+mit Turnout-Modell und zustandsgekoppelte Risiko-Events.
 
 ## Bekannte Vereinfachungen (MVP, bewusst offen fuer Diskussion)
 

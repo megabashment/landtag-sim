@@ -304,6 +304,17 @@ Eingabe, Sortierung).
 
 ---
 
+## Anschluss
+
+Diese 10 Punkte sind **vollstaendig umgesetzt**. Die naechste Ausbaustufe
+(Community-Recherche 2026-09-09: Democracy-3/4-Diskussionen, Positech-
+Devblog, Genre-Nachbarn) ist in **`BACKLOG.md`** (Wurzelverzeichnis)
+priorisiert -- Milestone M2 baut den mittleren Zeithorizont
+("Situations"-Layer), einen Legislatur-Bogen mit Amtszeit-Debrief, eine
+narrative Presseschau, eine transparente Wahlprognose und zustands-
+gekoppelte Risiko-Events. Diese Datei bleibt als Herleitungs-Archiv der
+ersten Roadmap bestehen und wird nicht weiter fortgeschrieben.
+
 ## Quellen
 
 - [Designing Interesting Decisions in Games (And When Not To) -- Caleb Compton](https://remptongames.medium.com/designing-interesting-decisions-in-games-and-when-not-to-452af04d0e66)

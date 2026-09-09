@@ -186,15 +186,28 @@ Stand nach dem vollstaendigen Doku-Audit vom 2026-09-09 (siehe CLAUDE.md
 "Aktueller Stand" fuer die Details): Wahlergebnis-Berechnung,
 `GET /policies`, Balance/Dominante-Strategie, die fehlende Backend-API-
 Testsuite UND die fehlende Frontend-Verlaufsansicht sind inzwischen alle
-behoben. Tatsaechlich noch offen:
+behoben.
 
-- `PolicyDefinition.description` ist ein totes Feld (`backend/app/seed.py`
-  setzt `description=policy.name`, also ein Duplikat des Namens statt
-  echtem Beschreibungstext).
-- `docker-compose.yml` hat keinen Frontend-Service -- "Backend + Datenbank
-  mit Docker" (README.md) startet nur `db`+`backend`, Frontend bleibt
-  manuell.
-- `CREDITS.md` ist weiterhin eine leere Platzhalter-Tabelle, `data/`
-  enthaelt weiterhin nur Platzhalter-Quellenmodule statt echter
-  Niedersachsen-Statistik-Importe.
+**Alle noch offenen Punkte sind seit der Community-Recherche 2026-09-09 in
+`BACKLOG.md` (Wurzelverzeichnis) erfasst und priorisiert.** Kurzfassung der
+groessten strukturellen Luecken, die die Recherche bestaetigt hat:
+
+- **Fehlender mittlerer Zeithorizont ("Situations").** Wir haben Events
+  (einmalig) und Policies (dauerhaft, spielergesetzt), aber keinen
+  selbstverstaerkenden Zustand mit Hysterese dazwischen -- Democracys
+  Kern-Griff fuer "Story ohne Text" (BACKLOG B2).
+- **Loop trägt nicht ueber die erste Wahl hinaus.** Kein Ziel jenseits der
+  Wiederwahl, kein Amtszeit-Rueckblick -- exakt die Democracy-4-
+  Community-Kritik "nothing I did really mattered" (BACKLOG B1, offene
+  Frage F1).
+- **Konsequenzen nur als Zahlen, nicht narrativ.** `EffectAttribution`
+  deckt die Zahlen-Ebene, aber es fehlt eine Text-Konsequenz-Ebene
+  (Democracys "Media Reports", regelbasiert machbar) (BACKLOG B4).
+- **Wahlausgang ist eine Blackbox bis Turn 16**, kein Turnout-/Apathie-
+  Modell -- Democracy-Spieler verlieren dadurch "aus dem Nichts"
+  (BACKLOG B5, offene Frage F4).
+- Kleinere offene Punkte (unveraendert, jetzt als BACKLOG B10/B11/B13/B14
+  gefuehrt): totes `PolicyDefinition.description`-Feld,
+  `docker-compose.yml` ohne Frontend-Service, leere `CREDITS.md`,
+  Platzhalter-`data/`.
 - Keine Policy-Repeal-Mechanik (siehe "Ehrlich: noch nicht geloest" oben).
