@@ -227,6 +227,44 @@ class ElectionResult:
 
 
 @dataclass
+class TermSummary:
+    """B1 "Legislatur-Bogen & Amtszeit-Debrief" (BACKLOG.md): Rueckblick auf
+    eine gerade abgeschlossene Legislaturperiode, von advance_turn() genau am
+    Wahl-Turn zusammen mit dem ElectionResult zurueckgegeben.
+
+    Reiner Lesewert -- keine Sim-Wirkung, kein Score-Gate. Harte Szenario-
+    Siegbedingungen ("CO2 unter X bis Legislaturende") sind bewusst NICHT
+    Teil von B1, sondern eine offene Design-Frage (BACKLOG.md F1/B9).
+    """
+
+    term_start_turn: int
+    term_end_turn: int
+    start_approval: float
+    end_approval: float
+    budget_start: float
+    budget_end: float
+    dilemmas_faced: int
+    events_experienced: int
+
+    # Netto-Veraenderung je Statistik ueber die Legislaturperiode (Ende minus
+    # Start). Nur Statistiken mit tatsaechlicher Bewegung sind enthalten.
+    statistic_changes: dict[str, float]
+
+    # Summe der waehlerwirksam gerichteten Veraenderungen je Kategorie
+    # (economy/social/environment): positiv = unterm Strich besser fuer die
+    # Waehler, negativ = schlechter. Nutzt dieselbe Richtungs-/Kategorie-
+    # Zuordnung wie die Zufriedenheitsreaktion (engine.py::_STAT_DIRECTION /
+    # _STAT_CATEGORY), damit "Verbesserung" hier dasselbe heisst wie im Spiel.
+    category_changes: dict[str, float]
+
+    # Statistik-Key mit der groessten waehlerwirksamen Verbesserung bzw.
+    # Verschlechterung ueber die Periode (None, wenn es in die jeweilige
+    # Richtung keine Bewegung gab).
+    biggest_improvement: str | None
+    biggest_decline: str | None
+
+
+@dataclass
 class TurnResult:
     """Rueckgabe von engine.advance_turn -- geordnete Alternative zu einem
     wachsenden Tupel, damit spaetere Erweiterungen nicht wieder alle
@@ -242,6 +280,10 @@ class TurnResult:
     # ausgeloest hat. Der Aufrufer (Backend) muss vor der naechsten Runde
     # resolve_dilemma() aufrufen -- advance_turn() lehnt sonst ab.
     pending_dilemma: PendingDilemma | None = None
+
+    # B1 (BACKLOG.md): nur am Wahl-Turn gesetzt (gleichzeitig mit
+    # election_result), sonst None.
+    term_summary: TermSummary | None = None
 
 
 @dataclass
@@ -270,6 +312,19 @@ class SimState:
     dilemma_cooldowns: dict[str, int] = field(default_factory=dict)
     pending_dilemma: PendingDilemma | None = None
 
+    # B1 "Legislatur-Bogen & Amtszeit-Debrief" (BACKLOG.md): Schnappschuss der
+    # Werte zu Beginn der laufenden Legislaturperiode plus laufende Zaehler.
+    # advance_turn() befuellt sie beim ersten Aufruf lazy und setzt sie nach
+    # jeder Wahl auf den neuen Zyklus zurueck; am Wahl-Turn dienen sie als
+    # Basis fuer die TermSummary. Persistenz: reine Session-Felder analog
+    # turns_until_election (backend/app/models/game.py + sim_bridge.py).
+    term_start_turn: int = 0
+    term_start_budget: float = 0.0
+    term_start_statistics: dict[str, float] = field(default_factory=dict)
+    term_start_approval: float = 50.0
+    term_dilemma_count: int = 0
+    term_event_count: int = 0
+
     def clone(self) -> "SimState":
         return SimState(
             turn=self.turn,
@@ -282,4 +337,10 @@ class SimState:
             turns_until_election=self.turns_until_election,
             dilemma_cooldowns=dict(self.dilemma_cooldowns),
             pending_dilemma=self.pending_dilemma,
+            term_start_turn=self.term_start_turn,
+            term_start_budget=self.term_start_budget,
+            term_start_statistics=dict(self.term_start_statistics),
+            term_start_approval=self.term_start_approval,
+            term_dilemma_count=self.term_dilemma_count,
+            term_event_count=self.term_event_count,
         )

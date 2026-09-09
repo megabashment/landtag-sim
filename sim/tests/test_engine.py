@@ -2,7 +2,14 @@ import random
 
 import pytest
 
-from landtag_sim.engine import CAPITAL_CAP, CAPITAL_PER_TURN, BASE_BUDGET_INCOME_PER_TURN, advance_turn, resolve_dilemma
+from landtag_sim.engine import (
+    BASE_BUDGET_INCOME_PER_TURN,
+    CAPITAL_CAP,
+    CAPITAL_PER_TURN,
+    ELECTION_CYCLE_LENGTH,
+    advance_turn,
+    resolve_dilemma,
+)
 from landtag_sim.models import (
     DilemmaOption,
     DilemmaPendingError,
@@ -697,3 +704,86 @@ def test_can_reenact_a_policy_after_it_was_repealed():
     assert all_keys.count("gesundheitsreform") == 2  # der alte (zurueckgezogene) + der neue Eintrag
     active_keys = [ep.policy_key for ep in result.state.active_policies if ep.repealed_turn is None]
     assert active_keys.count("gesundheitsreform") == 1
+
+
+# --- B1: Legislatur-Bogen & Amtszeit-Debrief (BACKLOG.md) --------------
+
+
+def test_term_summary_is_only_set_on_the_election_turn():
+    state = build_initial_state()
+    for _ in range(ELECTION_CYCLE_LENGTH - 1):
+        result = advance_turn(state, SAMPLE_POLICIES, SAMPLE_EVENT_RULES)
+        assert result.term_summary is None
+        state = result.state
+    result = advance_turn(state, SAMPLE_POLICIES, SAMPLE_EVENT_RULES)
+    assert result.election_result is not None
+    assert result.term_summary is not None
+    assert result.term_summary.term_start_turn == 0
+    assert result.term_summary.term_end_turn == ELECTION_CYCLE_LENGTH
+
+
+def test_term_summary_statistic_changes_match_a_known_run():
+    """bildungsoffensive ueber einen vollen Zyklus: education_spending steigt,
+    gdp_growth faellt (der verschaerfte Trade-off, siehe sample_data.py) --
+    die TermSummary muss genau diese Netto-Bewegung ausweisen."""
+    state = build_initial_state()
+    start_edu = state.statistics["education_spending"]
+    result = advance_turn(
+        state, SAMPLE_POLICIES, SAMPLE_EVENT_RULES, newly_enacted_keys=["bildungsoffensive"]
+    )
+    state = result.state
+    for _ in range(ELECTION_CYCLE_LENGTH - 1):
+        result = advance_turn(state, SAMPLE_POLICIES, SAMPLE_EVENT_RULES)
+        state = result.state
+
+    ts = result.term_summary
+    assert ts is not None
+    assert ts.statistic_changes["education_spending"] == pytest.approx(
+        state.statistics["education_spending"] - start_edu
+    )
+    assert ts.statistic_changes["education_spending"] > 0
+    assert ts.statistic_changes["gdp_growth"] < 0
+    # education_spending (Kategorie "social") ist die groesste waehlerwirksame
+    # Verbesserung, gdp_growth ("economy") der groesste Rueckschritt.
+    assert ts.biggest_improvement == "education_spending"
+    assert ts.biggest_decline == "gdp_growth"
+    assert ts.category_changes["social"] > 0
+    assert ts.category_changes["economy"] < 0
+
+
+def test_term_summary_counts_events_faced():
+    state = build_initial_state()
+    state.turns_until_election = 1
+    state.statistics["unemployment_rate"] = 12.0  # ueber Event-Schwelle (>9)
+    result = advance_turn(state, SAMPLE_POLICIES, SAMPLE_EVENT_RULES)
+    assert result.term_summary is not None
+    assert result.term_summary.events_experienced == 1
+    assert result.term_summary.dilemmas_faced == 0
+
+
+def test_term_summary_counts_dilemmas_faced():
+    state = build_initial_state()
+    state.turns_until_election = 1
+    state.statistics["gdp_growth"] = -1.0  # ueber rezession-Schwelle (< 0.0)
+    result = advance_turn(
+        state, SAMPLE_POLICIES, SAMPLE_EVENT_RULES, dilemma_rules=SAMPLE_DILEMMA_RULES
+    )
+    assert result.term_summary is not None
+    assert result.term_summary.dilemmas_faced == 1
+
+
+def test_term_tracking_resets_after_an_election():
+    state = build_initial_state()
+    state.turns_until_election = 1
+    result = advance_turn(state, SAMPLE_POLICIES, SAMPLE_EVENT_RULES)
+    assert result.term_summary is not None
+
+    ns = result.state
+    assert ns.term_start_turn == ns.turn
+    assert ns.term_dilemma_count == 0
+    assert ns.term_event_count == 0
+    assert ns.term_start_statistics == ns.statistics
+
+    # Der naechste Rundenwechsel liefert noch keine neue Bilanz.
+    result2 = advance_turn(ns, SAMPLE_POLICIES, SAMPLE_EVENT_RULES)
+    assert result2.term_summary is None

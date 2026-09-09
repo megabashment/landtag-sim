@@ -20,6 +20,7 @@ from app.schemas.game import (
     ResolveDilemmaRequest,
     ResolveDilemmaResponse,
     SessionStateResponse,
+    TermSummaryOut,
 )
 from app.seed import ensure_niedersachsen, run_all_seeds
 from app.sim_bridge import (
@@ -133,6 +134,12 @@ def _load_state_for_session(db: Session, session: GameSession):
         session.event_cooldowns,
         session.dilemma_cooldowns,
         session.pending_dilemma,
+        session.term_start_turn,
+        session.term_start_budget,
+        session.term_start_statistics,
+        session.term_start_approval,
+        session.term_dilemma_count,
+        session.term_event_count,
     )
 
 
@@ -417,6 +424,16 @@ def advance_session_turn(
     session.dilemma_cooldowns = dict(new_state.dilemma_cooldowns)
     session.pending_dilemma = serialize_pending_dilemma(new_state.pending_dilemma)
 
+    # B1 "Legislatur-Bogen" (BACKLOG.md): Term-Tracking der Sim-Engine
+    # zurueckschreiben (die Engine setzt es am Wahl-Turn selbst auf den neuen
+    # Zyklus zurueck, siehe landtag_sim.engine._build_term_summary).
+    session.term_start_turn = new_state.term_start_turn
+    session.term_start_budget = new_state.term_start_budget
+    session.term_start_statistics = dict(new_state.term_start_statistics)
+    session.term_start_approval = new_state.term_start_approval
+    session.term_dilemma_count = new_state.term_dilemma_count
+    session.term_event_count = new_state.term_event_count
+
     election_out: ElectionResultOut | None = None
     if result.election_result:
         election_out = ElectionResultOut(
@@ -434,6 +451,24 @@ def advance_session_turn(
     db.add(session)
     db.commit()
 
+    term_summary_out: TermSummaryOut | None = None
+    if result.term_summary:
+        ts = result.term_summary
+        term_summary_out = TermSummaryOut(
+            term_start_turn=ts.term_start_turn,
+            term_end_turn=ts.term_end_turn,
+            start_approval=ts.start_approval,
+            end_approval=ts.end_approval,
+            budget_start=ts.budget_start,
+            budget_end=ts.budget_end,
+            dilemmas_faced=ts.dilemmas_faced,
+            events_experienced=ts.events_experienced,
+            statistic_changes=ts.statistic_changes,
+            category_changes=ts.category_changes,
+            biggest_improvement=ts.biggest_improvement,
+            biggest_decline=ts.biggest_decline,
+        )
+
     return AdvanceTurnResponse(
         state=_build_state_response(db, session),
         events=result.events,
@@ -442,6 +477,7 @@ def advance_session_turn(
         ],
         election_result=election_out,
         pending_dilemma=_pending_dilemma_out(session),
+        term_summary=term_summary_out,
     )
 
 

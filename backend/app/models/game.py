@@ -48,6 +48,18 @@ class GameSession(SQLModel, table=True):
     event_cooldowns: dict = Field(default_factory=dict, sa_column=Column(JSON))
     dilemma_cooldowns: dict = Field(default_factory=dict, sa_column=Column(JSON))
 
+    # B1 "Legislatur-Bogen & Amtszeit-Debrief" (BACKLOG.md): Schnappschuss der
+    # Werte zu Beginn der laufenden Legislaturperiode plus laufende Zaehler.
+    # Reine Session-Felder wie turns_until_election -- die Sim-Engine
+    # (landtag_sim.engine.advance_turn) baut daraus am Wahl-Turn die
+    # TermSummary und setzt sie danach auf den neuen Zyklus zurueck.
+    term_start_turn: int = Field(default=0)
+    term_start_budget: float = Field(default=0.0)
+    term_start_statistics: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    term_start_approval: float = Field(default=50.0)
+    term_dilemma_count: int = Field(default=0)
+    term_event_count: int = Field(default=0)
+
     # Voll serialisiertes PendingDilemma (rule_key, gerenderter Prompt-Text,
     # Optionen inkl. Effekten) statt nur des Keys -- der Prompt wurde beim
     # Ausloesen mit dem damaligen Statistik-Wert gerendert und darf sich

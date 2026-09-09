@@ -131,7 +131,7 @@ Ziel: der Loop trägt ueber die erste Wahl hinaus. Reihenfolge ist die
 empfohlene Implementierungsreihenfolge (jeder Punkt baut auf dem
 vorherigen auf).
 
-- [ ] **B1 — Legislatur-Bogen & Amtszeit-Debrief** · Impact 4 × Aufwand 2 → M2
+- [x] **B1 — Legislatur-Bogen & Amtszeit-Debrief** · Impact 4 × Aufwand 2 → M2
   - *Warum (L1, L10):* der Loop endet gefuehlt nach Wahl 1. Ein klarer
     Bogen + Rueckblick gibt jeder Partie eine Form.
   - *Scope:* Beim `ElectionResult` zusaetzlich eine `TermSummary`
@@ -146,6 +146,24 @@ vorherigen auf).
     "Verlauf".
   - *Tests:* `TermSummary` wird nur am Wahl-Turn gesetzt; Deltas stimmen
     gegen einen bekannten 16-Runden-Lauf.
+  - *Umgesetzt (2026-09-09):* `TermSummary`-Dataclass + `TurnResult.
+    term_summary` in `sim/landtag_sim/models.py`; `SimState` traegt sechs
+    `term_start_*`/`term_*_count`-Felder (lazy beim ersten Rundenwechsel
+    befuellt, am Wahl-Turn ueber `_build_term_summary()` ausgewertet und
+    danach auf den neuen Zyklus zurueckgesetzt). Bilanzinhalt:
+    Start-/End-Runde, Start-/End-Zustimmung, Start-/End-Budget, Anzahl
+    Dilemmas/Ereignisse, `statistic_changes` (Netto je Statistik) plus
+    richtungs-korrigierte `category_changes` (economy/social/environment,
+    positiv = besser fuer Waehler, nutzt `_STAT_DIRECTION`/`_STAT_CATEGORY`)
+    und `biggest_improvement`/`biggest_decline`. Persistenz ueber sechs
+    neue `GameSession`-Spalten + `sim_bridge.load_sim_state()`-Parameter;
+    `AdvanceTurnResponse.term_summary` (`TermSummaryOut`). Frontend:
+    "Amtszeit-Bilanz"-Panel (`term-summary`) oberhalb des Grids. Tests:
+    6 sim-Engine-Tests (`sim/tests/test_engine.py`, Abschnitt "B1") und
+    `backend/tests/test_term_summary.py` (nur am Wahl-Turn gesetzt,
+    Policy-getriebene Deltas gegen einen 16-Runden-Lauf, Reset fuer den
+    zweiten Zyklus). **Kein** Score-Gate/keine Siegbedingung (bewusst,
+    siehe F1/B9).
 
 - [ ] **B2 — Situations-Layer (mittlerer Zeithorizont, mit Hysterese)** · Impact 5 × Aufwand 4 → M2
   - *Warum (L2, L3):* der fehlende Layer zwischen Einzel-Event und

@@ -80,6 +80,26 @@ class ElectionResultOut(BaseModel):
     won: bool
 
 
+class TermSummaryOut(BaseModel):
+    """B1 "Legislatur-Bogen & Amtszeit-Debrief" (BACKLOG.md): Bilanz einer
+    gerade abgeschlossenen Legislaturperiode, nur am Wahl-Turn im
+    AdvanceTurnResponse gesetzt (sonst None). Reiner Rueckblick -- keine
+    Sim-Wirkung, keine harte Siegbedingung (das ist BACKLOG.md F1/B9)."""
+
+    term_start_turn: int
+    term_end_turn: int
+    start_approval: float
+    end_approval: float
+    budget_start: float
+    budget_end: float
+    dilemmas_faced: int
+    events_experienced: int
+    statistic_changes: dict[str, float]
+    category_changes: dict[str, float]
+    biggest_improvement: str | None = None
+    biggest_decline: str | None = None
+
+
 class AdvanceTurnRequest(BaseModel):
     enact_policy_keys: list[str] = []
     # Democracy-4-Vorbild "Policy-Repeal": Policy-Keys, die diese Runde
@@ -95,6 +115,7 @@ class AdvanceTurnResponse(BaseModel):
     attributions: list[AttributionOut]
     election_result: ElectionResultOut | None = None
     pending_dilemma: PendingDilemmaOut | None = None
+    term_summary: TermSummaryOut | None = None
 
 
 class ResolveDilemmaRequest(BaseModel):

@@ -120,6 +120,17 @@
   border-color: #e8b980;
 }
 
+/* B1 "Legislatur-Bogen & Amtszeit-Debrief" (BACKLOG.md) */
+.term-summary {
+  margin: 1rem 0;
+  background: #eef2fb;
+  border-color: #a9bde5;
+}
+
+.term-categories {
+  margin-top: 0.5rem;
+}
+
 .dilemma-options {
   display: flex;
   flex-direction: column;

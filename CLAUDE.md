@@ -161,8 +161,23 @@ landtag-sim/
   Nachschärfung" unten) — mit dem aktuellen 4-Policy-Katalog liefert der
   Runner "Keine vermutlich dominante Policy gefunden."
 
+- **Amtszeit-Bilanz / Legislatur-Bogen** (`TermSummary`, BACKLOG.md B1):
+  `SimState` führt pro Legislaturperiode einen Schnappschuss mit
+  (`term_start_turn/_budget/_statistics/_approval`, `term_dilemma_count`,
+  `term_event_count`) — lazy beim ersten `advance_turn()` befüllt, am
+  Wahl-Turn über `_build_term_summary()` zu einer `TermSummary` verrechnet
+  und danach auf den neuen Zyklus zurückgesetzt. `TurnResult.term_summary`
+  ist **nur am Wahl-Turn** gesetzt (gleichzeitig mit `election_result`).
+  Reiner Rückblick (Start-vs-Ende je Statistik, richtungs-korrigierte
+  `category_changes`, größter Fort-/Rückschritt, Dilemma-/Ereignis-Zähler,
+  Budget-Bilanz) — **kein** Score-Gate, keine Siegbedingung (bewusst, siehe
+  BACKLOG.md F1/B9). Persistenz: 6 neue `GameSession`-Spalten +
+  `sim_bridge.load_sim_state()`-Parameter; API: `AdvanceTurnResponse.
+  term_summary` (`TermSummaryOut`). Frontend: "Amtszeit-Bilanz"-Panel.
+
 `advance_turn()` gibt ein `TurnResult`-Dataclass zurück (`state`, `events`,
-`attributions`, `election_result`, `pending_dilemma`), **kein Tuple** — bei
+`attributions`, `election_result`, `pending_dilemma`, `term_summary`),
+**kein Tuple** — bei
 Änderungen an der Rückgabe immer alle Aufrufer prüfen:
 `sim/tests/test_engine.py`, `backend/app/api/routes_game.py`,
 `sim/landtag_sim/tools/balance_runner.py`.
@@ -258,6 +273,17 @@ geschlossen:
   bekommt einen eigenen Eintrag, nicht nur die letzte) sowie pro
   aufgeloestem Dilemma, gerendert als neue "Verlauf"-Sektion
   (neueste zuerst).
+
+M2-Backlog, B1 "Legislatur-Bogen & Amtszeit-Debrief" (2026-09-09,
+BACKLOG.md): erster umgesetzter Punkt aus der Community-Recherche. Am
+Wahl-Turn liefert `advance_turn()` jetzt zusätzlich eine `TermSummary`
+(Start-vs-Ende-Bilanz der Legislaturperiode) — Details siehe Kernmechaniken-
+Abschnitt oben und BACKLOG.md B1. Bewusst OHNE harte Siegbedingung (das
+bleibt offene Design-Frage F1/B9). sim-Tests laufen (58 grün, davon 6 neu);
+Backend-API-Tests (`backend/tests/test_term_summary.py`, 4 neu) und der
+curl-E2E-Check konnten in der Umsetzungs-Session mangels laufendem lokalen
+Postgres nicht ausgeführt werden — beim nächsten DB-Lauf nachholen (der
+Verifikations-Workflow deckt sie ab).
 
 Policy-Repeal-Mechanismus (Auftrag "Mach mit dem Policy-Repeal-Mechanismus
 weiter, schau vorher in Democracy 4 Mechaniken", 2026-09-09): vor der

@@ -58,6 +58,7 @@ from landtag_sim.models import (
     PolicyNotActiveError,
     PolicyRequiredByActivePolicyError,
     SimState,
+    TermSummary,
     TurnResult,
     UnmetPrerequisiteError,
 )
@@ -299,6 +300,18 @@ def advance_turn(
     new_state = state.clone()
     new_state.turn += 1
 
+    # B1 "Legislatur-Bogen" (BACKLOG.md): beim allerersten Rundenwechsel einer
+    # Session ist noch kein Term-Schnappschuss vorhanden -- dann den Zustand
+    # VOR dieser Runde als Termbeginn festhalten. Nach einer Wahl setzt der
+    # Wahl-Zweig unten das Tracking selbst auf den neuen Zyklus zurueck.
+    if not new_state.term_start_statistics:
+        new_state.term_start_turn = state.turn
+        new_state.term_start_budget = state.budget
+        new_state.term_start_statistics = dict(state.statistics)
+        new_state.term_start_approval = _weighted_approval(state)
+        new_state.term_dilemma_count = 0
+        new_state.term_event_count = 0
+
     new_state.political_capital = min(CAPITAL_CAP, new_state.political_capital + CAPITAL_PER_TURN)
     new_state.budget += BASE_BUDGET_INCOME_PER_TURN
 
@@ -363,6 +376,7 @@ def advance_turn(
     if pending_dilemmas:
         pending_dilemma = pending_dilemmas[0]
         new_state.pending_dilemma = pending_dilemma
+        new_state.term_dilemma_count += 1  # B1: Dilemmas dieser Legislaturperiode
         rule = next((r for r in dilemma_rules if r.key == pending_dilemma.rule_key), None)
         if rule:
             new_state.dilemma_cooldowns[rule.key] = rule.cooldown_turns
@@ -384,6 +398,7 @@ def advance_turn(
         triggered = evaluate_events(new_state, event_rules)
         if triggered:
             rule, text = triggered[0]
+            new_state.term_event_count += 1  # B1: Ereignisse dieser Legislaturperiode
             # P2-Punkt "Namens-Vignetten": siehe Dilemma-Zweig oben.
             category = _STAT_CATEGORY.get(rule.statistic_key)
             if category:
@@ -420,12 +435,23 @@ def advance_turn(
     # backend/app/api/routes_game.py).
     new_state.turns_until_election -= 1
     election_result: ElectionResult | None = None
+    term_summary: TermSummary | None = None
     if new_state.turns_until_election <= 0:
         approval = _weighted_approval(new_state)
         election_result = ElectionResult(
             approval=approval, threshold=ELECTION_APPROVAL_THRESHOLD, won=approval >= ELECTION_APPROVAL_THRESHOLD
         )
+        # B1 (BACKLOG.md): Bilanz der gerade abgelaufenen Legislaturperiode
+        # bauen -- BEVOR das Term-Tracking auf den naechsten Zyklus
+        # zurueckgesetzt wird.
+        term_summary = _build_term_summary(new_state, approval)
         new_state.turns_until_election = ELECTION_CYCLE_LENGTH
+        new_state.term_start_turn = new_state.turn
+        new_state.term_start_budget = new_state.budget
+        new_state.term_start_statistics = dict(new_state.statistics)
+        new_state.term_start_approval = approval
+        new_state.term_dilemma_count = 0
+        new_state.term_event_count = 0
 
     return TurnResult(
         state=new_state,
@@ -433,6 +459,53 @@ def advance_turn(
         attributions=attributions,
         election_result=election_result,
         pending_dilemma=pending_dilemma,
+        term_summary=term_summary,
+    )
+
+
+def _build_term_summary(state: SimState, end_approval: float) -> TermSummary:
+    """Baut die TermSummary (B1) aus den term_start_*-Schnappschuessen auf
+    `state` und dessen aktuellem Zustand. `end_approval` wird uebergeben,
+    weil der Aufrufer die gewichtete Zustimmung fuer das ElectionResult
+    ohnehin schon berechnet hat.
+    """
+    statistic_changes: dict[str, float] = {}
+    for key, end_value in state.statistics.items():
+        start_value = state.term_start_statistics.get(key, end_value)
+        change = end_value - start_value
+        if change:
+            statistic_changes[key] = change
+
+    # Richtungs-korrigierte Veraenderung: positiv = besser fuer die Waehler,
+    # unabhaengig davon ob die Rohzahl gestiegen oder gesunken ist.
+    category_changes: dict[str, float] = {}
+    voter_effect: dict[str, float] = {}
+    for key, change in statistic_changes.items():
+        directed = change * _stat_direction(key)
+        voter_effect[key] = directed
+        category = _STAT_CATEGORY.get(key, "economy")
+        category_changes[category] = category_changes.get(category, 0.0) + directed
+
+    biggest_improvement = max(voter_effect, key=voter_effect.get, default=None)
+    biggest_decline = min(voter_effect, key=voter_effect.get, default=None)
+    if biggest_improvement is not None and voter_effect[biggest_improvement] <= 0:
+        biggest_improvement = None
+    if biggest_decline is not None and voter_effect[biggest_decline] >= 0:
+        biggest_decline = None
+
+    return TermSummary(
+        term_start_turn=state.term_start_turn,
+        term_end_turn=state.turn,
+        start_approval=state.term_start_approval,
+        end_approval=end_approval,
+        budget_start=state.term_start_budget,
+        budget_end=state.budget,
+        dilemmas_faced=state.term_dilemma_count,
+        events_experienced=state.term_event_count,
+        statistic_changes=statistic_changes,
+        category_changes=category_changes,
+        biggest_improvement=biggest_improvement,
+        biggest_decline=biggest_decline,
     )
 
 

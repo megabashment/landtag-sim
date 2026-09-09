@@ -141,6 +141,12 @@ def load_sim_state(
     event_cooldowns: dict[str, int] | None = None,
     dilemma_cooldowns: dict[str, int] | None = None,
     pending_dilemma: dict | None = None,
+    term_start_turn: int = 0,
+    term_start_budget: float = 0.0,
+    term_start_statistics: dict[str, float] | None = None,
+    term_start_approval: float = 50.0,
+    term_dilemma_count: int = 0,
+    term_event_count: int = 0,
 ) -> SimState:
     latest_values: dict[str, float] = {}
     for row in db.exec(
@@ -195,6 +201,12 @@ def load_sim_state(
         event_cooldowns=dict(event_cooldowns or {}),
         dilemma_cooldowns=dict(dilemma_cooldowns or {}),
         pending_dilemma=deserialize_pending_dilemma(pending_dilemma),
+        term_start_turn=term_start_turn,
+        term_start_budget=term_start_budget,
+        term_start_statistics=dict(term_start_statistics or {}),
+        term_start_approval=term_start_approval,
+        term_dilemma_count=term_dilemma_count,
+        term_event_count=term_event_count,
     )
 
 

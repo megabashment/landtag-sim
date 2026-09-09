@@ -49,6 +49,10 @@ export default function App() {
   const [events, setEvents] = useState([]);
   const [attributions, setAttributions] = useState([]);
   const [electionResult, setElectionResult] = useState(null);
+  // B1 "Legislatur-Bogen & Amtszeit-Debrief" (BACKLOG.md): Bilanz der gerade
+  // abgelaufenen Legislaturperiode, kommt nur am Wahl-Turn im
+  // AdvanceTurnResponse mit (sonst null).
+  const [termSummary, setTermSummary] = useState(null);
   const [preview, setPreview] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -120,6 +124,7 @@ export default function App() {
       setEvents([]);
       setAttributions([]);
       setElectionResult(null);
+      setTermSummary(null);
       setSelectedPolicies([]);
       setSelectedRepeals([]);
       setHistory([]);
@@ -140,6 +145,7 @@ export default function App() {
       setEvents(result.events);
       setAttributions(result.attributions);
       setElectionResult(result.election_result);
+      setTermSummary(result.term_summary);
       setSelectedPolicies([]);
       setSelectedRepeals([]);
       pushHistoryEntry({
@@ -191,6 +197,7 @@ export default function App() {
       setEvents(result.events);
       setAttributions(result.attributions);
       setElectionResult(result.election_result);
+      setTermSummary(result.term_summary);
       setSelectedPolicies([]);
       setSelectedRepeals([]);
       // Vorspulen kann mehrere Runden ueberspringen -- JEDE davon bekommt
@@ -215,6 +222,7 @@ export default function App() {
       setAttributions(result.attributions);
       setEvents([]);
       setElectionResult(null);
+      setTermSummary(null);
       pushHistoryEntry({
         kind: "dilemma",
         turn: result.state.turn,
@@ -331,6 +339,51 @@ export default function App() {
                 <p>Wiederwahl geschafft &mdash; die naechste Legislaturperiode beginnt.</p>
               ) : (
                 <p>Die Partie ist beendet. Eine neue Partie kann gestartet werden.</p>
+              )}
+            </section>
+          )}
+
+          {termSummary && (
+            <section className="panel term-summary">
+              <h2>
+                Amtszeit-Bilanz &mdash; Runden {termSummary.term_start_turn}&ndash;
+                {termSummary.term_end_turn}
+              </h2>
+              <p>
+                Zufriedenheit (gewichtet): {termSummary.start_approval.toFixed(1)} &rarr;{" "}
+                {termSummary.end_approval.toFixed(1)} (
+                {termSummary.end_approval - termSummary.start_approval >= 0 ? "+" : ""}
+                {(termSummary.end_approval - termSummary.start_approval).toFixed(1)})
+              </p>
+              <p>
+                Budget: {termSummary.budget_start.toFixed(1)} &rarr;{" "}
+                {termSummary.budget_end.toFixed(1)} &nbsp;&middot;&nbsp; Dilemmas:{" "}
+                {termSummary.dilemmas_faced} &nbsp;&middot;&nbsp; Ereignisse:{" "}
+                {termSummary.events_experienced}
+              </p>
+              {termSummary.biggest_improvement && (
+                <p>
+                  Groesster Fortschritt: <strong>{termSummary.biggest_improvement}</strong> (
+                  {termSummary.statistic_changes[termSummary.biggest_improvement] > 0 ? "+" : ""}
+                  {termSummary.statistic_changes[termSummary.biggest_improvement].toFixed(2)})
+                </p>
+              )}
+              {termSummary.biggest_decline && (
+                <p>
+                  Groesster Rueckschritt: <strong>{termSummary.biggest_decline}</strong> (
+                  {termSummary.statistic_changes[termSummary.biggest_decline] > 0 ? "+" : ""}
+                  {termSummary.statistic_changes[termSummary.biggest_decline].toFixed(2)})
+                </p>
+              )}
+              {Object.keys(termSummary.category_changes).length > 0 && (
+                <ul className="term-categories">
+                  {Object.entries(termSummary.category_changes).map(([cat, val]) => (
+                    <li key={cat}>
+                      {cat}: {val >= 0 ? "+" : ""}
+                      {val.toFixed(2)} fuer die Waehler
+                    </li>
+                  ))}
+                </ul>
               )}
             </section>
           )}

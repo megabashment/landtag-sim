@@ -135,7 +135,7 @@ einem eigenen Fenster und oeffnet den Browser:
 - `POST /sessions` -- neue Partie fuer Niedersachsen anlegen
 - `GET /sessions/{id}` -- aktuellen Zustand abrufen (Statistiken, Waehlergruppen, Budget, Runde, Runden bis zur Wahl)
 - `POST /sessions/{id}/preview` -- Effekt-Vorschau: simuliert die naechste Runde mit gegebenen Policies, persistiert nichts (`{"enact_policy_keys": [...]}`)
-- `POST /sessions/{id}/advance` -- Runde beenden, optional neue Policies einfuehren (`{"enact_policy_keys": [...]}`); Response enthaelt Attributionen und ggf. ein Wahlergebnis. Schlaegt fehl, wenn eine Policy-Voraussetzung fehlt (siehe `Policy.requires`) oder ein Dilemma noch offen ist
+- `POST /sessions/{id}/advance` -- Runde beenden, optional neue Policies einfuehren (`{"enact_policy_keys": [...]}`); Response enthaelt Attributionen und ggf. ein Wahlergebnis. Am Wahl-Turn zusaetzlich `term_summary` (Amtszeit-Bilanz der abgelaufenen Legislaturperiode: Start-vs-Ende je Statistik/Kategorie, groesster Fort-/Rueckschritt, Dilemma-/Ereignis-Zaehler, Budget-Bilanz -- reiner Rueckblick, keine Siegbedingung; BACKLOG.md B1). Schlaegt fehl, wenn eine Policy-Voraussetzung fehlt (siehe `Policy.requires`) oder ein Dilemma noch offen ist
 - `POST /sessions/{id}/resolve-dilemma` -- offenes Dilemma mit einer gewaehlten Option aufloesen (`{"option_key": "..."}`); zaehlt keine eigene Runde
 - `GET /policies` -- dynamischer Policy-Katalog (Name, Kosten, Effekte, Voraussetzungen), session-unabhaengig; loest die vorherige hart codierte Kopie im Frontend ab
 
