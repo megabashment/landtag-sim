@@ -68,6 +68,14 @@ landtag-sim/
   Reformen gleichzeitig durchsetzbar sind (`CAPITAL_PER_TURN = 3.0`,
   `CAPITAL_CAP = 10.0`). Wirft `InsufficientCapitalError`, wenn eine Auswahl
   mehr kostet als verfügbar — State wird dabei NICHT mutiert.
+- **Budget-Grundeinnahme** (`BASE_BUDGET_INCOME_PER_TURN = 15.0`,
+  Nach-P2-Nachschärfung): jede Runde bekommt das Budget diesen festen
+  Betrag gutgeschrieben, unabhängig von Policies/Statistiken (vereinfachte
+  Landeshaushalt-Basissteuereinnahme, kein echtes Steuersatz-System im
+  MVP-Scope). Vorher hatte das Budget NUR Ausgaben und keine Einnahme —
+  ohne Policy-Repeal-Mechanik (gibt es weiterhin nicht) drainierte jede
+  Policy mit `upkeep_cost>0` das feste Start-Budget unaufhaltsam. Siehe
+  `mistakes.md` für die Herleitung.
 - **Jede Policy hat mindestens einen negativen Nebeneffekt** (Trade-off-
   Pflicht, siehe `test_every_sample_policy_has_at_least_one_negative_effect`)
   — reine Positiv-Policies waren der Hauptkritikpunkt der ersten Review.
@@ -182,13 +190,50 @@ Nach-P2-Nachschärfung (Auftrag "Geh bis zum Ende des Backlogs", 2026-09-09):
   `engine.py::_weighted_approval` schon durch `total_share` normalisiert.
   Regressionstest: `test_voter_group_shares_deliberately_overlap`.
 
+Doku-Audit (2026-09-09) und direkte Anschluss-Fixes: ein vollständiger
+Abgleich von README/CLAUDE.md/architecture.md gegen den tatsächlichen
+Code-Stand ergab, dass die `BUDGET_NEGATIV`-Meldung der Dreier-Kombination
+KEIN Upkeep-Tuning-Problem war, sondern eine strukturelle Lücke: das Budget
+hatte überhaupt nie eine Einnahmequelle, nur Ausgaben — behoben durch
+`BASE_BUDGET_INCOME_PER_TURN` (siehe Kernmechaniken oben und
+`mistakes.md`). Balance-Runner bestätigt: die Dreier-Kombination bleibt
+jetzt über 30 Runden bei +105 Budget statt -345. Regressionstests:
+`test_budget_has_a_baseline_income_without_any_active_policy`,
+`test_three_policy_combination_no_longer_goes_budget_negative`.
+
+Zwei weitere, im selben Audit identifizierte echte Luecken wurden ebenfalls
+geschlossen:
+
+- **Backend-API-Testsuite** (`backend/tests/`): vorher gab es ausser einem
+  Health-Check-Smoketest (`test_health.py`) KEINE automatisierten Tests --
+  `/sessions`, `/preview`, `/advance`, `/resolve-dilemma`, `/policies`
+  wurden ausschliesslich manuell per curl verifiziert. Jetzt 24 Tests
+  (`conftest.py` + `test_sessions.py`, `test_advance.py`, `test_preview.py`,
+  `test_dilemma.py`) gegen eine EIGENE Test-Datenbank
+  (`landtag_sim_test`, siehe Setup unten) -- decken Happy-Path, alle drei
+  advance_turn-Fehlerfaelle (Policy-Voraussetzung, Political Capital,
+  unbekannter Key), Preview-Feasibility, einen vollen Wahlzyklus, den
+  Dilemma-Block-/Resolve-Mechanismus und den LOST-Session-Guard ab. Wichtiger
+  Fund dabei: `POST /sessions` nutzt ungeseedeten Start-Jitter
+  (`jittered_starting_statistics()` ohne `rng`-Argument) -- Dilemma-Tests
+  gegen echte Sessions duerfen deshalb NICHT annehmen, welches konkrete
+  Dilemma zuerst feuert (siehe mistakes.md "Erster Backend-API-Testlauf ...
+  flackerte wegen ungeseedetem Start-Jitter").
+- **Frontend-Verlaufsansicht** (`frontend/src/App.jsx`): `events`/
+  `attributions`/`electionResult` wurden vorher bei jedem `/advance`-Aufruf
+  ueberschrieben, ein Spieler sah nur die letzte Runde. Neuer, rein
+  clientseitiger `history`-State (`HISTORY_LIMIT = 60`) sammelt einen
+  Eintrag pro Runde (auch bei Vorspulen -- JEDE uebersprungene Runde
+  bekommt einen eigenen Eintrag, nicht nur die letzte) sowie pro
+  aufgeloestem Dilemma, gerendert als neue "Verlauf"-Sektion
+  (neueste zuerst).
+
 Bekannte, bewusst offene Vereinfachungen:
-- Balance ist trotz der obigen Nachschärfung nicht perfekt rund: die
-  Kombination `bildungsoffensive+steuersenkung_mittelstand+
-  gesundheitsreform` rutscht im Balance-Runner mit `BUDGET_NEGATIV` ins
-  Minus (-345 Budget nach 30 Runden) — kein Free-Lunch/Dominanz-Problem
-  mehr, aber ein Hinweis, dass Upkeep-Kosten bei Drei-Policy-Kombinationen
-  noch nicht gegengeprüft sind.
+- Es gibt weiterhin keine Policy-Repeal-Mechanik — eine einmal eingeführte
+  Policy läuft (und kostet Upkeep) unbegrenzt weiter. Die neue
+  Grundeinnahme macht das für 1-2 gleichzeitig aktive Policies unkritisch,
+  bei 3-4 gleichzeitig bleibt Budget spürbar unter Druck (siehe
+  Balance-Runner-Ausgabe).
 - Die meisten ursprünglichen Event-/Dilemma-Schwellenwerte
   (`arbeitsmarktkrise` u.a.) bleiben im organischen Spielverlauf praktisch
   unerreichbar, weil nichts in den Beispiel-Policies die Statistiken so
@@ -209,13 +254,21 @@ sudo -u postgres psql -c "DROP DATABASE IF EXISTS landtag_sim;" && sudo -u postg
 # hat die App-Rolle sonst kein CREATE-Recht im public-Schema einer frisch angelegten DB.
 sudo -u postgres psql -d landtag_sim -c "ALTER DATABASE landtag_sim OWNER TO landtag;"
 sudo -u postgres psql -d landtag_sim -c "ALTER SCHEMA public OWNER TO landtag;"
-python -m pytest tests/ -q
-uvicorn app.main:app --reload &   # dann per curl End-to-End durchtesten:
+
+# Backend-API-Testsuite (backend/tests/, seit Doku-Audit 2026-09-09) braucht
+# eine EIGENE Test-DB (siehe conftest.py) -- einmalig anlegen, gleicher
+# Postgres-15+-Owner-Fix wie oben:
+sudo -u postgres psql -c "CREATE DATABASE landtag_sim_test;"
+sudo -u postgres psql -d landtag_sim_test -c "ALTER DATABASE landtag_sim_test OWNER TO landtag;"
+sudo -u postgres psql -d landtag_sim_test -c "ALTER SCHEMA public OWNER TO landtag;"
+python -m pytest tests/ -q   # laeuft automatisch gegen landtag_sim_test, siehe conftest.py
+uvicorn app.main:app --reload &   # dann zusaetzlich per curl End-to-End durchtesten (laeuft
+# gegen die normale landtag_sim-Dev-DB, nicht die Test-DB):
 # POST /sessions, GET /sessions/{id}, POST /sessions/{id}/preview, POST /sessions/{id}/advance
 # — mindestens einen Wahlzyklus (16 Runden) durchspielen, um WON/LOST zu verifizieren
 # — Policy mit requires ohne Voraussetzung versuchen (400 erwartet), dann mit Voraussetzung
-# — ein Dilemma auslösen (z.B. per direktem SQL-UPDATE auf statistic_value, siehe
-#   mistakes.md "Dilemma-Persistenz"), /advance sollte 400 liefern, dann
+# — ein Dilemma auslösen (z.B. gesundheitsreform einführen und ein paar Runden warten,
+#   siehe mistakes.md "Erster Backend-API-Testlauf"), /advance sollte 400 liefern, dann
 #   POST /sessions/{id}/resolve-dilemma und pruefen, dass /advance danach wieder geht
 #   und der Cooldown ein sofortiges Retriggern verhindert
 

@@ -162,15 +162,15 @@ Scope-Entscheidung zurueckgestellt.
 
 ### Ehrlich: noch nicht geloest
 
-Der Balance-Runner zeigt weiterhin Luecken, auch nach der Nach-P2-
-Nachschaerfung (siehe CLAUDE.md, mistakes.md): der Dominante-Strategie-
-Check selbst ist inzwischen gruen ("Keine vermutlich dominante Policy
-gefunden"), aber die Dreier-Kombination
-`bildungsoffensive+steuersenkung_mittelstand+gesundheitsreform` rutscht
-ueber 30 Runden mit `BUDGET_NEGATIV` (-345) ins Minus -- Upkeep-Kosten bei
-Drei-Policy-Kombinationen sind noch nicht gegengeprueft. Balancing ist
-iterativ; das ist ein bekannter, offener Punkt fuer die naechste Runde,
-keiner, der hier schongeredet werden soll.
+Der Balance-Runner ist Stand 2026-09-09 komplett gruen (Dominante-
+Strategie-Check: "Keine vermutlich dominante Policy gefunden", kein
+`BUDGET_NEGATIV`-Flag mehr, siehe mistakes.md "Budget hatte nie eine
+Einnahmequelle"). Balancing ist trotzdem iterativ und nie "fertig" --
+insbesondere gibt es weiterhin keine Policy-Repeal-Mechanik, und die
+Grundeinnahme (`BASE_BUDGET_INCOME_PER_TURN`) ist eine bewusst einfache
+Konstante, kein echtes Steuersatz-/GDP-System. Das ist ein bekannter,
+offener Punkt fuer kuenftige Iterationen, keiner, der hier schongeredet
+werden soll.
 
 ### Quellen (Game-Director-Review)
 
@@ -182,26 +182,19 @@ keiner, der hier schongeredet werden soll.
 
 ## Bekannte offene Punkte (nicht MVP-blockierend)
 
-Stand nach P2 + Balance-Nachschaerfung (2026-09-09) -- die urspruenglichen
-drei Punkte dieser Liste (Wahlergebnis-Berechnung, `GET /policies`, Balance
-im engeren Sinn) sind erledigt bzw. deutlich verbessert, siehe CLAUDE.md
-"Aktueller Stand". Tatsaechlich noch offen:
+Stand nach dem vollstaendigen Doku-Audit vom 2026-09-09 (siehe CLAUDE.md
+"Aktueller Stand" fuer die Details): Wahlergebnis-Berechnung,
+`GET /policies`, Balance/Dominante-Strategie, die fehlende Backend-API-
+Testsuite UND die fehlende Frontend-Verlaufsansicht sind inzwischen alle
+behoben. Tatsaechlich noch offen:
 
-- Balance im Detail (Dreier-Kombinations-Upkeep, siehe "Ehrlich: noch nicht
-  geloest" oben).
-- **Backend-API hat praktisch keine automatisierten Tests** -- nur ein
-  Health-Check-Smoketest (`backend/tests/test_health.py`). `/sessions`,
-  `/sessions/{id}`, `/preview`, `/advance`, `/resolve-dilemma`, `/policies`
-  werden ausschliesslich manuell per curl verifiziert (siehe CLAUDE.md
-  Verifikations-Workflow) -- groesste Test-Luecke des Projekts.
-- Frontend hat keine Verlaufsansicht: `events`/`attributions`/
-  `electionResult` werden bei jedem `/advance`-Aufruf ueberschrieben, ein
-  Spieler sieht nur die letzte Runde, keine Historie.
 - `PolicyDefinition.description` ist ein totes Feld (`backend/app/seed.py`
   setzt `description=policy.name`, also ein Duplikat des Namens statt
   echtem Beschreibungstext).
-- `docker-compose.yml` hat keinen Frontend-Service -- "Alles zusammen mit
-  Docker" (README.md) startet nur `db`+`backend`, Frontend bleibt manuell.
+- `docker-compose.yml` hat keinen Frontend-Service -- "Backend + Datenbank
+  mit Docker" (README.md) startet nur `db`+`backend`, Frontend bleibt
+  manuell.
 - `CREDITS.md` ist weiterhin eine leere Platzhalter-Tabelle, `data/`
   enthaelt weiterhin nur Platzhalter-Quellenmodule statt echter
   Niedersachsen-Statistik-Importe.
+- Keine Policy-Repeal-Mechanik (siehe "Ehrlich: noch nicht geloest" oben).

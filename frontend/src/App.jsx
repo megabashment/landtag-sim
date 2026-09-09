@@ -4,6 +4,14 @@ import "./App.css";
 
 const FAST_FORWARD_SAFETY_CAP = 40; // Sicherheitsnetz gegen Endlosschleifen im Client
 
+// Nach-P2-Nachschaerfung (Doku-Audit 2026-09-09, siehe mistakes.md/CLAUDE.md
+// "Frontend hat keine Verlaufsansicht"): events/attributions/electionResult
+// wurden bisher bei JEDEM /advance-Aufruf komplett ueberschrieben -- ein
+// Spieler sah nur die letzte Runde, keine Historie. HISTORY_LIMIT begrenzt
+// den clientseitigen Verlauf (reines UI-Array, nichts Serverseitiges), damit
+// eine lange Partie mit vielen Vorspul-Runden nicht unbegrenzt waechst.
+const HISTORY_LIMIT = 60;
+
 // Grobe Groessenklassen statt exakter Zahlen (P0-Punkt "Effekt-Vorschau",
 // Vorbild Frostpunks Book of Laws: qualitative Richtung, vage Quantitaet --
 // genug fuer eine informierte Entscheidung, ohne die Spannung durch exakte
@@ -39,6 +47,13 @@ export default function App() {
   const [preview, setPreview] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
+  // Verlaufsansicht (siehe HISTORY_LIMIT oben): ein Eintrag pro Runde
+  // (advance/fast-forward) bzw. pro aufgeloestem Dilemma, neueste zuerst.
+  const [history, setHistory] = useState([]);
+
+  function pushHistoryEntry(entry) {
+    setHistory((prev) => [entry, ...prev].slice(0, HISTORY_LIMIT));
+  }
 
   const dilemmaPending = Boolean(session?.pending_dilemma);
   const gameOver = Boolean(session && session.status !== "active");
@@ -101,6 +116,7 @@ export default function App() {
       setAttributions([]);
       setElectionResult(null);
       setSelectedPolicies([]);
+      setHistory([]);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -119,6 +135,14 @@ export default function App() {
       setAttributions(result.attributions);
       setElectionResult(result.election_result);
       setSelectedPolicies([]);
+      pushHistoryEntry({
+        kind: "advance",
+        turn: result.state.turn,
+        events: result.events,
+        attributions: result.attributions,
+        election: result.election_result,
+        dilemmaTriggered: result.pending_dilemma !== null,
+      });
     } catch (e) {
       setError(e.message);
     } finally {
@@ -138,8 +162,17 @@ export default function App() {
     setLoading(true);
     try {
       let result = null;
+      const skippedEntries = [];
       for (let i = 0; i < FAST_FORWARD_SAFETY_CAP; i++) {
         result = await api.advanceTurn(session.session_id, []);
+        skippedEntries.push({
+          kind: "advance",
+          turn: result.state.turn,
+          events: result.events,
+          attributions: result.attributions,
+          election: result.election_result,
+          dilemmaTriggered: result.pending_dilemma !== null,
+        });
         const shouldStop =
           result.events.length > 0 ||
           result.election_result !== null ||
@@ -152,6 +185,9 @@ export default function App() {
       setAttributions(result.attributions);
       setElectionResult(result.election_result);
       setSelectedPolicies([]);
+      // Vorspulen kann mehrere Runden ueberspringen -- JEDE davon bekommt
+      // einen eigenen Verlaufseintrag (neueste zuerst), nicht nur die letzte.
+      setHistory((prev) => [...skippedEntries.reverse(), ...prev].slice(0, HISTORY_LIMIT));
     } catch (e) {
       setError(e.message);
     } finally {
@@ -171,6 +207,13 @@ export default function App() {
       setAttributions(result.attributions);
       setEvents([]);
       setElectionResult(null);
+      pushHistoryEntry({
+        kind: "dilemma",
+        turn: result.state.turn,
+        optionKey,
+        events: [],
+        attributions: result.attributions,
+      });
     } catch (e) {
       setError(e.message);
     } finally {
@@ -373,6 +416,49 @@ export default function App() {
                   <li key={i}>
                     {attributionLabel(a.source)}: {a.statistic_key} {a.delta > 0 ? "+" : ""}
                     {a.delta.toFixed(2)}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {history.length > 0 && (
+            <section className="panel history">
+              <h2>Verlauf</h2>
+              <ul className="history-list">
+                {history.map((entry, i) => (
+                  <li key={i}>
+                    {entry.kind === "dilemma" ? (
+                      <>
+                        <strong>Runde {entry.turn} &mdash; Dilemma aufgeloest:</strong> {entry.optionKey}
+                      </>
+                    ) : (
+                      <>
+                        <strong>Runde {entry.turn}</strong>
+                        {entry.election && (
+                          <> &mdash; Wahl {entry.election.won ? "gewonnen" : "verloren"} (
+                          {entry.election.approval.toFixed(1)}/{entry.election.threshold.toFixed(1)})</>
+                        )}
+                        {entry.dilemmaTriggered && <> &mdash; Dilemma ausgeloest</>}
+                      </>
+                    )}
+                    {entry.events.length > 0 && (
+                      <ul className="history-sub">
+                        {entry.events.map((text, j) => (
+                          <li key={j}>{text}</li>
+                        ))}
+                      </ul>
+                    )}
+                    {entry.attributions.length > 0 && (
+                      <ul className="history-sub">
+                        {entry.attributions.map((a, j) => (
+                          <li key={j}>
+                            {attributionLabel(a.source)}: {a.statistic_key} {a.delta > 0 ? "+" : ""}
+                            {a.delta.toFixed(2)}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </li>
                 ))}
               </ul>

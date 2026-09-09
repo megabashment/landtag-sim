@@ -109,11 +109,15 @@ cp .env.example .env
 npm run dev
 ```
 
-### Alles zusammen mit Docker
+### Backend + Datenbank mit Docker
 
 ```bash
 docker compose up --build
 ```
+
+Startet nur `db` und `backend` (kein Frontend-Service in
+`docker-compose.yml`) -- das Frontend weiterhin separat per `npm run dev`
+starten.
 
 ### Schnellstart per Skript (Windows/PowerShell)
 
@@ -134,6 +138,13 @@ einem eigenen Fenster und oeffnet den Browser:
 - `POST /sessions/{id}/advance` -- Runde beenden, optional neue Policies einfuehren (`{"enact_policy_keys": [...]}`); Response enthaelt Attributionen und ggf. ein Wahlergebnis. Schlaegt fehl, wenn eine Policy-Voraussetzung fehlt (siehe `Policy.requires`) oder ein Dilemma noch offen ist
 - `POST /sessions/{id}/resolve-dilemma` -- offenes Dilemma mit einer gewaehlten Option aufloesen (`{"option_key": "..."}`); zaehlt keine eigene Runde
 - `GET /policies` -- dynamischer Policy-Katalog (Name, Kosten, Effekte, Voraussetzungen), session-unabhaengig; loest die vorherige hart codierte Kopie im Frontend ab
+
+Alle Endpunkte sind seit dem Doku-Audit 2026-09-09 durch eine eigene
+Backend-Testsuite (`backend/tests/`, 24 Tests gegen eine separate Test-DB)
+abgedeckt, nicht mehr nur manuell per curl -- siehe CLAUDE.md
+Verifikations-Workflow fuer das einmalige Test-DB-Setup. Das Frontend
+zeigt ausserdem eine Verlaufsansicht ueber alle gespielten Runden statt nur
+der letzten (`App.jsx`, Sektion "Verlauf").
 
 ## Naechste Schritte fuer die Spielmechanik
 
@@ -157,10 +168,14 @@ Punkt direkt dort.
   (Roadmap Punkt 10) findet aktuell **keine** dominante Policy mehr (vorher
   war `bildungsoffensive` in 100% der Top-Szenarien vertreten -- behoben
   durch einen staerkeren `gdp_growth`-Trade-off und eine vierte, unabhaengige
-  Policy `gesundheitsreform`). Offen bleibt: die Dreier-Kombination
-  `bildungsoffensive+steuersenkung_mittelstand+gesundheitsreform` rutscht im
-  Balance-Runner mit `BUDGET_NEGATIV` ins Minus -- Upkeep-Kosten bei
-  Drei-Policy-Kombinationen sind noch nicht gegengeprueft.
+  Policy `gesundheitsreform`). Die zuvor als `BUDGET_NEGATIV` markierte
+  Dreier-Kombination `bildungsoffensive+steuersenkung_mittelstand+
+  gesundheitsreform` ist ebenfalls behoben -- Ursache war kein
+  Upkeep-Tuning-Problem, sondern dass das Budget ueberhaupt nie eine
+  Einnahmequelle hatte (siehe `BASE_BUDGET_INCOME_PER_TURN` in
+  `sim/landtag_sim/engine.py` und `mistakes.md`). Es gibt weiterhin keine
+  Policy-Repeal-Mechanik -- eine einmal eingefuehrte Policy laeuft (und
+  kostet Upkeep) unbegrenzt weiter.
 - Es gibt jetzt drei Dilemmas (`arbeitsmarktkrise`, `rezession`,
   `pflegeausbau`) statt nur einem, an unterschiedliche Statistiken gekoppelt.
   Die meisten urspruenglichen Event-/Dilemma-Schwellenwerte

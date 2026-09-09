@@ -70,6 +70,20 @@ SATISFACTION_MIN, SATISFACTION_MAX = 0.0, 100.0
 CAPITAL_PER_TURN = 3.0
 CAPITAL_CAP = 10.0
 
+# Nach-P2-Nachschaerfung (Balance-Audit 2026-09-09, siehe mistakes.md
+# "Budget hatte nie eine Einnahmequelle"): das Budget kannte bis hierhin NUR
+# Ausgaben (one_time_cost, upkeep_cost, Dilemma-budget_cost) und NIE eine
+# Einnahme -- ohne Policy-Repeal-Mechanik (gibt es bewusst noch nicht)
+# bedeutete das: JEDE aktive Policy mit upkeep_cost>0 drainiert das feste
+# Start-Budget unaufhaltsam, unabhaengig von guter Politik. Eine simple,
+# konstante Grundeinnahme (Landeshaushalt-Basissteuereinnahme, unabhaengig
+# von Policies/Statistiken -- ein echtes Steuersatz-System ist bewusst
+# ausserhalb des MVP-Scopes) laesst 1-2 gleichzeitig aktive Policies
+# langfristig tragbar bleiben, waehrend 3-4 gleichzeitig weiterhin spuerbar
+# Budget kosten (siehe test_no_dominant_policy_among_current_sample_policies
+# in test_balance_runner.py, das den BUDGET_NEGATIV-Fall miterfasst).
+BASE_BUDGET_INCOME_PER_TURN = 15.0
+
 # Wahlmechanik: Schwellenwert fuer die gewichtete Durchschnittszufriedenheit,
 # ab dem eine Wahl gewonnen ist, und Laenge des naechsten Zyklus nach einer
 # Wahl (Wiederwahl moeglich -- das Spiel endet nicht hart bei LOST, siehe
@@ -195,6 +209,7 @@ def advance_turn(
     new_state.turn += 1
 
     new_state.political_capital = min(CAPITAL_CAP, new_state.political_capital + CAPITAL_PER_TURN)
+    new_state.budget += BASE_BUDGET_INCOME_PER_TURN
 
     required_capital = sum(
         (_policy_by_key(policy_catalog, key).capital_cost if _policy_by_key(policy_catalog, key) else 0.0)

@@ -2,7 +2,7 @@ import random
 
 import pytest
 
-from landtag_sim.engine import advance_turn, resolve_dilemma
+from landtag_sim.engine import BASE_BUDGET_INCOME_PER_TURN, advance_turn, resolve_dilemma
 from landtag_sim.models import (
     DilemmaOption,
     DilemmaPendingError,
@@ -520,3 +520,46 @@ def test_voter_group_shares_deliberately_overlap():
     assert total_share > 1.0
     names = {g.name for g in SAMPLE_VOTER_GROUPS}
     assert {"Umweltbewusste Waehler", "Junge Familien"} <= names
+
+
+def test_budget_has_a_baseline_income_without_any_active_policy():
+    """Regressionstest fuer die Balance-Nachschaerfung 'Budget hatte nie eine
+    Einnahmequelle' (siehe mistakes.md): das Budget kannte bisher nur
+    Ausgaben (one_time_cost, upkeep_cost, Dilemma-budget_cost) -- ohne
+    Repeal-Mechanik driftete JEDE Policy mit upkeep_cost>0 das feste
+    Start-Budget unaufhaltsam ins Minus, unabhaengig von der Qualitaet der
+    Politik. Haelt fest, dass eine Runde ohne jede Ausgabe das Budget um
+    genau BASE_BUDGET_INCOME_PER_TURN erhoeht (Landeshaushalt-
+    Grundeinnahme, siehe engine.py)."""
+    state = build_initial_state()
+    result = advance_turn(state, SAMPLE_POLICIES, [])
+    assert result.state.budget == pytest.approx(state.budget + BASE_BUDGET_INCOME_PER_TURN)
+
+
+def test_three_policy_combination_no_longer_goes_budget_negative():
+    """Regressionstest fuer denselben Fix: die zuvor in CLAUDE.md/mistakes.md
+    als BUDGET_NEGATIV dokumentierte Dreier-Kombination (bildungsoffensive+
+    steuersenkung_mittelstand+gesundheitsreform, -345 Budget nach 30 Runden
+    OHNE Grundeinnahme) bleibt jetzt ueber einen vollen Wahlzyklus im
+    Plus -- inklusive des staerksten Dilemma-Optionskosten-Falls (siehe
+    balance_runner.py::run_scenario, das immer die erste/teuerste Option
+    waehlt)."""
+    state = build_initial_state()
+    result = advance_turn(
+        state,
+        SAMPLE_POLICIES,
+        [],
+        newly_enacted_keys=["bildungsoffensive", "steuersenkung_mittelstand"],
+        dilemma_rules=SAMPLE_DILEMMA_RULES,
+    )
+    state = result.state
+    result = advance_turn(state, SAMPLE_POLICIES, [], newly_enacted_keys=["gesundheitsreform"], dilemma_rules=SAMPLE_DILEMMA_RULES)
+    state = result.state
+    for _ in range(30):
+        if state.pending_dilemma is not None:
+            result = resolve_dilemma(state, SAMPLE_DILEMMA_RULES, state.pending_dilemma.options[0].key)
+            state = result.state
+            continue
+        result = advance_turn(state, SAMPLE_POLICIES, [], dilemma_rules=SAMPLE_DILEMMA_RULES)
+        state = result.state
+    assert state.budget >= 0

@@ -428,3 +428,101 @@ kuenftige neue Event-/Dilemma-Regeln IMMER gegen die tatsaechlich
 verfuegbaren Policy-Effekte auf Erreichbarkeit geprueft werden (nicht nur
 auf Schema-Validitaet), sonst haeufen sich weitere "totgeborene" Regeln wie
 `arbeitsmarktkrise`.
+
+## Budget hatte nie eine Einnahmequelle -- "BUDGET_NEGATIV" war kein Upkeep-Tuning-Problem
+
+**Wo:** Doku-Audit nach der P2-Balance-Nachschaerfung (siehe vorheriger
+Eintrag), `sim/landtag_sim/engine.py::advance_turn`.
+
+**Was:** `advance_turn()` zog fuer `one_time_cost`, `upkeep_cost` und
+Dilemma-`budget_cost` jeweils vom Budget ab (`engine.py`, drei Stellen),
+aber addierte an KEINER Stelle je etwas dazu. Zusaetzlich gibt es keine
+Moeglichkeit, eine einmal eingefuehrte Policy wieder zu entfernen (kein
+Repeal-Mechanismus) -- ihr `upkeep_cost` laeuft also garantiert bis in
+alle Ewigkeit weiter. Das feste Start-Budget (1000.0) war damit strukturell
+ein reines Verbrauchsguthaben: JEDE Policy-Kombination mit
+`upkeep_cost > 0` musste bei genug Runden zwangslaeufig irgendwann negativ
+werden -- eine Frage der Zeit, nicht der Politik-Qualitaet. Der
+Balance-Runner meldete das fuer die Dreier-Kombination
+`bildungsoffensive+steuersenkung_mittelstand+gesundheitsreform` als
+`BUDGET_NEGATIV` (-345 nach 30 Runden), was beim ersten Lesen wie ein
+gewoehnliches Upkeep-Tuning-Problem dieser spezifischen Kombination aussah.
+
+**Gefunden:** Bei einem vollstaendigen Doku-vs-Code-Audit (User-Auftrag
+"Abgleich von Doku und aktuellem Stand") wurde `engine.py` gezielt nach
+allen Stellen durchsucht, die `budget` veraendern (`grep -n "budget"`) --
+es gab ausschliesslich `-=`-Zuweisungen, keine einzige `+=`. Damit war klar,
+dass das Problem strukturell und nicht auf die eine gemeldete Kombination
+beschraenkt war (jede Kombination mit genug Runden waere irgendwann
+betroffen gewesen, nur eben spaeter).
+
+**Fix:** Eine konstante Grundeinnahme pro Runde eingefuehrt
+(`BASE_BUDGET_INCOME_PER_TURN = 15.0`, analog zu `CAPITAL_PER_TURN` fuer
+Political Capital), angewendet in `advance_turn()` VOR den
+Ausgaben-Abzuegen. Bewusst als einfache Konstante, kein echtes
+Steuersatz-/GDP-gekoppeltes Einnahmesystem (waere ein groesseres Feature,
+siehe Democracy-4-Vorbild "Fixed Income Rewrite", Quelle in
+architecture.md) -- der Wert wurde so gewaehlt, dass 1-2 gleichzeitig
+aktive Policies langfristig tragbar sind, waehrend 3-4 gleichzeitig
+weiterhin spuerbar Budget kosten (per Balance-Runner nachgeprueft: die
+vorher negative Dreier-Kombination liegt jetzt bei +105 nach 30 Runden).
+Regressionstests: `test_budget_has_a_baseline_income_without_any_active_
+policy`, `test_three_policy_combination_no_longer_goes_budget_negative`
+(`sim/tests/test_engine.py`).
+
+**Lehre:** Ein Balance-Runner-Flag wie `BUDGET_NEGATIV` an einer einzelnen
+Kombination zuerst wie ein Tuning-Problem DIESER Kombination zu behandeln,
+ist der falsche Reflex -- wie schon beim "Free Lunch"-Bug (siehe oben)
+lohnt sich zuerst die Frage, ob die Ursache strukturell ist (hier: eine
+komplett fehlende Ressourcen-Zufuhr) statt nur numerisch. Ein `grep` nach
+allen Schreibzugriffen auf eine Ressource (`budget`, `political_capital`,
+...) ist ein schneller Weg, "nur Ausgaben, nie Einnahmen"-Luecken zu
+finden, bevor man einzelne Policy-Zahlen dreht.
+
+## Erster Backend-API-Testlauf: Dilemma-Test flackerte wegen ungeseedetem Start-Jitter
+
+**Wo:** Erstes Anlegen einer echten Backend-API-Testsuite (`backend/tests/
+test_dilemma.py`), Doku-Audit-Nachschaerfung 2026-09-09.
+
+**Was:** Ein Test liess per `POST /sessions` + `gesundheitsreform`
+einfuehren gezielt das Dilemma `pflegeausbau` feuern (in Anlehnung an die
+bereits deterministische sim-Ebene, siehe
+`test_pflegeausbau_dilemma_is_reachable_via_sample_policies`) und loeste es
+danach explizit mit der Options-Key `"budget_schonen"` auf. Der Test war
+beim ersten vollen Testlauf gruen, schlug aber bei einem zweiten Lauf mit
+`resolve-dilemma -> 400` fehl. Ursache: `POST /sessions` nutzt
+`jittered_starting_statistics()` OHNE festen Seed
+(`app/api/routes_game.py::create_session` ruft die Funktion ohne
+`rng`-Argument auf, sim/landtag_sim/sample_data.py erzeugt dann intern
+`random.Random()` mit Betriebssystem-Entropie) -- jede echte Session startet
+also mit echten Zufallswerten. Bei ungluecklichem Jitter (z.B. `gdp_growth`
+zufaellig schon niedrig) feuerte gelegentlich `rezession` statt
+`pflegeausbau` zuerst, wodurch die hart codierte Options-Key
+`"budget_schonen"` (die nur bei `pflegeausbau` existiert) nicht zur
+tatsaechlich offenen Dilemma-Regel passte.
+
+**Gefunden:** Test lokal 5x hintereinander laufen lassen (Standard-
+Vorgehen fuer neue Tests, die auf echten, nicht geseedeten Zufallssessions
+basieren) -- beim zweiten Lauf schlug er fehl.
+
+**Fix:** Test umgeschrieben, um NICHT anzunehmen, welches konkrete Dilemma
+feuert -- stattdessen wird das erstbeste ausgeloeste Dilemma generisch
+akzeptiert (`rule_key in {"arbeitsmarktkrise", "rezession",
+"pflegeausbau"}`) und mit seiner EIGENEN ersten Options-Key aufgeloest
+(`pending["options"][0]["key"]`), nicht mit einer hart codierten. `sim/
+tests/test_engine.py` bleibt bewusst deterministisch (nutzt
+`build_initial_state()` statt Jitter) und darf weiterhin exakte
+Rule-Keys pruefen -- das ist der richtige Ort fuer "genau DIESES Dilemma
+feuert ueber genau DIESE Policy"-Tests. Backend-API-Tests gegen echte
+Sessions (`POST /sessions`) muessen dagegen mit dem Start-Jitter als
+Feature rechnen, nicht als Stoerfaktor.
+
+**Lehre:** Ein neuer Test, der auf mehreren Zufallsrunden basiert (hier:
+`advance_turn` bis ein Dilemma feuert, mit echten, gejitterten
+Startwerten), IMMER mehrfach hintereinander laufen lassen, bevor er als
+verlaesslich gilt -- ein einzelner gruener Lauf beweist nichts bei
+nicht-deterministischem Input. Allgemeiner: sim-Tests und Backend-API-Tests
+haben unterschiedliche Determinismus-Anforderungen (sim/tests fixiert
+bewusst den Zufall, Backend-Tests gegen die echte API bekommen ihn "kostenlos"
+mitgeliefert) -- das beim Testdesign von Anfang an einplanen, nicht erst
+nach dem ersten Flake.

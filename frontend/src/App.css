@@ -163,3 +163,35 @@ button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* Nach-P2-Nachschaerfung "Frontend hat keine Verlaufsansicht" (Doku-Audit
+   2026-09-09, siehe mistakes.md/CLAUDE.md): kompakte, scrollbare Liste
+   vergangener Runden statt nur der letzten. */
+.history {
+  margin-top: 1rem;
+  background: #f7f7fa;
+  border-color: #d8d8e0;
+}
+
+.history-list {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.history-list > li {
+  display: block;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #e4e4ea;
+}
+
+.history-sub {
+  margin: 0.25rem 0 0 1rem;
+  font-size: 0.85rem;
+  color: #444;
+}
+
+.history-sub li {
+  display: block;
+  border-bottom: none;
+  padding: 0.1rem 0;
+}
