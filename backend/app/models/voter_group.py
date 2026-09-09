@@ -25,3 +25,10 @@ class VoterGroup(SQLModel, table=True):
     weight_economy: float = Field(default=1.0)
     weight_social: float = Field(default=1.0)
     weight_environment: float = Field(default=1.0)
+
+    # P2-Punkt "Zufriedenheits-Momentum/Glaettung" (docs/game-design-roadmap.md):
+    # gleitender Durchschnitt der Zufriedenheitsreaktion, siehe
+    # sim/landtag_sim/models.py::VoterGroup / engine.py::_apply_reaction.
+    # Muss ueber Restarts hinweg persistiert werden, sonst "vergisst" eine
+    # Session bei jedem Neuladen den nachklingenden Ueberhang.
+    satisfaction_momentum: float = Field(default=0.0)

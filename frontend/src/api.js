@@ -16,6 +16,10 @@ async function request(path, options) {
 }
 
 export const api = {
+  // Dynamischer Policy-Katalog (siehe backend/app/api/routes_game.py::
+  // list_policies) -- ersetzt die zuvor hart codierte AVAILABLE_POLICIES-
+  // Konstante in App.jsx.
+  listPolicies: () => request("/policies"),
   createSession: () => request("/sessions", { method: "POST" }),
   getSession: (id) => request(`/sessions/${id}`),
   advanceTurn: (id, enactPolicyKeys) =>

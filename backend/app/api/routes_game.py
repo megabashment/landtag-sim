@@ -13,6 +13,8 @@ from app.schemas.game import (
     DilemmaOptionOut,
     ElectionResultOut,
     PendingDilemmaOut,
+    PolicyEffectOut,
+    PolicyOut,
     PreviewRequest,
     PreviewResponse,
     ResolveDilemmaRequest,
@@ -30,9 +32,36 @@ from app.sim_bridge import (
 )
 from landtag_sim.engine import advance_turn, resolve_dilemma
 from landtag_sim.models import DilemmaPendingError, InsufficientCapitalError, UnmetPrerequisiteError
-from landtag_sim.sample_data import SAMPLE_VOTER_GROUPS, STARTING_STATISTICS
+from landtag_sim.sample_data import SAMPLE_VOTER_GROUPS, jittered_starting_statistics
 
 router = APIRouter(tags=["game"])
+
+
+@router.get("/policies", response_model=list[PolicyOut])
+def list_policies(db: Session = Depends(get_session)) -> list[PolicyOut]:
+    """Dynamischer Policy-Katalog (behebt eine in README.md/CLAUDE.md
+    dokumentierte 'Bekannte Vereinfachung'): das Frontend hatte bisher eine
+    hart codierte Kopie von sample_data.py::SAMPLE_POLICIES
+    (AVAILABLE_POLICIES in App.jsx), die von Hand synchron gehalten werden
+    musste. Seeds laufen hier genauso wie in create_session, damit der
+    Katalog auch VOR der ersten Session abrufbar ist (z.B. fuer eine
+    zukuenftige Startseite mit Policy-Uebersicht)."""
+    run_all_seeds(db)
+    rows = db.exec(select(PolicyDefinition)).all()
+    return [
+        PolicyOut(
+            key=row.key,
+            name=row.name,
+            description=row.description,
+            category=row.category,
+            one_time_cost=row.one_time_cost,
+            upkeep_cost=row.upkeep_cost,
+            capital_cost=row.capital_cost,
+            effects=[PolicyEffectOut(**effect) for effect in row.effects],
+            requires=list(row.requires),
+        )
+        for row in rows
+    ]
 
 
 @router.post("/sessions", response_model=CreateSessionResponse)
@@ -45,7 +74,11 @@ def create_session(db: Session = Depends(get_session)) -> CreateSessionResponse:
     db.commit()
     db.refresh(session)
 
-    for stat_key, value in STARTING_STATISTICS.items():
+    # P2-Punkt "Randomisierte Startbedingungen" (docs/game-design-roadmap.md):
+    # kleine Zufallsstreuung pro echter Session, damit nicht jede Partie mit
+    # exakt identischen Zahlen beginnt. Tests/Balance-Runner nutzen bewusst
+    # weiterhin die unrandomisierte build_initial_state()/STARTING_STATISTICS.
+    for stat_key, value in jittered_starting_statistics().items():
         db.add(StatisticValue(session_id=session.id, statistic_key=stat_key, turn_number=0, value=value))
 
     for vg in SAMPLE_VOTER_GROUPS:

@@ -1,3 +1,5 @@
+import random
+
 import pytest
 
 from landtag_sim.engine import advance_turn, resolve_dilemma
@@ -15,8 +17,12 @@ from landtag_sim.sample_data import (
     SAMPLE_DILEMMA_RULES,
     SAMPLE_EVENT_RULES,
     SAMPLE_POLICIES,
+    SAMPLE_VOTER_GROUPS,
+    STARTING_STATISTICS,
     build_initial_state,
+    jittered_starting_statistics,
 )
+from landtag_sim.vignettes import VIGNETTE_POOL, pick_vignette, with_vignette
 
 
 def test_advance_turn_increments_turn_counter():
@@ -319,3 +325,198 @@ def test_resolve_dilemma_feeds_satisfaction_reaction():
 def test_sample_dilemma_rules_are_well_formed():
     for rule in SAMPLE_DILEMMA_RULES:
         assert len(rule.options) >= 2, f"Dilemma '{rule.key}' braucht mindestens zwei echte Optionen"
+
+
+# --- P2: Namens-Vignetten -------------------------------------------------
+
+
+def test_pick_vignette_is_deterministic_for_same_seed():
+    first = pick_vignette("economy", "arbeitsmarktkrise:5")
+    second = pick_vignette("economy", "arbeitsmarktkrise:5")
+    assert first == second
+
+
+def test_pick_vignette_returns_none_for_unknown_category():
+    assert pick_vignette("unknown_category", "irgendwas:1") is None
+
+
+def test_with_vignette_appends_a_pool_entry():
+    text = with_vignette("Basistext.", "social", "seed:1")
+    assert text.startswith("Basistext. ")
+    assert any(text.endswith(vignette) for vignette in VIGNETTE_POOL["social"])
+
+
+def test_event_text_gets_a_vignette_appended():
+    state = build_initial_state()
+    state.statistics["unemployment_rate"] = 20.0
+    rule = EventRule(
+        key="hohe_arbeitslosigkeit",  # gleicher Key wie in SAMPLE_EVENT_RULES -> statistic_key ist bekannt
+        statistic_key="unemployment_rate",
+        operator=">",
+        threshold=9.0,
+        template_text="Arbeitslosigkeit bei {value:.1f}%",
+        cooldown_turns=3,
+    )
+    result = advance_turn(state, [], [rule])
+    assert len(result.events) == 1
+    assert any(vignette in result.events[0] for vignette in VIGNETTE_POOL["economy"])
+
+
+def test_dilemma_prompt_gets_a_vignette_appended():
+    state = build_initial_state()
+    state.statistics["unemployment_rate"] = 20.0
+    rule = _make_test_dilemma()
+    result = advance_turn(state, [], [], dilemma_rules=[rule])
+    assert any(vignette in result.pending_dilemma.prompt for vignette in VIGNETTE_POOL["economy"])
+
+
+# --- P2: Zufriedenheits-Momentum/Glaettung --------------------------------
+
+
+def test_satisfaction_momentum_smooths_a_single_large_shock_over_multiple_turns():
+    """Eine einzelne grosse Reaktion darf sich nicht sofort vollstaendig in
+    der Zufriedenheit niederschlagen, sondern klingt ueber mehrere Runden
+    nach (EMA statt Direktanwendung, siehe engine.py::_apply_reaction)."""
+    state = build_initial_state()
+    bad_policy = Policy(
+        key="test_shock",
+        name="Schock-Test",
+        effects=[PolicyEffect(statistic_key="unemployment_rate", magnitude=20.0, delay_turns=0, inertia=1)],
+    )
+    result1 = advance_turn(state, [bad_policy], [], newly_enacted_keys=["test_shock"])
+    group1 = result1.state.voter_groups[0]
+    assert group1.satisfaction_momentum != 0.0
+    # Nach dem Schock (keine weiteren Policies/Events) klingt der Ueberhang
+    # weiter nach -- Zufriedenheit bewegt sich in Runde 2 immer noch in
+    # dieselbe Richtung, weil satisfaction_momentum nicht schlagartig auf 0 faellt.
+    result2 = advance_turn(result1.state, [], [])
+    group2 = result2.state.voter_groups[0]
+    assert group2.satisfaction < group1.satisfaction  # Arbeitslosigkeit senkt Zufriedenheit weiter
+    assert group2.satisfaction_momentum != 0.0
+
+
+def test_satisfaction_momentum_field_defaults_to_zero_for_fresh_state():
+    state = build_initial_state()
+    assert all(group.satisfaction_momentum == 0.0 for group in state.voter_groups)
+
+
+# --- P2: Randomisierte Startbedingungen -----------------------------------
+
+
+def test_jittered_starting_statistics_stays_within_spread_bounds():
+    rng = random.Random(42)
+    jittered = jittered_starting_statistics(rng, spread=0.05)
+    for key, base_value in STARTING_STATISTICS.items():
+        lower, upper = sorted((base_value * 0.95, base_value * 1.05))
+        assert lower <= jittered[key] <= upper
+
+
+def test_jittered_starting_statistics_is_reproducible_with_seeded_rng():
+    jittered_a = jittered_starting_statistics(random.Random(7))
+    jittered_b = jittered_starting_statistics(random.Random(7))
+    assert jittered_a == jittered_b
+
+
+def test_jittered_starting_statistics_differs_from_base_with_high_probability():
+    rng = random.Random(123)
+    jittered = jittered_starting_statistics(rng, spread=0.05)
+    assert any(jittered[key] != base for key, base in STARTING_STATISTICS.items())
+
+
+# --- Nach-P2: Balance-Nachschaerfung (Dominante-Strategie-Check, Roadmap #10) ---
+
+
+def test_every_starting_statistic_is_touched_by_at_least_one_policy():
+    """Regressionstest: healthcare_quality war lange die einzige Statistik
+    ohne jede Policy-Anbindung (nur passiv wahlrelevant ueber
+    weight_social, nie aktiv beeinflussbar) -- seit 'gesundheitsreform'
+    geschlossen. Haelt fest, dass keine neu hinzugefuegte Statistik denselben
+    toten Winkel wiederholt."""
+    touched = {effect.statistic_key for policy in SAMPLE_POLICIES for effect in policy.effects}
+    untouched = set(STARTING_STATISTICS) - touched
+    assert not untouched, f"Statistiken ohne jede Policy-Wirkung: {untouched}"
+
+
+def test_bildungsoffensive_has_a_genuine_net_negative_economy_tradeoff():
+    """Regressionstest fuer die Balance-Nachschaerfung: bildungsoffensive
+    hatte urspruenglich einen zu schwachen gdp_growth-Effekt (-0.4), der von
+    ihrem EIGENEN unemployment_rate-Vorteil in derselben Kategorie
+    ("economy") ueberkompensiert wurde -- macht die Policy im Aggregat zu
+    einem Free Lunch ohne echten Zielkonflikt, obwohl sie technisch die
+    Trade-off-Pflicht erfuellte (siehe test_every_sample_policy_has_at_least_
+    one_negative_effect, der nur EINEN negativen Effekt prueft, nicht die
+    Netto-Bilanz pro Kategorie). Nach dem Fix (-2.4) muss die Summe der
+    wirtschaftsbezogenen Attributionen ueber genug Runden netto negativ sein.
+    Vorzeichen-Konvention wie in engine.py::_STAT_DIRECTION: niedrigere
+    Arbeitslosigkeit ist gut (Richtung -1), hoeheres Wachstum ist gut
+    (Richtung +1)."""
+    state = build_initial_state()
+    result = advance_turn(state, SAMPLE_POLICIES, [], newly_enacted_keys=["bildungsoffensive"])
+    state = result.state
+    economy_net = 0.0
+    for _ in range(20):
+        result = advance_turn(state, SAMPLE_POLICIES, [])
+        state = result.state
+        for a in result.attributions:
+            if a.statistic_key == "unemployment_rate":
+                economy_net += a.delta * -1.0
+            elif a.statistic_key == "gdp_growth":
+                economy_net += a.delta * 1.0
+    assert economy_net < 0
+
+
+def test_rezession_dilemma_is_reachable_via_sample_policies():
+    """Regressionstest fuer die 'mehr Dilemma-Inhalte'-Nachschaerfung
+    (Roadmap Punkt 3): das einzige bisherige Dilemma (arbeitsmarktkrise) hat
+    einen praktisch unerreichbaren Schwellenwert im normalen Spielverlauf
+    (siehe mistakes.md). Das neue 'rezession'-Dilemma (gdp_growth < 0.0) soll
+    dagegen organisch ueber bildungsoffensives verstaerkten Wachstums-
+    Trade-off (-2.4, siehe test_bildungsoffensive_has_a_genuine_net_negative_
+    economy_tradeoff) erreichbar sein -- ohne manuelle Statistik-Manipulation."""
+    state = build_initial_state()
+    result = advance_turn(
+        state, SAMPLE_POLICIES, [], newly_enacted_keys=["bildungsoffensive"], dilemma_rules=SAMPLE_DILEMMA_RULES
+    )
+    state = result.state
+    for _ in range(20):
+        if result.pending_dilemma is not None:
+            break
+        result = advance_turn(state, SAMPLE_POLICIES, [], dilemma_rules=SAMPLE_DILEMMA_RULES)
+        state = result.state
+    assert result.pending_dilemma is not None
+    assert result.pending_dilemma.rule_key == "rezession"
+
+
+def test_pflegeausbau_dilemma_is_reachable_via_sample_policies():
+    """Analog zu test_rezession_dilemma_is_reachable_via_sample_policies,
+    aber fuer das zweite neue Dilemma (healthcare_quality > 68.0, ein
+    Chancen- statt Krisen-Dilemma) -- ausgeloest durch gesundheitsreform,
+    die vierte, unabhaengige Policy aus der Balance-Nachschaerfung (siehe
+    test_no_dominant_policy_among_current_sample_policies)."""
+    state = build_initial_state()
+    result = advance_turn(
+        state, SAMPLE_POLICIES, [], newly_enacted_keys=["gesundheitsreform"], dilemma_rules=SAMPLE_DILEMMA_RULES
+    )
+    state = result.state
+    for _ in range(20):
+        if result.pending_dilemma is not None:
+            break
+        result = advance_turn(state, SAMPLE_POLICIES, [], dilemma_rules=SAMPLE_DILEMMA_RULES)
+        state = result.state
+    assert result.pending_dilemma is not None
+    assert result.pending_dilemma.rule_key == "pflegeausbau"
+
+
+def test_voter_group_shares_deliberately_overlap():
+    """Regressionstest fuer die 'ueberlappende Waehlergruppen'-Nachschaerfung
+    (README.md 'Bekannte Vereinfachungen'): die vier urspruenglichen Gruppen
+    sind exklusiv (Summe exakt 1.0), aber 'Umweltbewusste Waehler' und
+    'Junge Familien' sind bewusst querliegende Identitaetsgruppen, die mit
+    den vieren ueberlappen. Haelt fest, dass die Gesamtsumme > 1.0 ist --
+    ein Merge, der das versehentlich wieder auf 1.0 normalisiert, faellt
+    hierueber auf. engine.py::_weighted_approval normalisiert bereits durch
+    total_share, braucht also KEINE Anpassung fuer ueberlappende Anteile."""
+    total_share = sum(g.population_share for g in SAMPLE_VOTER_GROUPS)
+    assert total_share > 1.0
+    names = {g.name for g in SAMPLE_VOTER_GROUPS}
+    assert {"Umweltbewusste Waehler", "Junge Familien"} <= names

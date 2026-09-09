@@ -49,9 +49,10 @@ landtag-sim/
 │   ├── events.py         # Regelbasierte Trigger-Auswertung (passiv, fester Effekt)
 │   ├── dilemmas.py        # Regelbasierte Trigger-Auswertung mit echten Entscheidungsoptionen
 │   ├── templates.py      # Regex-basiertes Text-Rendering (kein LLM)
-│   ├── sample_data.py    # SAMPLE_POLICIES, SAMPLE_EVENT_RULES, SAMPLE_DILEMMA_RULES, SAMPLE_VOTER_GROUPS, STARTING_STATISTICS
-│   └── tools/balance_runner.py  # Headless Szenario-Tester über alle (voraussetzungs-gültigen) Policy-Kombinationen
-├── frontend/src/App.jsx  # Einzelnes Dashboard, hart codierter Policy-Katalog (GET /policies fehlt noch)
+│   ├── vignettes.py       # P2: deterministische Namens-Vignetten (Text-Pool, zlib.crc32-Auswahl)
+│   ├── sample_data.py    # SAMPLE_POLICIES, SAMPLE_EVENT_RULES, SAMPLE_DILEMMA_RULES, SAMPLE_VOTER_GROUPS, STARTING_STATISTICS, jittered_starting_statistics()
+│   └── tools/balance_runner.py  # Headless Szenario-Tester über alle (voraussetzungs-gültigen) Policy-Kombinationen + Dominante-Strategie-Check
+├── frontend/src/App.jsx  # Einzelnes Dashboard, Policy-Katalog per GET /policies (api.listPolicies)
 ├── data/                 # Datenquellen-Doku (Landesamt für Statistik Niedersachsen statt Weltbank/V-Dem, siehe data/README.md)
 └── docs/                 # architecture.md (Game-Director-Review), game-design-roadmap.md (Senior-Game-Designer-Review, 10 gewichtete Vorschläge)
 ```
@@ -100,6 +101,26 @@ landtag-sim/
   `resolve_dilemma()` zählt bewusst KEINE eigene Runde (Political
   Capital/Wahl-Countdown liefen schon in der auslösenden Runde). Backend-
   Endpunkt: `POST /sessions/{id}/resolve-dilemma`.
+- **Namens-Vignetten** (`vignettes.py`): Event-Texte und Dilemma-Prompts
+  bekommen eine kurze, deterministisch ausgewählte fiktive Stimme angehängt
+  (Kategorie über `_STAT_CATEGORY[rule.statistic_key]`). `zlib.crc32` statt
+  `random.choice`/`hash()` — Auswahl bleibt reproduzierbar zwischen Runs.
+- **Zufriedenheits-Momentum** (`VoterGroup.satisfaction_momentum`,
+  `engine.py::_apply_reaction`): die rohe Reaktion einer Runde wird per EMA
+  (`SATISFACTION_MOMENTUM_ALPHA = 0.4`) geglättet, bevor sie auf
+  `satisfaction` wirkt — ein einzelner großer Ausschlag klingt über mehrere
+  Runden nach statt schlagartig zu wirken. Persistiert über
+  `backend/app/models/voter_group.py` + `sim_bridge.py`.
+- **Randomisierte Startbedingungen** (`sample_data.py::
+  jittered_starting_statistics`): echte Sessions (`POST /sessions`) starten
+  mit ±5% Streuung pro Statistik; Tests/Balance-Runner bleiben bei den
+  unrandomisierten `STARTING_STATISTICS`.
+- **Dominante-Strategie-Check** (`balance_runner.py::
+  find_dominant_policies`): markiert Policies, die in >90% der
+  nicht-eingefrorenen Top-Szenarien (nach End-Zufriedenheit) vorkommen.
+  Fand ursprünglich `bildungsoffensive` bei 100% (siehe "Nach-P2-
+  Nachschärfung" unten) — mit dem aktuellen 4-Policy-Katalog liefert der
+  Runner "Keine vermutlich dominante Policy gefunden."
 
 `advance_turn()` gibt ein `TurnResult`-Dataclass zurück (`state`, `events`,
 `attributions`, `election_result`, `pending_dilemma`), **kein Tuple** — bei
@@ -107,31 +128,74 @@ landtag-sim/
 `sim/tests/test_engine.py`, `backend/app/api/routes_game.py`,
 `sim/landtag_sim/tools/balance_runner.py`.
 
-## Aktueller Stand (zuletzt aktualisiert nach P1-Umsetzung)
+## Aktueller Stand (zuletzt aktualisiert nach P2-Umsetzung)
 
-Alle drei P0-Punkte UND alle drei P1-Punkte aus
-`docs/game-design-roadmap.md` sind umgesetzt: Effekt-Vorschau,
-Wahlmechanik/Siegbedingung, Zufriedenheits-Attribution (P0), Dilemma-Events,
-Policy-Voraussetzungen, Fast-Forward (P1). Details und Umsetzungsnotizen
-direkt in der Roadmap-Datei je Punkt.
+Alle 10 Punkte aus `docs/game-design-roadmap.md` sind umgesetzt: Effekt-
+Vorschau, Wahlmechanik/Siegbedingung, Zufriedenheits-Attribution (P0),
+Dilemma-Events, Policy-Voraussetzungen, Fast-Forward (P1), Namens-Vignetten,
+Zufriedenheits-Momentum/Glättung, randomisierte Startbedingungen,
+Dominante-Strategie-Check im Balance-Runner (P2). Details und
+Umsetzungsnotizen direkt in der Roadmap-Datei je Punkt. Es gibt aktuell
+keine offenen Roadmap-Punkte — nächste Schritte wären neue, über die
+Roadmap hinausgehende Ideen (z.B. mehr Dilemma-Inhalte, überlappende
+Wählergruppen, Balance-Tuning, siehe "Bekannte Vereinfachungen" unten).
 
-Offene P2-Punkte (kleinere Verbesserungen, siehe Roadmap für Begründung und
-Quellen): Namens-Vignetten in Event-Texten, Zufriedenheits-Momentum/
-Glättung, randomisierte Startbedingungen, Dominante-Strategie-Check im
-Balance-Runner.
+Zusätzlich (nach P2, außerhalb der Roadmap-Liste) umgesetzt: `GET /policies`
+— dynamischer Policy-Katalog aus der DB (`backend/app/api/routes_game.py::
+list_policies`, `PolicyOut`-Schema), löst die vorherige hart codierte
+`AVAILABLE_POLICIES`-Konstante in `App.jsx` ab. Frontend holt den Katalog
+per `api.listPolicies()` einmalig beim Laden (mittlerweile durch den
+kompletten `sim`- und Backend-Testlauf sowie einen Live-curl-Check
+bestätigt, siehe unten — die frühere "ungetestet übergeben"-Notiz war nur
+für eine Zwischenrunde gültig).
+
+Nach-P2-Nachschärfung (Auftrag "Geh bis zum Ende des Backlogs", 2026-09-09):
+- **Dominante-Strategie behoben**: `bildungsoffensive` war 100% dominant —
+  Ursache war ein zu schwacher `gdp_growth`-Trade-off (-0.4, von ihrem
+  eigenen `unemployment_rate`-Vorteil in derselben Kategorie
+  überkompensiert = "Free Lunch") UND strukturelle Überrepräsentation, weil
+  `steuersenkung_mittelstand` sie via `requires` voraussetzt. Fix: Trade-off
+  auf -2.4 verschärft UND eine vierte, unabhängige Policy
+  (`gesundheitsreform`, kein `requires`) ergänzt, die zugleich eine echte
+  Lücke schließt (`healthcare_quality` hatte zuvor gar keine
+  Policy-Anbindung). Balance-Runner bestätigt jetzt: "Keine vermutlich
+  dominante Policy gefunden." Regressionstests: `test_every_starting_
+  statistic_is_touched_by_at_least_one_policy`, `test_bildungsoffensive_
+  has_a_genuine_net_negative_economy_tradeoff` (`sim/tests/test_engine.py`),
+  `test_no_dominant_policy_among_current_sample_policies`
+  (`sim/tests/test_balance_runner.py`).
+- **Zwei neue Dilemmas**: `rezession` (`gdp_growth < 0.0`, organisch über
+  `bildungsoffensive`s verschärften Trade-off erreichbar) und
+  `pflegeausbau` (`healthcare_quality > 68.0`, ein Chancen- statt
+  Krisen-Dilemma, über `gesundheitsreform` erreichbar). Bewusst so gewählt,
+  dass sie — anders als `arbeitsmarktkrise`s Schwellenwert — ohne manuelle
+  Statistik-Manipulation im normalen Spielverlauf erreichbar sind (siehe
+  Reachability-Analyse in `mistakes.md`). Live per curl gegen `/advance`
+  verifiziert (Dilemma feuert organisch, `resolve-dilemma` funktioniert).
+  Regressionstests: `test_rezession_dilemma_is_reachable_via_sample_
+  policies`, `test_pflegeausbau_dilemma_is_reachable_via_sample_policies`.
+- **Überlappende Wählergruppen**: zwei neue, bewusst querliegende Gruppen
+  (`Umweltbewusste Wähler`, `Junge Familien`) zu `SAMPLE_VOTER_GROUPS`
+  hinzugefügt — überlappen absichtlich mit den vier exklusiven
+  Basis-Gruppen (Summe `population_share` jetzt >1.0 statt exakt 1.0).
+  Reine Datenänderung, keine Engine-/Schema-Änderung nötig, da
+  `engine.py::_weighted_approval` schon durch `total_share` normalisiert.
+  Regressionstest: `test_voter_group_shares_deliberately_overlap`.
 
 Bekannte, bewusst offene Vereinfachungen:
-- Wählergruppen sind exklusiv (keine Überlappung) — Democracys
-  Kernmechanik braucht überlappende Fraktionen, siehe Game-Director-Review.
-- `GET /policies` fehlt — Frontend nutzt eine hart codierte Liste
-  (`AVAILABLE_POLICIES` in `App.jsx`, inkl. `requires`), die mit
-  `sample_data.py` synchron gehalten werden muss.
-- Balance ist noch nicht rund: "erneuerbare_foerderung+bildungsoffensive"
-  treibt die Zufriedenheit über 30 Runden auf ~86 und führt praktisch immer
-  zum Wahlsieg — Kandidat für den Dominante-Strategie-Check (Roadmap #10).
-- Nur ein Beispiel-Dilemma (`arbeitsmarktkrise`) vorhanden — für echte
-  Genre-Wirkung braucht es mehrere, an unterschiedliche Statistiken
-  gekoppelte Dilemmas.
+- Balance ist trotz der obigen Nachschärfung nicht perfekt rund: die
+  Kombination `bildungsoffensive+steuersenkung_mittelstand+
+  gesundheitsreform` rutscht im Balance-Runner mit `BUDGET_NEGATIV` ins
+  Minus (-345 Budget nach 30 Runden) — kein Free-Lunch/Dominanz-Problem
+  mehr, aber ein Hinweis, dass Upkeep-Kosten bei Drei-Policy-Kombinationen
+  noch nicht gegengeprüft sind.
+- Die meisten ursprünglichen Event-/Dilemma-Schwellenwerte
+  (`arbeitsmarktkrise` u.a.) bleiben im organischen Spielverlauf praktisch
+  unerreichbar, weil nichts in den Beispiel-Policies die Statistiken so
+  stark in Richtung Krise treibt (siehe `mistakes.md`). Bewusst NICHT
+  breit behoben (bräuchte z.B. zufällige Wirtschafts-Schock-Events) — bei
+  den zwei neuen Dilemmas oben wurde das aber bei der Trigger-Wahl
+  berücksichtigt.
 
 ## Verifikations-Workflow (bei jeder Engine-/Backend-Änderung)
 
@@ -141,6 +205,10 @@ python -m landtag_sim.tools.balance_runner --turns 30
 
 cd ../backend && pip install -r requirements.txt --break-system-packages -q
 sudo -u postgres psql -c "DROP DATABASE IF EXISTS landtag_sim;" && sudo -u postgres psql -c "CREATE DATABASE landtag_sim;"
+# WICHTIG (siehe mistakes.md "permission denied for schema public"): seit Postgres 15
+# hat die App-Rolle sonst kein CREATE-Recht im public-Schema einer frisch angelegten DB.
+sudo -u postgres psql -d landtag_sim -c "ALTER DATABASE landtag_sim OWNER TO landtag;"
+sudo -u postgres psql -d landtag_sim -c "ALTER SCHEMA public OWNER TO landtag;"
 python -m pytest tests/ -q
 uvicorn app.main:app --reload &   # dann per curl End-to-End durchtesten:
 # POST /sessions, GET /sessions/{id}, POST /sessions/{id}/preview, POST /sessions/{id}/advance
@@ -172,6 +240,36 @@ versuchen. Funktionierender Workaround:
    `/mnt/user-data/outputs/`, NICHT der rohe Sandbox-Pfad) und `devicePath`
    (`C:\Users\chris\Claude Code Projekte\landtag-sim\...`) pro Datei
    aufrufen — funktioniert zuverlässig in Batches bis 50 Dateien.
+
+## Git / GitHub
+
+Öffentliches Repo: **https://github.com/megabashment/landtag-sim** (Branch
+`main`). Der Cloud-Workspace hat ein lokales Git-Repo unter
+`/home/claude/landtag-sim`, dessen `main`-Branch `origin/main` trackt
+(eingerichtet 2026-09-09, siehe `mistakes.md` für die Vorgeschichte:
+ursprünglich zwei komplett unabhängige Historien, jetzt per
+`git checkout -B main origin/main` auf den GitHub-Stand ausgerichtet).
+
+**Wichtige Einschränkung:** Diese Session (und vermutlich jede Cloud-
+Session ohne explizit erteilten Zugriff) kann NICHT auf dieses Repo pushen
+— `git push` scheitert mit einem Proxy-Fehler ("access denied by the git
+proxy: ... is not in this session's authorized repository set"). Lesend
+geht alles (`git fetch`/`clone`/`ls-remote`, da das Repo öffentlich ist),
+schreibend nicht. Es gibt auch keinen verbundenen GitHub-Connector als
+Alternative (nur Gmail/Calendar/Drive sind verbunden, Stand P1-Phase).
+
+Das Freischalten für Push-Zugriff kann nur Christian selbst vornehmen
+(vermutlich über Verbindungs-/Quellen-Einstellungen der Session/des
+Produkts — der genaue Ort ist von hier aus nicht einsehbar). Bis das
+passiert (oder ein GitHub-Connector verbunden wird), bleibt der Workflow:
+lokal im Workspace committen (git funktioniert normal, nur `push`
+schlägt fehl), UND zusätzlich per `device_commit_files`-Workaround in
+`C:\Users\chris\Claude Code Projekte\landtag-sim` synchronisieren (das ist
+aktuell selbst KEIN Git-Repo, nur ein Datei-Ordner) — Christian committet
+und pusht von dort aus selbst. Bei jeder neuen Session zuerst kurz
+`git push` gegen einen No-Op-Zustand testen (z.B. nach einem Fetch ohne
+neue Commits) um zu sehen, ob sich der Berechtigungsstatus geändert hat,
+statt anzunehmen, dass es weiterhin blockiert ist.
 
 ## Konventionen
 

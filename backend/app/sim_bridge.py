@@ -163,6 +163,10 @@ def load_sim_state(
             weight_economy=vg.weight_economy,
             weight_social=vg.weight_social,
             weight_environment=vg.weight_environment,
+            # P2-Punkt "Zufriedenheits-Momentum/Glaettung": muss geladen werden,
+            # sonst "vergisst" die Session den nachklingenden Ueberhang bei
+            # jedem Neuladen (siehe engine.py::_apply_reaction).
+            satisfaction_momentum=vg.satisfaction_momentum,
         )
         for vg in db.exec(select(DbVoterGroup).where(DbVoterGroup.session_id == session_id))
     ]
@@ -212,4 +216,5 @@ def persist_sim_state(db: Session, session_id: int, new_state: SimState) -> None
         db_group = by_name.get(sim_group.name)
         if db_group:
             db_group.satisfaction = sim_group.satisfaction
+            db_group.satisfaction_momentum = sim_group.satisfaction_momentum
             db.add(db_group)

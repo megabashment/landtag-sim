@@ -49,6 +49,11 @@ pip install -e .
 python -m landtag_sim.tools.balance_runner --turns 30
 ```
 
+Der Runner meldet am Ende zusaetzlich vermutlich **dominante Policies**
+(Comptons "Illusory Choice"-Heuristik, docs/game-design-roadmap.md Punkt 10):
+Policies, die in >90% der erfolgreichen Top-Szenarien vorkommen, sind
+vermutlich zu stark oder haben keine gleichwertige Alternative.
+
 ## Projektstruktur
 
 ```
@@ -110,6 +115,17 @@ npm run dev
 docker compose up --build
 ```
 
+### Schnellstart per Skript (Windows/PowerShell)
+
+Nach dem einmaligen Setup oben (oder mit `-Setup` fuer den allerersten
+Lauf) startet `start.ps1` Postgres, Backend und Frontend automatisch je in
+einem eigenen Fenster und oeffnet den Browser:
+
+```powershell
+.\start.ps1          # nur starten (Postgres, Backend, Frontend)
+.\start.ps1 -Setup   # zusaetzlich Abhaengigkeiten (neu) installieren
+```
+
 ## API (MVP)
 
 - `POST /sessions` -- neue Partie fuer Niedersachsen anlegen
@@ -117,28 +133,41 @@ docker compose up --build
 - `POST /sessions/{id}/preview` -- Effekt-Vorschau: simuliert die naechste Runde mit gegebenen Policies, persistiert nichts (`{"enact_policy_keys": [...]}`)
 - `POST /sessions/{id}/advance` -- Runde beenden, optional neue Policies einfuehren (`{"enact_policy_keys": [...]}`); Response enthaelt Attributionen und ggf. ein Wahlergebnis. Schlaegt fehl, wenn eine Policy-Voraussetzung fehlt (siehe `Policy.requires`) oder ein Dilemma noch offen ist
 - `POST /sessions/{id}/resolve-dilemma` -- offenes Dilemma mit einer gewaehlten Option aufloesen (`{"option_key": "..."}`); zaehlt keine eigene Runde
+- `GET /policies` -- dynamischer Policy-Katalog (Name, Kosten, Effekte, Voraussetzungen), session-unabhaengig; loest die vorherige hart codierte Kopie im Frontend ab
 
 ## Naechste Schritte fuer die Spielmechanik
 
 Eine gewichtete 10-Punkte-Liste (Impact x Aufwand, Genre-Best-Practices von
 Democracy/Frostpunk/Suzerain) steht in
-[docs/game-design-roadmap.md](./docs/game-design-roadmap.md).
+[docs/game-design-roadmap.md](./docs/game-design-roadmap.md) -- Stand:
+**alle 10 Punkte (P0/P1/P2) umgesetzt**, Details und Umsetzungsnotizen je
+Punkt direkt dort.
 
 ## Bekannte Vereinfachungen (MVP, bewusst offen fuer Diskussion)
 
 - Wahlergebnis-Berechnung ist implementiert (gewichtete Durchschnitts-
-  zufriedenheit gegen Schwellenwert 50, siehe `sim/landtag_sim/engine.py`),
-  aber noch mit exklusiven, nicht ueberlappenden Waehlergruppen. Democracys
-  Kernmechanik braucht ueberlappende Fraktionen -- bewusst zurueckgestellte
-  Verfeinerung, siehe Game-Director-Review in
-  [docs/architecture.md](./docs/architecture.md).
-- `GET /policies` (dynamischer Policy-Katalog fuers Frontend) fehlt noch --
-  Frontend nutzt aktuell eine hart codierte Liste.
-- Balance ist trotz Trade-off-Ueberarbeitung noch nicht rund: die Kombination
-  "erneuerbare_foerderung+bildungsoffensive" treibt die Zufriedenheit ueber
-  30 Runden weiterhin auf ~86 (siehe Balance-Runner-Ausgabe, Details in
-  docs/architecture.md) -- das fuehrt inzwischen auch zuverlaessig zum
-  Wahlsieg, was die Schieflage sichtbarer macht als vorher.
+  zufriedenheit gegen Schwellenwert 50, siehe `sim/landtag_sim/engine.py`).
+  Die vier urspruenglichen Waehlergruppen sind weiterhin exklusiv
+  (Summe genau 1.0), aber es gibt inzwischen zwei zusaetzliche,
+  ueberlappende Identitaetsgruppen ("Umweltbewusste Waehler",
+  "Junge Familien" -- Gesamtsumme aller Gruppen jetzt >1.0), wie es
+  Democracys Kernmechanik erwartet; siehe `sample_data.py::
+  SAMPLE_VOTER_GROUPS`.
+- Balance ist inzwischen deutlich runder: der Dominante-Strategie-Check
+  (Roadmap Punkt 10) findet aktuell **keine** dominante Policy mehr (vorher
+  war `bildungsoffensive` in 100% der Top-Szenarien vertreten -- behoben
+  durch einen staerkeren `gdp_growth`-Trade-off und eine vierte, unabhaengige
+  Policy `gesundheitsreform`). Offen bleibt: die Dreier-Kombination
+  `bildungsoffensive+steuersenkung_mittelstand+gesundheitsreform` rutscht im
+  Balance-Runner mit `BUDGET_NEGATIV` ins Minus -- Upkeep-Kosten bei
+  Drei-Policy-Kombinationen sind noch nicht gegengeprueft.
+- Es gibt jetzt drei Dilemmas (`arbeitsmarktkrise`, `rezession`,
+  `pflegeausbau`) statt nur einem, an unterschiedliche Statistiken gekoppelt.
+  Die meisten urspruenglichen Event-/Dilemma-Schwellenwerte
+  (`arbeitsmarktkrise` eingeschlossen) bleiben aber im organischen
+  Spielverlauf praktisch unerreichbar, da nichts in den Beispiel-Policies
+  die Statistiken so stark in Richtung Krise treibt -- bewusst nicht breit
+  behoben (bräuchte z.B. zufaellige Wirtschafts-Schock-Events).
 
 ## Offen-Source-Referenzmaterial fuer Spielmechaniken
 

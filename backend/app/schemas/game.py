@@ -1,6 +1,30 @@
 from pydantic import BaseModel
 
 
+class PolicyEffectOut(BaseModel):
+    statistic_key: str
+    magnitude: float
+    delay_turns: int
+    inertia: int
+
+
+class PolicyOut(BaseModel):
+    """Dynamischer Policy-Katalog fuer GET /policies -- ersetzt die zuvor
+    hart codierte AVAILABLE_POLICIES-Konstante in frontend/src/App.jsx, die
+    manuell mit sim/landtag_sim/sample_data.py synchron gehalten werden
+    musste (siehe 'Bekannte Vereinfachungen' in README.md/CLAUDE.md)."""
+
+    key: str
+    name: str
+    description: str
+    category: str
+    one_time_cost: float
+    upkeep_cost: float
+    capital_cost: float
+    effects: list[PolicyEffectOut]
+    requires: list[str]
+
+
 class CreateSessionResponse(BaseModel):
     session_id: int
     admin_unit: str

@@ -252,3 +252,179 @@ Zeitstempel bekommen kann (hier: weil eine Aktion bewusst keine neue
 "Zeit" erzeugt), IMMER einen expliziten Tiebreaker in der Sortierung
 einplanen — "letzter Wert gewinnt" ist nur so eindeutig wie die Sortierung,
 die dahinter steht.
+
+---
+
+## Projekt hatte lange kein echtes Git-Remote, obwohl "Repository öffentlich" Anforderung war
+
+**Wo:** Projektweit (Prozess-Fehler, kein Code-Bug)
+
+**Was:** Der Nutzer hatte "Repository öffentlich" als harte Anforderung
+ganz am Anfang des Projekts genannt. Ueber mehrere Phasen (P0, P1) wurde
+ausschliesslich per `device_commit_files`-Workaround synchronisiert (siehe
+Eintrag oben zu `device_bash`), OHNE je zu pruefen, ob ueberhaupt ein
+Git-Remote existiert oder etwas gepusht wurde. Erst auf explizite
+Nachfrage des Nutzers ("Hast du das gut gepusht?") kam heraus: das lokale
+Git-Repo im Cloud-Workspace hatte nur einen einzigen alten Commit ohne
+Remote, und der Windows-Ordner des Nutzers war ueberhaupt kein Git-Repo.
+
+**Gefunden:** Durch direkte Nutzerfrage, nicht proaktiv.
+
+**Fix/Status:** Der Nutzer hatte (vermutlich ueber eigene Tools/eine andere
+Session) bereits `https://github.com/megabashment/landtag-sim` angelegt und
+gepusht -- per Diff verifiziert, dass der Remote-Stand exakt dem lokalen
+P0+P1-Arbeitsstand entspricht. Das lokale Git-Repo im Workspace wurde
+danach auf `origin/main` ausgerichtet (`git checkout -B main origin/main`,
+alte unabhaengige Historie blieb als `master`-Branch erhalten). Diese
+Session kann aber NICHT selbst pushen (Proxy verweigert: Repo nicht in der
+"authorized repository set" dieser Session) -- siehe CLAUDE.md, Abschnitt
+"Git / GitHub".
+
+**Lehre:** Bei einer expliziten Anforderung wie "Repository öffentlich"
+IM VERLAUF DES PROJEKTS aktiv pruefen, ob sie bereits erfuellt ist (`git
+remote -v`, `git log`), statt sie nur beim initialen Setup einmal zu
+notieren und danach nie wieder zu verifizieren. Ausserdem: die
+Faehigkeiten dieser Session sind nicht symmetrisch -- lesend auf ein
+oeffentliches GitHub-Repo zugreifen (`fetch`/`clone`) funktioniert immer,
+schreibend (`push`) braucht eine explizite Autorisierung, die nicht
+automatisch aus "das Repo ist oeffentlich" folgt. Bei Unsicherheit frueh
+mit einem risikolosen `git push` (z.B. wenn ohnehin nichts zu pushen ist)
+testen, statt es stillschweigend anzunehmen.
+
+---
+
+## Verifikations-Workflow (`DROP DATABASE`+`CREATE DATABASE`) scheiterte mit "permission denied for schema public"
+
+**Wo:** Backend-E2E-Test waehrend der P2-Umsetzung, Postgres 16 im
+Cloud-Workspace. Betrifft den in `CLAUDE.md` dokumentierten
+Verifikations-Workflow.
+
+**Was:** `sudo -u postgres psql -c "DROP DATABASE ..."` gefolgt von
+`CREATE DATABASE ...` (beides als Superuser `postgres`) erzeugt eine neue
+Datenbank, deren `public`-Schema dem Superuser `postgres` gehoert -- NICHT
+der App-Rolle `landtag` aus `DATABASE_URL`. Seit Postgres 15 hat `PUBLIC`
+(alle Rollen) standardmaessig KEIN `CREATE`-Recht mehr im `public`-Schema
+einer fremden Datenbank (vorher stillschweigend erteilt). Der App-Start
+(`init_db()` -> `SQLModel.metadata.create_all(engine)`) scheiterte dadurch
+beim allerersten `CREATE TYPE ... ENUM` mit
+`psycopg2.errors.InsufficientPrivilege: permission denied for schema
+public` -- obwohl exakt derselbe Befehlsablauf in frueheren Sessions
+(vor Postgres 15/16 als Docker-Image-Version, oder mit bereits vorhandener
+Rollen-Eigentuemerschaft) anstandslos funktioniert hatte.
+
+**Gefunden:** Beim End-to-End-Test der P2-Backend-Aenderungen
+(`satisfaction_momentum`-Persistenz, `jittered_starting_statistics`) --
+`uvicorn` schlug beim Start fehl, Fehler stand direkt im Log.
+
+**Fix:** Nach `CREATE DATABASE` zusaetzlich Eigentuemerschaft explizit auf
+die App-Rolle uebertragen, BEVOR die App startet:
+
+```bash
+sudo -u postgres psql -c "DROP DATABASE IF EXISTS landtag_sim;"
+sudo -u postgres psql -c "CREATE DATABASE landtag_sim;"
+sudo -u postgres psql -d landtag_sim -c "ALTER DATABASE landtag_sim OWNER TO landtag;"
+sudo -u postgres psql -d landtag_sim -c "ALTER SCHEMA public OWNER TO landtag;"
+```
+
+Falls die Rolle `landtag` in einer frischen Umgebung noch gar nicht
+existiert: `sudo -u postgres psql -c "CREATE ROLE landtag LOGIN PASSWORD
+'landtag';"` davor.
+
+**Lehre:** Der `DROP DATABASE`+`CREATE DATABASE`-Schnipsel in `CLAUDE.md`
+war unvollstaendig fuer Postgres-Versionen mit den seit v15 verschaerften
+`public`-Schema-Standardrechten -- jetzt in `CLAUDE.md` direkt mit den
+`ALTER ... OWNER TO`-Zeilen ergaenzt, damit kuenftige Sessions nicht erneut
+denselben Fehler debuggen muessen. Allgemeiner: ein Verifikations-Schnipsel,
+der frueher mal funktioniert hat, ist keine Garantie, dass er es mit der
+aktuellen Postgres-Version im Workspace immer noch tut -- bei einem
+Startup-Fehler zuerst den vollen Traceback lesen (hier stand die Ursache
+klar in der letzten Zeile), statt vorschnell einen Code-Bug in den eigenen
+Aenderungen zu vermuten.
+
+## Dominante-Strategie-Check bestand trotz "Trade-off-Pflicht" -- der "Free Lunch"-Bug
+
+**Wo:** Balance-Nachschaerfung nach P2, `sim/landtag_sim/sample_data.py`
+(`bildungsoffensive`), aufgedeckt durch `balance_runner.py::
+find_dominant_policies`.
+
+**Was:** Jede Policy muss laut `test_every_sample_policy_has_at_least_one_
+negative_effect` mindestens EINEN negativen Effekt haben --
+`bildungsoffensive` erfuellte das technisch (`gdp_growth: -0.4`). Trotzdem
+war sie in 100% der Top-Szenarien des Balance-Runners vertreten. Ursache:
+die Policy hat ZWEI Effekte in derselben `_STAT_CATEGORY` ("economy") --
+`unemployment_rate: -1.5` (gut) und `gdp_growth: -0.4` (schlecht) -- und der
+positive Effekt ueberkompensierte den negativen im Netto-Aggregat der
+Kategorie bei weitem. Ein Test, der nur "mindestens ein negativer Effekt"
+prueft, erkennt das nicht -- er prueft Existenz, nicht Netto-Bilanz pro
+Kategorie. Ergebnis: eine Policy, die sich wie eine reine Positiv-Policy
+spielt, obwohl sie formal die Trade-off-Pflicht erfuellt ("Free Lunch").
+
+**Gefunden:** `python -m landtag_sim.tools.balance_runner --turns 30`
+meldete `bildungsoffensive: 100%` unter "vermutlich dominante Policies".
+Eine erste Tuning-Runde (Magnitude von -0.4 auf -2.4 verschaerft) reduzierte
+die Dominanz NICHT vollstaendig, weil ein zweiter, unabhaengiger Faktor
+mitspielte: `steuersenkung_mittelstand.requires = ["bildungsoffensive"]`
+sorgt strukturell dafuer, dass `bildungsoffensive` in praktisch jeder
+"guten" Kombination auftaucht, die auch `steuersenkung_mittelstand`
+enthaelt -- unabhaengig von der numerischen Balance. Bei nur 3 Policies
+gibt es schlicht zu wenig unabhaengige Alternativen, um das zu verduennen.
+
+**Fix:** Zwei Teile. (1) `gdp_growth`-Magnitude auf -2.4 verschaerft, damit
+die Kategorie "economy" im Aggregat tatsaechlich netto negativ ausfaellt
+(Regressionstest: `test_bildungsoffensive_has_a_genuine_net_negative_
+economy_tradeoff`, prueft die Summe der Attributionen ueber 20 Runden, NICHT
+nur die rohen Magnitudes). (2) Eine vierte, komplett unabhaengige Policy
+(`gesundheitsreform`, kein `requires`) ergaenzt, die zusaetzlich eine echte
+Luecke schliesst (`healthcare_quality` hatte zuvor ueberhaupt keine
+Policy-Anbindung -- Regressionstest: `test_every_starting_statistic_is_
+touched_by_at_least_one_policy`). Erst beide Teile zusammen brachten den
+Balance-Runner auf "Keine vermutlich dominante Policy gefunden."
+
+**Lehre:** "Jede Policy hat mindestens einen negativen Effekt" ist eine
+Existenz-Pruefung, kein Balance-Garant -- zwei Effekte in DERSELBEN
+Statistik-Kategorie koennen sich gegenseitig aufheben oder sogar
+ueberkompensieren. Bei einer Dominanz-Meldung im Balance-Runner zuerst
+pruefen, ob die Ursache numerisch ist (zu schwacher Trade-off) ODER
+strukturell (eine `requires`-Kette ueberrepraesentiert eine Policy
+kombinatorisch) -- eine rein numerische Korrektur behebt eine strukturelle
+Ursache nicht, egal wie stark man die Zahlen dreht.
+
+## Die meisten Event-/Dilemma-Schwellenwerte sind im organischen Spielverlauf unerreichbar
+
+**Wo:** Analyse waehrend der Arbeit an neuen Dilemma-Inhalten
+(`sim/landtag_sim/sample_data.py::SAMPLE_DILEMMA_RULES`,
+`SAMPLE_EVENT_RULES`).
+
+**Was:** Schwellenwerte wie `unemployment_rate > 9.0` oder
+`education_spending < 30.0` (Startwerte liegen typischerweise weit davon
+entfernt, z.B. `unemployment_rate` startet um 6) werden von KEINER
+Beispiel-Policy in eine Richtung getrieben, die den Schwellenwert erreicht
+-- die vorhandenen Policies bewegen Statistiken tendenziell in die
+"gesunde" Richtung, nicht in Richtung Krise. Ohne gezielte SQL-Manipulation
+(wie im Verifikations-Workflow fuer E2E-Tests beschrieben) feuern diese
+Regeln in normalem Spielverlauf praktisch nie.
+
+**Gefunden:** Beim Entwerfen zweier neuer Dilemmas wurde bewusst geprueft,
+ob deren Trigger ueber die VORHANDENEN bzw. neu hinzugefuegten
+Beispiel-Policies erreichbar sind (nicht nur "well-formed" im Sinne von
+`test_sample_dilemma_rules_are_well_formed"), was den Blick auf die
+bestehenden Regeln lenkte.
+
+**Fix (bewusst NUR fuer die zwei neuen Dilemmas, nicht breit):**
+`rezession` (`gdp_growth < 0.0`) nutzt `bildungsoffensive`s eigenen,
+verschaerften `gdp_growth`-Trade-off (-2.4) als organischen Treiber;
+`pflegeausbau` (`healthcare_quality > 68.0`) nutzt `gesundheitsreform`s
+eigenen positiven Effekt (+12.0). Beide per Live-curl gegen `/advance`
+UND per Regressionstest (`test_rezession_dilemma_is_reachable_via_sample_
+policies`, `test_pflegeausbau_dilemma_is_reachable_via_sample_policies`)
+bestaetigt: sie feuern innerhalb weniger Runden bei alleiniger Einfuehrung
+der jeweiligen Policy, ohne sich gegenseitig oder `arbeitsmarktkrise`
+spuerbar zu stoeren.
+
+**Lehre:** Eine breite Behebung (z.B. zufaellige Wirtschafts-Schock-Events,
+die Statistiken aktiv in Richtung Krise treiben) wurde bewusst NICHT
+umgesetzt -- zu grosser Scope fuer diese Iteration. Wichtig ist aber, dass
+kuenftige neue Event-/Dilemma-Regeln IMMER gegen die tatsaechlich
+verfuegbaren Policy-Effekte auf Erreichbarkeit geprueft werden (nicht nur
+auf Schema-Validitaet), sonst haeufen sich weitere "totgeborene" Regeln wie
+`arbeitsmarktkrise`.

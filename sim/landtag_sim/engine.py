@@ -31,6 +31,14 @@ P1-Ausbaustufe (docs/game-design-roadmap.md):
   (DilemmaPendingError), bis resolve_dilemma() aufgerufen wurde -- das
   erzwingt eine bewusste Spielerentscheidung statt eines automatischen
   Effekts, siehe Frostpunks Book of Laws / Suzerain als Vorbild.
+
+P2-Ausbaustufe (docs/game-design-roadmap.md):
+- Namens-Vignetten (vignettes.py): Event-/Dilemma-Texte bekommen eine kurze
+  fiktive Stimme angehaengt, passend zur betroffenen Statistik-Kategorie.
+- Zufriedenheits-Momentum (_apply_reaction): die Reaktion einer Waehler-
+  gruppe wirkt nicht mehr sofort in voller Staerke, sondern als
+  exponentiell geglaetteter gleitender Durchschnitt -- macht das Spielgefuehl
+  ruhiger/vorhersagbarer, analog zum Policy-Inertia-Modell.
 """
 from __future__ import annotations
 
@@ -44,11 +52,13 @@ from landtag_sim.models import (
     ElectionResult,
     EnactedPolicy,
     InsufficientCapitalError,
+    PendingDilemma,
     Policy,
     SimState,
     TurnResult,
     UnmetPrerequisiteError,
 )
+from landtag_sim.vignettes import with_vignette
 
 # Verhindert Zufriedenheits-/Statistikwerte, die absurd aus dem Ruder laufen
 # und Balance-Runs unbrauchbar machen.
@@ -67,6 +77,12 @@ CAPITAL_CAP = 10.0
 # spielbar bleibt).
 ELECTION_APPROVAL_THRESHOLD = 50.0
 ELECTION_CYCLE_LENGTH = 16
+
+# P2-Punkt "Zufriedenheits-Momentum/Glaettung": Anteil der neuen Reaktion,
+# der SOFORT einfliesst (Rest wirkt als nachklingender Ueberhang in
+# Folgerunden weiter). Kleinerer Wert = traeger/ruhiger, siehe
+# _apply_reaction.
+SATISFACTION_MOMENTUM_ALPHA = 0.4
 
 
 def _policy_by_key(policies: list[Policy], key: str) -> Policy | None:
@@ -99,14 +115,27 @@ def _apply_reaction(state: SimState, attributions: list[EffectAttribution]) -> N
     """Passt die Waehlerzufriedenheit anhand der uebergebenen Attributionen
     an (in-place auf `state`). Ausgelagert, weil sowohl advance_turn (Policy-
     +Event-Effekte einer Runde) als auch resolve_dilemma (Effekte der
-    gewaehlten Dilemma-Option) dieselbe Reaktionslogik brauchen."""
+    gewaehlten Dilemma-Option) dieselbe Reaktionslogik brauchen.
+
+    P2-Punkt "Zufriedenheits-Momentum/Glaettung": die rohe Reaktion dieser
+    Runde wird nicht direkt auf die Zufriedenheit addiert, sondern zuerst in
+    `satisfaction_momentum` exponentiell geglaettet (EMA) -- ein einzelner
+    grosser Ausschlag wirkt dadurch ueber mehrere Runden nachklingend statt
+    schlagartig in einer Runde. `satisfaction_momentum` selbst ist der Wert,
+    der jede Runde auf `satisfaction` addiert wird.
+    """
     for group in state.voter_groups:
-        reaction = 0.0
+        raw_reaction = 0.0
         for attribution in attributions:
-            reaction += (
+            raw_reaction += (
                 attribution.delta * _category_weight(group, attribution.statistic_key) * _stat_direction(attribution.statistic_key)
             )
-        group.satisfaction = min(SATISFACTION_MAX, max(SATISFACTION_MIN, group.satisfaction + reaction))
+        group.satisfaction_momentum = (
+            group.satisfaction_momentum * (1 - SATISFACTION_MOMENTUM_ALPHA) + raw_reaction * SATISFACTION_MOMENTUM_ALPHA
+        )
+        group.satisfaction = min(
+            SATISFACTION_MAX, max(SATISFACTION_MIN, group.satisfaction + group.satisfaction_momentum)
+        )
 
 
 def _validate_prerequisites(policy_catalog: list[Policy], active_keys: set[str], newly_enacted_keys: list[str]) -> None:
@@ -215,6 +244,13 @@ def advance_turn(
         rule = next((r for r in dilemma_rules if r.key == pending_dilemma.rule_key), None)
         if rule:
             new_state.dilemma_cooldowns[rule.key] = rule.cooldown_turns
+            # P2-Punkt "Namens-Vignetten": Prompt-Text bekommt eine kurze
+            # fiktive Stimme angehaengt, passend zur betroffenen Statistik.
+            category = _STAT_CATEGORY.get(rule.statistic_key)
+            if category:
+                pending_dilemma.prompt = with_vignette(
+                    pending_dilemma.prompt, category, seed_key=f"{rule.key}:{new_state.turn}"
+                )
     else:
         # 2b) Events auswerten (regelbasiert, siehe events.py) -- VOR der
         # Zufriedenheits-Berechnung, damit ihre Effekte in dieselbe Reaktion
@@ -226,6 +262,10 @@ def advance_turn(
         triggered = evaluate_events(new_state, event_rules)
         if triggered:
             rule, text = triggered[0]
+            # P2-Punkt "Namens-Vignetten": siehe Dilemma-Zweig oben.
+            category = _STAT_CATEGORY.get(rule.statistic_key)
+            if category:
+                text = with_vignette(text, category, seed_key=f"{rule.key}:{new_state.turn}")
             event_texts.append(text)
             new_state.event_cooldowns[rule.key] = rule.cooldown_turns
             for effect in rule.effects:

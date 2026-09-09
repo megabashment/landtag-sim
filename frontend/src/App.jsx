@@ -2,19 +2,6 @@ import { useEffect, useState } from "react";
 import { api } from "./api";
 import "./App.css";
 
-// Bekannter Policy-Katalog fuers Auswahl-UI. MVP: hart codiert, Spiegelbild
-// von sim/landtag_sim/sample_data.py::SAMPLE_POLICIES. Sobald es einen
-// GET /policies Endpunkt gibt, ersetzt ein Fetch diese Konstante.
-// capitalCost siehe Political-Capital-Ressource (Game-Director-Review).
-// requires siehe P1-Punkt "Policy-Pfade/Voraussetzungen"
-// (docs/game-design-roadmap.md) -- muss mit Policy.requires in
-// sim/landtag_sim/sample_data.py synchron gehalten werden.
-const AVAILABLE_POLICIES = [
-  { key: "erneuerbare_foerderung", label: "Foerderprogramm erneuerbare Energien", capitalCost: 4, requires: [] },
-  { key: "bildungsoffensive", label: "Bildungsoffensive", capitalCost: 4, requires: [] },
-  { key: "steuersenkung_mittelstand", label: "Steuersenkung Mittelstand", capitalCost: 3, requires: ["bildungsoffensive"] },
-];
-
 const FAST_FORWARD_SAFETY_CAP = 40; // Sicherheitsnetz gegen Endlosschleifen im Client
 
 // Grobe Groessenklassen statt exakter Zahlen (P0-Punkt "Effekt-Vorschau",
@@ -38,13 +25,13 @@ function DeltaArrow({ delta }) {
   );
 }
 
-function policyLabel(key) {
-  const policy = AVAILABLE_POLICIES.find((p) => p.key === key);
-  return policy ? policy.label : key;
-}
-
 export default function App() {
   const [session, setSession] = useState(null);
+  // Dynamischer Policy-Katalog (GET /policies) statt der frueheren hart
+  // codierten AVAILABLE_POLICIES-Konstante -- ersetzt eine in README.md/
+  // CLAUDE.md dokumentierte "Bekannte Vereinfachung". Wird einmalig beim
+  // Laden der App geholt (Katalog ist global, nicht pro Session).
+  const [policies, setPolicies] = useState([]);
   const [selectedPolicies, setSelectedPolicies] = useState([]);
   const [events, setEvents] = useState([]);
   const [attributions, setAttributions] = useState([]);
@@ -55,6 +42,29 @@ export default function App() {
 
   const dilemmaPending = Boolean(session?.pending_dilemma);
   const gameOver = Boolean(session && session.status !== "active");
+
+  function policyLabel(key) {
+    const policy = policies.find((p) => p.key === key);
+    return policy ? policy.name : key;
+  }
+
+  // Policy-Katalog einmalig beim Laden holen (GET /policies) -- unabhaengig
+  // von einer Session, damit die Auswahl-UI auch ohne laufende Partie
+  // Namen/Kosten/Voraussetzungen kennt.
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .listPolicies()
+      .then((result) => {
+        if (!cancelled) setPolicies(result);
+      })
+      .catch(() => {
+        if (!cancelled) setPolicies([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Effekt-Vorschau (P0.1): sobald sich die Policy-Auswahl aendert, wird die
   // naechste Runde read-only simuliert und verworfen (kein Persistieren,
@@ -182,8 +192,8 @@ export default function App() {
   }
 
   const selectedCapitalCost = selectedPolicies.reduce((sum, key) => {
-    const policy = AVAILABLE_POLICIES.find((p) => p.key === key);
-    return sum + (policy?.capitalCost ?? 0);
+    const policy = policies.find((p) => p.key === key);
+    return sum + (policy?.capital_cost ?? 0);
   }, 0);
 
   function attributionLabel(source) {
@@ -290,7 +300,7 @@ export default function App() {
             <div className="panel">
               <h2>Policies fuer naechste Runde</h2>
               <ul className="policy-list">
-                {AVAILABLE_POLICIES.map((p) => {
+                {policies.map((p) => {
                   const active = session.active_policy_keys.includes(p.key);
                   const missing = unmetRequirements(p);
                   const locked = !active && missing.length > 0;
@@ -303,7 +313,7 @@ export default function App() {
                           checked={selectedPolicies.includes(p.key)}
                           onChange={() => togglePolicy(p.key)}
                         />
-                        {p.label} {active ? "(bereits aktiv)" : `(${p.capitalCost} Political Capital)`}
+                        {p.name} {active ? "(bereits aktiv)" : `(${p.capital_cost} Political Capital)`}
                       </label>
                       {locked && (
                         <p className="hint requirement-hint">

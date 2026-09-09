@@ -80,6 +80,14 @@ class VoterGroup:
     weight_social: float = 1.0
     weight_environment: float = 1.0
 
+    # P2-Punkt "Zufriedenheits-Momentum/Glaettung" (docs/game-design-roadmap.md):
+    # gleitender Durchschnitt der Zufriedenheitsreaktion (nicht der Zufrieden-
+    # heit selbst). Ein einzelner grosser Ausschlag (z.B. ein hartes Dilemma)
+    # wirkt dadurch ueber mehrere Runden nachklingend statt in einer Runde
+    # schlagartig -- analog zum Policy-Inertia-Modell, siehe engine.py::
+    # _apply_reaction.
+    satisfaction_momentum: float = 0.0
+
 
 @dataclass
 class EventRule:

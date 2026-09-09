@@ -19,10 +19,10 @@ absteigend.
 | 4 | Dilemma-Events mit echten Optionen | 5 | 4 | P1 | erledigt |
 | 5 | Policy-Pfade/Voraussetzungen | 4 | 3 | P1 | erledigt |
 | 6 | Fast-Forward/Pacing-Kontrollen | 3 | 2 | P1 | erledigt |
-| 7 | Namens-Vignetten in Event-Texten | 3 | 1 | P2 | offen |
-| 8 | Zufriedenheits-Momentum/Glaettung | 3 | 2 | P2 | offen |
-| 9 | Randomisierte Startbedingungen | 2 | 1 | P2 | offen |
-| 10 | Dominante-Strategie-Check im Balance-Runner | 2 | 2 | P2 | offen |
+| 7 | Namens-Vignetten in Event-Texten | 3 | 1 | P2 | erledigt |
+| 8 | Zufriedenheits-Momentum/Glaettung | 3 | 2 | P2 | erledigt |
+| 9 | Randomisierte Startbedingungen | 2 | 1 | P2 | erledigt |
+| 10 | Dominante-Strategie-Check im Balance-Runner | 2 | 2 | P2 | erledigt |
 
 ---
 
@@ -222,6 +222,8 @@ umsetzbar, keine Backend-Aenderung noetig.
 
 ## P2 -- kleine Verbesserungen, guter Aufwand/Wirkung-Faktor
 
+**Status: alle vier P2-Punkte umgesetzt.**
+
 ### 7. Namens-Vignetten in Event-Texten
 
 Statt reiner Statistik-Meldungen ("Arbeitslosenquote erreicht 9.2%") kurze,
@@ -231,6 +233,17 @@ menschlich (Democracy/Suzerain-Erfolgsfaktor), ohne die in der letzten
 Review bewusst zurueckgestellte volle Buerger-Simulation zu brauchen --
 reine Text-Pool-Erweiterung in `sim/landtag_sim/sample_data.py`.
 
+*Umgesetzt:* neues Modul `sim/landtag_sim/vignettes.py` mit
+`VIGNETTE_POOL` (economy/social/environment) und `with_vignette()`. Auswahl
+ist deterministisch ueber `zlib.crc32(seed_key)` statt `random.choice` oder
+dem eingebauten `hash()` (der ist fuer Strings pro Prozess randomisiert,
+siehe `mistakes.md`), damit derselbe Trigger in derselben Runde immer
+denselben Text liefert und der Balance-Runner reproduzierbar bleibt.
+`engine.py::advance_turn` haengt die Vignette sowohl an passive Event-Texte
+als auch an Dilemma-Prompts an (Kategorie ueber `_STAT_CATEGORY[rule.
+statistic_key]`). Getestet in `sim/tests/test_engine.py` (Determinismus,
+unbekannte Kategorie, tatsaechliches Anhaengen an Event-/Dilemma-Text).
+
 ### 8. Zufriedenheits-Momentum/Glaettung
 
 Zufriedenheit reagiert aktuell direkt und ungeglaettet auf jedes Effekt-
@@ -239,12 +252,33 @@ Policy-Inertia-Modell) wuerde das Spielgefuehl ruhiger und vorhersagbarer
 machen -- passt zum "entspannt"-Ziel und reduziert Zahlenrauschen weiter
 (ergaenzt Punkt 3).
 
+*Umgesetzt:* neues Feld `VoterGroup.satisfaction_momentum` (Sim-Engine UND
+DB-Modell `backend/app/models/voter_group.py`, ueber `sim_bridge.py`
+geladen/persistiert). `engine.py::_apply_reaction` berechnet die rohe
+Reaktion einer Runde wie zuvor, glaettet sie aber per EMA
+(`SATISFACTION_MOMENTUM_ALPHA = 0.4`) in `satisfaction_momentum`, und erst
+dieser geglaettete Wert wird auf `satisfaction` addiert -- ein einzelner
+grosser Ausschlag (z.B. ein hartes Dilemma) klingt so ueber mehrere Runden
+nach, statt schlagartig in einer Runde zu wirken. Per curl-E2E-Test
+verifiziert, dass der Ueberhang nach einem Dilemma auch ohne weitere
+Policies/Events in der Folgerunde noch nachwirkt und ueber einen
+Session-Reload hinweg korrekt persistiert.
+
 ### 9. Randomisierte Startbedingungen
 
 Jede neue Partie (`POST /sessions`) startet aktuell mit exakt identischen
 Werten aus `STARTING_STATISTICS`. Eine kleine Zufallsstreuung (z.B. ±5% pro
 Statistik) sorgt fuer unterschiedliche Startsituationen zwischen Partien --
 guenstiger Replayability-Hebel, ohne die Balance grundlegend zu veraendern.
+
+*Umgesetzt:* `sample_data.py::jittered_starting_statistics(rng, spread=0.05)`
+streut jeden Basiswert um ±5% (Default). `backend/app/api/routes_game.py::
+create_session` nutzt das jetzt statt der rohen `STARTING_STATISTICS` fuer
+die Turn-0-Werte einer echten Session. Tests/Balance-Runner bleiben bewusst
+bei der unrandomisierten `build_initial_state()`/`STARTING_STATISTICS`, damit
+sie reproduzierbar bleiben. Per curl-E2E-Test verifiziert, dass zwei
+`GET /sessions/{id}`-Aufrufe hintereinander dieselben (nicht neu gewuerfelten)
+Werte liefern -- die Streuung passiert nur einmal bei der Erstellung.
 
 ### 10. Dominante-Strategie-Check im Balance-Runner
 
@@ -255,6 +289,18 @@ Kombination vorkommen (>90% der nicht-eingefrorenen Top-Szenarien) als
 "vermutlich dominant" -- ein Hinweis, dass diese Policy zu stark oder eine
 Konkurrenz-Policy zu schwach ist. Prozess-/Tooling-Verbesserung, kein
 Gameplay-Feature.
+
+*Umgesetzt:* `find_dominant_policies()` in `balance_runner.py`. "Erfolgreich"
+= weder `NICHT_MACHBAR` noch `ZUFRIEDENHEIT_EINGEFROREN`; "Top" = die nach
+End-Zufriedenheit sortierte obere Haelfte davon (Default `top_fraction=0.5`).
+Policies, die in >90% dieser Top-Szenarien vorkommen, werden am Ende des
+Reports gelistet. Bestaetigt sofort das bereits in `CLAUDE.md` als bekannte
+Einschraenkung notierte Problem: `bildungsoffensive` erscheint mit den
+aktuellen Beispiel-Policies in 100% der Top-Szenarien -- ein konkreter
+Kandidat fuer die naechste Balance-Ueberarbeitung. Getestet mit synthetischen
+Szenario-Zeilen in `sim/tests/test_balance_runner.py` (Dominanz-Erkennung,
+Nicht-Dominanz, Ausschluss nicht-machbarer/eingefrorener Zeilen, leere
+Eingabe, Sortierung).
 
 ---
 

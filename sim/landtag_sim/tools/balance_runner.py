@@ -14,6 +14,13 @@ damit Runs reproduzierbar bleiben) -- fuer echtes Feintuning der
 Dilemma-Balance reicht das nicht, aber es haelt den Runner lauffaehig, ohne
 bei jedem Dilemma zu blockieren.
 
+P2-Ausbaustufe (docs/game-design-roadmap.md, Punkt 10): zusaetzlich zu den
+bestehenden Budget-/Zufriedenheits-Checks markiert der Runner jetzt Policies,
+die in praktisch jedem erfolgreichen Szenario vorkommen ("Dominante-
+Strategie-Check", siehe find_dominant_policies) -- Hinweis auf Comptons
+"Illusory Choice": wenn eine Policy nie sinnvoll weggelassen wird, ist die
+Entscheidung, sie zu waehlen, keine echte Entscheidung mehr.
+
 Aufruf (aus sim/ heraus, nach `pip install -e .`):
     python -m landtag_sim.tools.balance_runner
     python -m landtag_sim.tools.balance_runner --turns 40 --csv out.csv
@@ -23,6 +30,7 @@ from __future__ import annotations
 import argparse
 import csv
 import itertools
+import math
 import sys
 
 from landtag_sim.engine import advance_turn, resolve_dilemma
@@ -61,6 +69,7 @@ def run_scenario(policy_keys: tuple[str, ...], turns: int) -> dict:
     except InsufficientCapitalError as exc:
         return {
             "policies": "+".join(policy_keys) or "(keine)",
+            "policy_keys": policy_keys,
             "min_budget": None,
             "end_satisfaction": None,
             "satisfaction_swing": None,
@@ -72,6 +81,7 @@ def run_scenario(policy_keys: tuple[str, ...], turns: int) -> dict:
     except UnmetPrerequisiteError as exc:
         return {
             "policies": "+".join(policy_keys) or "(keine)",
+            "policy_keys": policy_keys,
             "min_budget": None,
             "end_satisfaction": None,
             "satisfaction_swing": None,
@@ -112,6 +122,7 @@ def run_scenario(policy_keys: tuple[str, ...], turns: int) -> dict:
 
     return {
         "policies": "+".join(policy_keys) or "(keine)",
+        "policy_keys": policy_keys,
         "min_budget": round(min_budget, 1),
         "end_satisfaction": round(satisfaction_series[-1], 1) if satisfaction_series else None,
         "satisfaction_swing": round(satisfaction_swing, 1),
@@ -139,6 +150,47 @@ def all_policy_combinations() -> list[tuple[str, ...]]:
     return combos
 
 
+def find_dominant_policies(
+    rows: list[dict], policy_keys: list[str], top_fraction: float = 0.5, threshold: float = 0.9
+) -> list[tuple[str, float]]:
+    """P2-Punkt 'Dominante-Strategie-Check' (docs/game-design-roadmap.md,
+    Punkt 10, nach Comptons "Illusory Choice"-Heuristik).
+
+    'Erfolgreich' = spielbar (keine NICHT_MACHBAR-Flag) und nicht
+    eingefroren (keine ZUFRIEDENHEIT_EINGEFROREN-Flag) -- eingefrorene
+    Szenarien sagen nichts ueber Dominanz aus, ihre Policies wirken schlicht
+    nicht. 'Top' = die nach End-Zufriedenheit sortierten oberen
+    `top_fraction` dieser erfolgreichen Szenarien (Default: obere Haelfte).
+
+    Kommt eine Policy in mehr als `threshold` (Default 90%) dieser
+    Top-Szenarien vor, ist die Entscheidung fuer sie vermutlich keine echte
+    Wahl mehr -- entweder ist die Policy zu stark, oder ihr fehlt eine
+    gleichwertige Konkurrenz-Policy.
+
+    Gibt (policy_key, anteil)-Paare zurueck, absteigend nach Anteil sortiert.
+    """
+    successful = [
+        r
+        for r in rows
+        if "NICHT_MACHBAR" not in r["flags"]
+        and "ZUFRIEDENHEIT_EINGEFROREN" not in r["flags"]
+        and r["end_satisfaction"] is not None
+    ]
+    if not successful:
+        return []
+    successful.sort(key=lambda r: r["end_satisfaction"], reverse=True)
+    cutoff = max(1, math.ceil(len(successful) * top_fraction))
+    top_scenarios = successful[:cutoff]
+
+    dominant = []
+    for key in policy_keys:
+        share = sum(1 for r in top_scenarios if key in r["policy_keys"]) / len(top_scenarios)
+        if share > threshold:
+            dominant.append((key, share))
+    dominant.sort(key=lambda item: item[1], reverse=True)
+    return dominant
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--turns", type=int, default=30, help="Anzahl simulierter Runden pro Szenario")
@@ -160,9 +212,20 @@ def main() -> None:
     flagged = [r for r in rows if r["flags"] != "-"]
     print(f"\n{len(flagged)}/{len(rows)} Szenarien mit Auffaelligkeiten markiert.")
 
+    dominant = find_dominant_policies(rows, [p.key for p in SAMPLE_POLICIES])
+    if dominant:
+        print("\nVermutlich dominante Policies (>90% der Top-Szenarien nach Zufriedenheit, siehe Compton 'Illusory Choice'):")
+        for key, share in dominant:
+            print(f"  - {key}: {share * 100:.0f}%")
+    else:
+        print("\nKeine vermutlich dominante Policy gefunden.")
+
     if args.csv:
         with open(args.csv, "w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=header)
+            # extrasaction="ignore": rows tragen seit dem P2-Dominante-
+            # Strategie-Check zusaetzlich das interne "policy_keys"-Tupel
+            # (fuer find_dominant_policies), das nicht in die CSV soll.
+            writer = csv.DictWriter(f, fieldnames=header, extrasaction="ignore")
             writer.writeheader()
             writer.writerows(rows)
         print(f"CSV geschrieben nach {args.csv}")
