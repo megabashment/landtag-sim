@@ -21,6 +21,7 @@ class PolicyOut(BaseModel):
     one_time_cost: float
     upkeep_cost: float
     capital_cost: float
+    income_per_turn: float
     effects: list[PolicyEffectOut]
     requires: list[str]
 
@@ -81,6 +82,11 @@ class ElectionResultOut(BaseModel):
 
 class AdvanceTurnRequest(BaseModel):
     enact_policy_keys: list[str] = []
+    # Democracy-4-Vorbild "Policy-Repeal": Policy-Keys, die diese Runde
+    # zurueckgezogen werden sollen (siehe landtag_sim.engine.py::advance_turn,
+    # newly_repealed_keys). Ihre Wirkung verschwindet nicht sofort, sondern
+    # klingt ueber mehrere Runden ab.
+    repeal_policy_keys: list[str] = []
 
 
 class AdvanceTurnResponse(BaseModel):
@@ -102,6 +108,9 @@ class ResolveDilemmaResponse(BaseModel):
 
 class PreviewRequest(BaseModel):
     enact_policy_keys: list[str] = []
+    # Siehe AdvanceTurnRequest.repeal_policy_keys -- Preview simuliert einen
+    # Repeal genauso wie ein Enact, ohne etwas zu persistieren.
+    repeal_policy_keys: list[str] = []
 
 
 class PreviewResponse(BaseModel):

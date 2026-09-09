@@ -47,16 +47,21 @@ def test_list_policies_returns_full_sample_catalog(client):
     assert response.status_code == 200
     policies = response.json()
     keys = {p["key"] for p in policies}
-    # Vier Beispiel-Policies nach der Balance-Nachschaerfung (siehe
-    # mistakes.md "Dominante-Strategie-Check ... Free Lunch"-Bug).
+    # Fuenf Beispiel-Policies: vier nach der Balance-Nachschaerfung (siehe
+    # mistakes.md "Dominante-Strategie-Check ... Free Lunch"-Bug) plus
+    # vermoegensteuer aus der Policy-Repeal-/Einnahmen-Nachschaerfung
+    # (Democracy-4-Recherche, siehe CLAUDE.md).
     assert keys == {
         "erneuerbare_foerderung",
         "bildungsoffensive",
         "steuersenkung_mittelstand",
         "gesundheitsreform",
+        "vermoegensteuer",
     }
     steuersenkung = next(p for p in policies if p["key"] == "steuersenkung_mittelstand")
     assert steuersenkung["requires"] == ["bildungsoffensive"]
+    vermoegensteuer = next(p for p in policies if p["key"] == "vermoegensteuer")
+    assert vermoegensteuer["income_per_turn"] > 0
     for policy in policies:
         assert policy["effects"], f"{policy['key']} hat keine Effekte"
 

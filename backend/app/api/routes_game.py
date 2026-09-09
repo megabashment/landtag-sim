@@ -31,7 +31,14 @@ from app.sim_bridge import (
     serialize_pending_dilemma,
 )
 from landtag_sim.engine import advance_turn, resolve_dilemma
-from landtag_sim.models import DilemmaPendingError, InsufficientCapitalError, UnmetPrerequisiteError
+from landtag_sim.models import (
+    DilemmaPendingError,
+    InsufficientCapitalError,
+    PolicyAlreadyActiveError,
+    PolicyNotActiveError,
+    PolicyRequiredByActivePolicyError,
+    UnmetPrerequisiteError,
+)
 from landtag_sim.sample_data import SAMPLE_VOTER_GROUPS, jittered_starting_statistics
 
 router = APIRouter(tags=["game"])
@@ -57,6 +64,7 @@ def list_policies(db: Session = Depends(get_session)) -> list[PolicyOut]:
             one_time_cost=row.one_time_cost,
             upkeep_cost=row.upkeep_cost,
             capital_cost=row.capital_cost,
+            income_per_turn=row.income_per_turn,
             effects=[PolicyEffectOut(**effect) for effect in row.effects],
             requires=list(row.requires),
         )
@@ -131,7 +139,7 @@ def _load_state_for_session(db: Session, session: GameSession):
 def _build_state_response(db: Session, session: GameSession) -> SessionStateResponse:
     sim_state = _load_state_for_session(db, session)
     active_keys = [ep.policy_key for ep in db.exec(
-        select(EnactedPolicy).where(EnactedPolicy.session_id == session.id, EnactedPolicy.active == True)  # noqa: E712
+        select(EnactedPolicy).where(EnactedPolicy.session_id == session.id, EnactedPolicy.repealed_turn == None)  # noqa: E711
     )]
     return SessionStateResponse(
         session_id=session.id,
@@ -182,6 +190,7 @@ def preview_session_turn(
         raise HTTPException(status_code=404, detail="Session nicht gefunden")
 
     _validate_policy_keys(db, body.enact_policy_keys)
+    _validate_policy_keys(db, body.repeal_policy_keys)
 
     if session.pending_dilemma:
         return PreviewResponse(
@@ -202,11 +211,24 @@ def preview_session_turn(
     sim_state = _load_state_for_session(db, session)
 
     policy_by_key = {p.key: p for p in policy_catalog}
-    capital_required = sum(policy_by_key[k].capital_cost for k in body.enact_policy_keys if k in policy_by_key)
+    # Political Capital wird fuer Enact UND Repeal faellig (Democracy-4-
+    # Vorbild, siehe landtag_sim.engine.py::advance_turn).
+    capital_required = sum(
+        policy_by_key[k].capital_cost
+        for k in body.enact_policy_keys + body.repeal_policy_keys
+        if k in policy_by_key
+    )
     capital_available = min(10.0, sim_state.political_capital + 3.0)  # CAPITAL_CAP/CAPITAL_PER_TURN, siehe engine.py
 
     try:
-        result = advance_turn(sim_state, policy_catalog, event_rules, body.enact_policy_keys, dilemma_rules)
+        result = advance_turn(
+            sim_state,
+            policy_catalog,
+            event_rules,
+            body.enact_policy_keys,
+            dilemma_rules,
+            body.repeal_policy_keys,
+        )
     except InsufficientCapitalError as exc:
         return PreviewResponse(
             feasible=False,
@@ -223,6 +245,45 @@ def preview_session_turn(
         return PreviewResponse(
             feasible=False,
             infeasible_reason=f"Policy '{exc.policy_key}' braucht zuerst '{exc.missing_requirement}' als aktive Policy.",
+            capital_required=capital_required,
+            capital_available=capital_available,
+            statistic_deltas={},
+            attributions=[],
+            would_trigger_events=[],
+            would_trigger_dilemma=False,
+            satisfaction_delta_by_group={},
+        )
+    except PolicyAlreadyActiveError as exc:
+        return PreviewResponse(
+            feasible=False,
+            infeasible_reason=f"Policy '{exc.policy_key}' ist bereits aktiv.",
+            capital_required=capital_required,
+            capital_available=capital_available,
+            statistic_deltas={},
+            attributions=[],
+            would_trigger_events=[],
+            would_trigger_dilemma=False,
+            satisfaction_delta_by_group={},
+        )
+    except PolicyNotActiveError as exc:
+        return PreviewResponse(
+            feasible=False,
+            infeasible_reason=f"Policy '{exc.policy_key}' ist nicht aktiv und kann nicht zurueckgezogen werden.",
+            capital_required=capital_required,
+            capital_available=capital_available,
+            statistic_deltas={},
+            attributions=[],
+            would_trigger_events=[],
+            would_trigger_dilemma=False,
+            satisfaction_delta_by_group={},
+        )
+    except PolicyRequiredByActivePolicyError as exc:
+        return PreviewResponse(
+            feasible=False,
+            infeasible_reason=(
+                f"Policy '{exc.policy_key}' kann nicht zurueckgezogen werden, solange "
+                f"'{exc.dependent_policy_key}' aktiv ist und sie voraussetzt."
+            ),
             capital_required=capital_required,
             capital_available=capital_available,
             statistic_deltas={},
@@ -280,6 +341,7 @@ def advance_session_turn(
         )
 
     _validate_policy_keys(db, body.enact_policy_keys)
+    _validate_policy_keys(db, body.repeal_policy_keys)
 
     policy_catalog = load_policy_catalog(db)
     event_rules = load_event_rules(db)
@@ -287,7 +349,14 @@ def advance_session_turn(
     sim_state = _load_state_for_session(db, session)
 
     try:
-        result = advance_turn(sim_state, policy_catalog, event_rules, body.enact_policy_keys, dilemma_rules)
+        result = advance_turn(
+            sim_state,
+            policy_catalog,
+            event_rules,
+            body.enact_policy_keys,
+            dilemma_rules,
+            body.repeal_policy_keys,
+        )
     except InsufficientCapitalError as exc:
         raise HTTPException(
             status_code=400,
@@ -298,6 +367,20 @@ def advance_session_turn(
             status_code=400,
             detail=f"Policy '{exc.policy_key}' braucht zuerst '{exc.missing_requirement}' als aktive Policy",
         ) from exc
+    except PolicyAlreadyActiveError as exc:
+        raise HTTPException(status_code=400, detail=f"Policy '{exc.policy_key}' ist bereits aktiv") from exc
+    except PolicyNotActiveError as exc:
+        raise HTTPException(
+            status_code=400, detail=f"Policy '{exc.policy_key}' ist nicht aktiv und kann nicht zurueckgezogen werden"
+        ) from exc
+    except PolicyRequiredByActivePolicyError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Policy '{exc.policy_key}' kann nicht zurueckgezogen werden, solange "
+                f"'{exc.dependent_policy_key}' aktiv ist und sie voraussetzt"
+            ),
+        ) from exc
     except DilemmaPendingError as exc:  # defensiv -- oben bereits per session.pending_dilemma abgefangen
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -305,6 +388,24 @@ def advance_session_turn(
 
     for key in body.enact_policy_keys:
         db.add(EnactedPolicy(session_id=session.id, policy_key=key, enacted_turn=new_state.turn))
+
+    # Repeal AKTUALISIERT die bestehende Zeile (repealed_turn setzen), statt
+    # sie zu loeschen oder eine neue anzulegen -- die Sim-Engine braucht
+    # enacted_turn UND repealed_turn weiterhin, um die abklingende Wirkung zu
+    # berechnen (siehe sim_bridge.py::load_sim_state).
+    if body.repeal_policy_keys:
+        rows_by_key: dict[str, list[EnactedPolicy]] = {}
+        for row in db.exec(
+            select(EnactedPolicy).where(
+                EnactedPolicy.session_id == session.id, EnactedPolicy.repealed_turn == None  # noqa: E711
+            )
+        ):
+            rows_by_key.setdefault(row.policy_key, []).append(row)
+        for key in body.repeal_policy_keys:
+            rows = rows_by_key.get(key, [])
+            if rows:
+                rows[0].repealed_turn = new_state.turn
+                db.add(rows[0])
 
     persist_sim_state(db, session.id, new_state)
 

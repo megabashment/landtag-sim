@@ -165,12 +165,18 @@ Scope-Entscheidung zurueckgestellt.
 Der Balance-Runner ist Stand 2026-09-09 komplett gruen (Dominante-
 Strategie-Check: "Keine vermutlich dominante Policy gefunden", kein
 `BUDGET_NEGATIV`-Flag mehr, siehe mistakes.md "Budget hatte nie eine
-Einnahmequelle"). Balancing ist trotzdem iterativ und nie "fertig" --
-insbesondere gibt es weiterhin keine Policy-Repeal-Mechanik, und die
-Grundeinnahme (`BASE_BUDGET_INCOME_PER_TURN`) ist eine bewusst einfache
-Konstante, kein echtes Steuersatz-/GDP-System. Das ist ein bekannter,
-offener Punkt fuer kuenftige Iterationen, keiner, der hier schongeredet
-werden soll.
+Einnahmequelle"). Balancing ist trotzdem iterativ und nie "fertig" -- es
+gibt inzwischen eine Policy-Repeal-Mechanik (siehe CLAUDE.md, Democracy-4-
+Vorbild: symmetrisches Abklingen statt schlagartigem Verschwinden) und mit
+`vermoegensteuer` eine erste echte, spielerseitig abschaltbare
+Einnahmen-Policy (`Policy.income_per_turn`) -- aber die Grundeinnahme
+(`BASE_BUDGET_INCOME_PER_TURN`) bleibt eine bewusst einfache Konstante,
+und `income_per_turn` selbst ist ein fixer Betrag ohne Regler und ohne
+Kopplung an eine zugrunde liegende Wirtschaftsstatistik. Ein echtes
+Steuersatz-/GDP-System (Democracy 4 skaliert z.B. Alkoholsteuer-Einnahmen
+am tatsaechlichen Alkoholkonsum, siehe "Real World Numbers"-Quelle unten)
+ist bewusst ausserhalb des MVP-Scopes. Das ist ein bekannter, offener Punkt
+fuer kuenftige Iterationen, keiner, der hier schongeredet werden soll.
 
 ### Quellen (Game-Director-Review)
 
@@ -180,34 +186,27 @@ werden soll.
 - [Class and Games -- Managing Class in Democracy 4 (Kritik am Klassenmodell)](https://www.classandgames.com/post/managing-class-in-democracy-4)
 - [AI Democracy (cosmin-novac/aidemocracy) -- MIT-lizenzierter, browserbasierter Democracy-4-inspirierter Clone](https://github.com/cosmin-novac/aidemocracy)
 
+Zusaetzlich fuer die Policy-Repeal-/Budget-Recherche (2026-09-09, siehe
+CLAUDE.md fuer die daraus abgeleiteten Design-Entscheidungen):
+
+- [Democracy 4 Official Policies Modding Documentation (positech.co.uk)](https://www.positech.co.uk/democracy4/mod_policies.html)
+- [Cliff Harris (Positech) -- Real World Numbers in Democracy 4](https://www.positech.co.uk/cliffsblog/2020/05/23/real-world-numbers-in-democracy-4/)
+- [Cliff Harris (Positech) -- Modelling the limits to growth in Democracy 4](https://www.positech.co.uk/cliffsblog/2021/04/27/modelling-the-limits-to-growth-in-democracy-4/)
+
 ## Bekannte offene Punkte (nicht MVP-blockierend)
 
 Stand nach dem vollstaendigen Doku-Audit vom 2026-09-09 (siehe CLAUDE.md
 "Aktueller Stand" fuer die Details): Wahlergebnis-Berechnung,
 `GET /policies`, Balance/Dominante-Strategie, die fehlende Backend-API-
 Testsuite UND die fehlende Frontend-Verlaufsansicht sind inzwischen alle
-behoben.
+behoben. Tatsaechlich noch offen:
 
-**Alle noch offenen Punkte sind seit der Community-Recherche 2026-09-09 in
-`BACKLOG.md` (Wurzelverzeichnis) erfasst und priorisiert.** Kurzfassung der
-groessten strukturellen Luecken, die die Recherche bestaetigt hat:
-
-- **Fehlender mittlerer Zeithorizont ("Situations").** Wir haben Events
-  (einmalig) und Policies (dauerhaft, spielergesetzt), aber keinen
-  selbstverstaerkenden Zustand mit Hysterese dazwischen -- Democracys
-  Kern-Griff fuer "Story ohne Text" (BACKLOG B2).
-- **Loop trägt nicht ueber die erste Wahl hinaus.** Kein Ziel jenseits der
-  Wiederwahl, kein Amtszeit-Rueckblick -- exakt die Democracy-4-
-  Community-Kritik "nothing I did really mattered" (BACKLOG B1, offene
-  Frage F1).
-- **Konsequenzen nur als Zahlen, nicht narrativ.** `EffectAttribution`
-  deckt die Zahlen-Ebene, aber es fehlt eine Text-Konsequenz-Ebene
-  (Democracys "Media Reports", regelbasiert machbar) (BACKLOG B4).
-- **Wahlausgang ist eine Blackbox bis Turn 16**, kein Turnout-/Apathie-
-  Modell -- Democracy-Spieler verlieren dadurch "aus dem Nichts"
-  (BACKLOG B5, offene Frage F4).
-- Kleinere offene Punkte (unveraendert, jetzt als BACKLOG B10/B11/B13/B14
-  gefuehrt): totes `PolicyDefinition.description`-Feld,
-  `docker-compose.yml` ohne Frontend-Service, leere `CREDITS.md`,
-  Platzhalter-`data/`.
-- Keine Policy-Repeal-Mechanik (siehe "Ehrlich: noch nicht geloest" oben).
+- `PolicyDefinition.description` ist ein totes Feld (`backend/app/seed.py`
+  setzt `description=policy.name`, also ein Duplikat des Namens statt
+  echtem Beschreibungstext).
+- `docker-compose.yml` hat keinen Frontend-Service -- "Backend + Datenbank
+  mit Docker" (README.md) startet nur `db`+`backend`, Frontend bleibt
+  manuell.
+- `CREDITS.md` ist weiterhin eine leere Platzhalter-Tabelle, `data/`
+  enthaelt weiterhin nur Platzhalter-Quellenmodule statt echter
+  Niedersachsen-Statistik-Importe.

@@ -56,6 +56,7 @@ def ensure_policy_catalog(db: Session) -> None:
                 one_time_cost=policy.one_time_cost,
                 upkeep_cost=policy.upkeep_cost,
                 capital_cost=policy.capital_cost,
+                income_per_turn=policy.income_per_turn,
                 effects=[vars(e) for e in policy.effects],
                 requires=list(policy.requires),
             )

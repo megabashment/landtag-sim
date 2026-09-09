@@ -36,6 +36,41 @@ class DilemmaPendingError(Exception):
         super().__init__(f"Dilemma '{dilemma_key}' muss zuerst aufgeloest werden, bevor die Runde weitergeht")
 
 
+class PolicyAlreadyActiveError(Exception):
+    """Die Policy ist bereits aktiv (und nicht zurueckgezogen) -- ein zweites
+    Enact wuerde ihre Effekte/Kosten verdoppeln, ohne dass die Sim-Engine
+    das je vorgesehen haette. Vorher konnte das API-seitig unbemerkt
+    passieren; siehe mistakes.md."""
+
+    def __init__(self, policy_key: str):
+        self.policy_key = policy_key
+        super().__init__(f"Policy '{policy_key}' ist bereits aktiv und kann nicht erneut eingefuehrt werden")
+
+
+class PolicyNotActiveError(Exception):
+    """Repeal einer Policy, die es nicht gibt oder die bereits zurueckgezogen
+    wurde (repealed_turn ist schon gesetzt)."""
+
+    def __init__(self, policy_key: str):
+        self.policy_key = policy_key
+        super().__init__(f"Policy '{policy_key}' ist nicht aktiv und kann nicht zurueckgezogen werden")
+
+
+class PolicyRequiredByActivePolicyError(Exception):
+    """Democracy-4-Vorbild: manche Policies sind voneinander abhaengig
+    (Policy.requires). Ein Repeal, das eine noch aktive, abhaengige Policy
+    ihrer Voraussetzung beraubt, wird abgelehnt -- statt stillschweigend
+    inkonsistente Zustaende zuzulassen."""
+
+    def __init__(self, policy_key: str, dependent_policy_key: str):
+        self.policy_key = policy_key
+        self.dependent_policy_key = dependent_policy_key
+        super().__init__(
+            f"Policy '{policy_key}' kann nicht zurueckgezogen werden, solange '{dependent_policy_key}' "
+            f"aktiv ist und sie voraussetzt"
+        )
+
+
 @dataclass
 class PolicyEffect:
     """Wirkung mit weichem Ein- statt hartem Ausblenden (Democracy-4-Vorbild:
@@ -61,6 +96,13 @@ class Policy:
     one_time_cost: float = 0.0
     upkeep_cost: float = 0.0
     capital_cost: float = 0.0  # Political-Capital-Kosten, siehe SimState.political_capital
+
+    # Democracy-4-Vorbild: echte Einnahmen-Policies (z.B. Steuern) statt eines
+    # unsichtbaren Pauschal-Zuschusses -- der Spieler sieht/waehlt den Hebel,
+    # der Geld bringt, und kann ihn per Repeal auch wieder abschalten (siehe
+    # engine.py::advance_turn, "Wo kommen positive Budget-Werte her?").
+    income_per_turn: float = 0.0
+
     effects: list[PolicyEffect] = field(default_factory=list)
 
     # P1-Punkt "Policy-Pfade/Voraussetzungen" (docs/game-design-roadmap.md):
@@ -148,6 +190,15 @@ class PendingDilemma:
 class EnactedPolicy:
     policy_key: str
     enacted_turn: int
+
+    # Democracy-4-Vorbild: Policies werden nicht sofort geloescht, sondern
+    # "abgeschaltet" -- ihre Wirkung klingt symmetrisch zum Aufbau wieder ab
+    # (siehe engine.py::_effect_delta), statt schlagartig zu verschwinden.
+    # None = weiterhin aktiv. WICHTIG: SimState.clone() kopiert
+    # active_policies nur flach (gleiche EnactedPolicy-Instanzen) -- ein
+    # Repeal muss den Eintrag daher per Ersetzung (neues EnactedPolicy-Objekt)
+    # aendern, niemals per In-Place-Mutation eines bestehenden Objekts.
+    repealed_turn: int | None = None
 
 
 @dataclass

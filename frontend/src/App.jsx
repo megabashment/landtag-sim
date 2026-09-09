@@ -41,6 +41,11 @@ export default function App() {
   // Laden der App geholt (Katalog ist global, nicht pro Session).
   const [policies, setPolicies] = useState([]);
   const [selectedPolicies, setSelectedPolicies] = useState([]);
+  // Democracy-4-Vorbild "Policy-Repeal" (siehe CLAUDE.md/landtag_sim.
+  // engine.py::advance_turn): Policy-Keys, die diese Runde zurueckgezogen
+  // werden sollen. Getrennt von selectedPolicies, weil ein Key nie
+  // gleichzeitig neu eingefuehrt UND zurueckgezogen werden kann.
+  const [selectedRepeals, setSelectedRepeals] = useState([]);
   const [events, setEvents] = useState([]);
   const [attributions, setAttributions] = useState([]);
   const [electionResult, setElectionResult] = useState(null);
@@ -93,7 +98,7 @@ export default function App() {
     }
     let cancelled = false;
     api
-      .previewTurn(session.session_id, selectedPolicies)
+      .previewTurn(session.session_id, selectedPolicies, selectedRepeals)
       .then((result) => {
         if (!cancelled) setPreview(result);
       })
@@ -103,7 +108,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [session, selectedPolicies, dilemmaPending]);
+  }, [session, selectedPolicies, selectedRepeals, dilemmaPending]);
 
   async function handleStart() {
     setError(null);
@@ -116,6 +121,7 @@ export default function App() {
       setAttributions([]);
       setElectionResult(null);
       setSelectedPolicies([]);
+      setSelectedRepeals([]);
       setHistory([]);
     } catch (e) {
       setError(e.message);
@@ -129,12 +135,13 @@ export default function App() {
     setError(null);
     setLoading(true);
     try {
-      const result = await api.advanceTurn(session.session_id, selectedPolicies);
+      const result = await api.advanceTurn(session.session_id, selectedPolicies, selectedRepeals);
       setSession(result.state);
       setEvents(result.events);
       setAttributions(result.attributions);
       setElectionResult(result.election_result);
       setSelectedPolicies([]);
+      setSelectedRepeals([]);
       pushHistoryEntry({
         kind: "advance",
         turn: result.state.turn,
@@ -185,6 +192,7 @@ export default function App() {
       setAttributions(result.attributions);
       setElectionResult(result.election_result);
       setSelectedPolicies([]);
+      setSelectedRepeals([]);
       // Vorspulen kann mehrere Runden ueberspringen -- JEDE davon bekommt
       // einen eigenen Verlaufseintrag (neueste zuerst), nicht nur die letzte.
       setHistory((prev) => [...skippedEntries.reverse(), ...prev].slice(0, HISTORY_LIMIT));
@@ -227,6 +235,25 @@ export default function App() {
     );
   }
 
+  // Democracy-4-Vorbild "Policy-Repeal": analog zu togglePolicy, aber fuer
+  // bereits aktive Policies, die diese Runde zurueckgezogen werden sollen.
+  function toggleRepeal(key) {
+    setSelectedRepeals((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
+  }
+
+  // Democracy-4-Vorbild: eine Policy, von der noch eine aktive Policy
+  // abhaengt (Policy.requires), kann nicht zurueckgezogen werden (siehe
+  // PolicyRequiredByActivePolicyError in landtag_sim.models) -- die UI
+  // blendet den Repeal-Button in dem Fall aus, statt einen 400er zu riskieren.
+  function activeDependents(policyKey) {
+    if (!session) return [];
+    return policies
+      .filter((p) => session.active_policy_keys.includes(p.key) && p.requires.includes(policyKey))
+      .map((p) => p.name);
+  }
+
   function unmetRequirements(policy) {
     if (!session) return policy.requires;
     return policy.requires.filter(
@@ -234,7 +261,9 @@ export default function App() {
     );
   }
 
-  const selectedCapitalCost = selectedPolicies.reduce((sum, key) => {
+  // Political Capital wird fuer Enact UND Repeal faellig (siehe
+  // landtag_sim.engine.py::advance_turn, capital_cost).
+  const selectedCapitalCost = [...selectedPolicies, ...selectedRepeals].reduce((sum, key) => {
     const policy = policies.find((p) => p.key === key);
     return sum + (policy?.capital_cost ?? 0);
   }, 0);
@@ -347,20 +376,43 @@ export default function App() {
                   const active = session.active_policy_keys.includes(p.key);
                   const missing = unmetRequirements(p);
                   const locked = !active && missing.length > 0;
+                  // Democracy-4-Vorbild "Woher kommen positive Budget-Werte":
+                  // eine echte Einnahmen-Policy (income_per_turn) wird sichtbar
+                  // ausgewiesen statt als unsichtbarer Pauschal-Zuschuss zu wirken.
+                  const incomeHint = p.income_per_turn > 0 ? ` · +${p.income_per_turn} Einnahme/Runde` : "";
+                  const dependents = active ? activeDependents(p.key) : [];
+                  const repealBlocked = dependents.length > 0;
                   return (
                     <li key={p.key}>
-                      <label>
-                        <input
-                          type="checkbox"
-                          disabled={active || gameOver || dilemmaPending || locked}
-                          checked={selectedPolicies.includes(p.key)}
-                          onChange={() => togglePolicy(p.key)}
-                        />
-                        {p.name} {active ? "(bereits aktiv)" : `(${p.capital_cost} Political Capital)`}
-                      </label>
+                      {active ? (
+                        <label>
+                          <input
+                            type="checkbox"
+                            disabled={gameOver || dilemmaPending || repealBlocked}
+                            checked={selectedRepeals.includes(p.key)}
+                            onChange={() => toggleRepeal(p.key)}
+                          />
+                          {p.name} (aktiv{incomeHint}) &mdash; zurueckziehen ({p.capital_cost} Political Capital)
+                        </label>
+                      ) : (
+                        <label>
+                          <input
+                            type="checkbox"
+                            disabled={gameOver || dilemmaPending || locked}
+                            checked={selectedPolicies.includes(p.key)}
+                            onChange={() => togglePolicy(p.key)}
+                          />
+                          {p.name} ({p.capital_cost} Political Capital{incomeHint})
+                        </label>
+                      )}
                       {locked && (
                         <p className="hint requirement-hint">
                           Braucht zuerst: {missing.map(policyLabel).join(", ")}
+                        </p>
+                      )}
+                      {repealBlocked && (
+                        <p className="hint requirement-hint">
+                          Kann nicht zurueckgezogen werden, solange aktiv: {dependents.join(", ")}
                         </p>
                       )}
                     </li>

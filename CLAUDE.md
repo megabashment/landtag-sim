@@ -6,12 +6,6 @@ stehen in `docs/architecture.md` (Game-Director-Review) und
 `docs/game-design-roadmap.md` (Senior-Game-Designer-Review) — diese Datei
 fasst nur zusammen, was für den nächsten Arbeitsschritt wichtig ist.
 
-**Nächste Arbeitsschritte stehen in `BACKLOG.md`** (Wurzelverzeichnis):
-priorisierte Milestone-Liste M2–M4, gespeist aus der Community-Recherche
-2026-09-09 (Democracy-3/4-Diskussionen, Positech-Devblog, Genre-Nachbarn).
-Die 10-Punkte-Roadmap in `docs/game-design-roadmap.md` ist komplett
-abgearbeitet; alles Weitere läuft über `BACKLOG.md`.
-
 Siehe auch `mistakes.md` für bereits gefundene und behobene Bugs —
 **vor größeren Refactors dort nachsehen**, damit dieselben Fehler nicht
 zweimal gemacht werden.
@@ -79,9 +73,40 @@ landtag-sim/
   Betrag gutgeschrieben, unabhängig von Policies/Statistiken (vereinfachte
   Landeshaushalt-Basissteuereinnahme, kein echtes Steuersatz-System im
   MVP-Scope). Vorher hatte das Budget NUR Ausgaben und keine Einnahme —
-  ohne Policy-Repeal-Mechanik (gibt es weiterhin nicht) drainierte jede
-  Policy mit `upkeep_cost>0` das feste Start-Budget unaufhaltsam. Siehe
-  `mistakes.md` für die Herleitung.
+  bei 3-4 gleichzeitig aktiven Policies blieb Budget trotzdem spürbar unter
+  Druck. Siehe `mistakes.md` für die Herleitung.
+- **Echte Einnahmen-Policies** (`Policy.income_per_turn`, Democracy-4-
+  Recherche): zusätzlich zur pauschalen Grundeinnahme gibt es jetzt eine
+  echte, vom Spieler gewählte Einnahmequelle — `vermoegensteuer`
+  (`income_per_turn=20.0`). Democracy 4 modelliert Budget-Einnahmen nicht
+  als unsichtbaren Zuschuss, sondern als Policy mit `MinIncome`/`MaxIncome`
+  (siehe offizielle Modding-Doku); `income_per_turn` ist die MVP-taugliche
+  Vereinfachung davon (kein Regler, aber ein echter, sichtbarer, per Repeal
+  abschaltbarer Hebel statt einer Blackbox). Fließt in `advance_turn`
+  genauso wie `upkeep_cost` — nur additiv statt subtraktiv — und stoppt
+  sofort bei Repeal.
+- **Policy-Repeal** (`EnactedPolicy.repealed_turn`, `advance_turn(...,
+  newly_repealed_keys=...)`, Democracy-4-Recherche): eine Policy kann
+  zurückgezogen werden, wirkt danach aber NICHT schlagartig verschwunden —
+  ihre Effekte klingen symmetrisch zum Aufbau exponentiell ab (dieselbe
+  `inertia`/Alpha-Rate rückwärts, siehe `engine.py::_effect_delta`), analog
+  zu Democracy 4s gradueller Cancel-Animation. Upkeep UND `income_per_turn`
+  stoppen dagegen sofort mit der Repeal-Runde. Repeal kostet ebenfalls
+  `capital_cost` (Democracy 4 bepreist Einführung, Repeal und
+  Regler-Anpassung separat — MVP vereinfacht auf zwei Fälle: Einführung und
+  Repeal teilen sich `capital_cost`, da es noch keine Regler-Policies
+  gibt). Drei neue Fehlerfälle: `PolicyAlreadyActiveError` (Doppel-Enact),
+  `PolicyNotActiveError` (Repeal einer nie/nicht mehr aktiven Policy),
+  `PolicyRequiredByActivePolicyError` (Repeal einer Policy, die eine andere,
+  noch aktive Policy per `requires` voraussetzt). WICHTIG:
+  `SimState.clone()` kopiert `active_policies` nur FLACH (gleiche
+  `EnactedPolicy`-Instanzen) — Repeal ERSETZT den betroffenen Listeneintrag
+  durch ein neues Objekt, mutiert nie in-place. Backend: `EnactedPolicy.
+  active: bool` wurde zu `repealed_turn: int | None`, `sim_bridge.py::
+  load_sim_state()` lädt bewusst ALLE Zeilen (nicht nur aktive), da der
+  State bei jedem Request frisch aus der DB aufgebaut wird und eine
+  zurückgezogene Policy ihr Abkling-Gedächtnis sonst verlieren würde. API:
+  `repeal_policy_keys` auf `AdvanceTurnRequest`/`PreviewRequest`.
 - **Jede Policy hat mindestens einen negativen Nebeneffekt** (Trade-off-
   Pflicht, siehe `test_every_sample_policy_has_at_least_one_negative_effect`)
   — reine Positiv-Policies waren der Hauptkritikpunkt der ersten Review.
@@ -150,12 +175,9 @@ Dilemma-Events, Policy-Voraussetzungen, Fast-Forward (P1), Namens-Vignetten,
 Zufriedenheits-Momentum/Glättung, randomisierte Startbedingungen,
 Dominante-Strategie-Check im Balance-Runner (P2). Details und
 Umsetzungsnotizen direkt in der Roadmap-Datei je Punkt. Es gibt aktuell
-keine offenen Roadmap-Punkte. Die über die Roadmap hinausgehenden Ideen
-sind seit der Community-Recherche 2026-09-09 in `BACKLOG.md` erfasst und
-priorisiert (Milestone M2: Situations-Layer, Legislatur-Bogen/Debrief,
-narrative Presseschau, Wahlprognose mit Turnout, zustandsgekoppelte
-Risiko-Events, Trigger-Telemetrie im Balance-Runner). M2 ist der nächste
-Arbeitsblock; empfohlene Reihenfolge B1→B6 steht im Backlog.
+keine offenen Roadmap-Punkte — nächste Schritte wären neue, über die
+Roadmap hinausgehende Ideen (z.B. mehr Dilemma-Inhalte, überlappende
+Wählergruppen, Balance-Tuning, siehe "Bekannte Vereinfachungen" unten).
 
 Zusätzlich (nach P2, außerhalb der Roadmap-Liste) umgesetzt: `GET /policies`
 — dynamischer Policy-Katalog aus der DB (`backend/app/api/routes_game.py::
@@ -237,12 +259,60 @@ geschlossen:
   aufgeloestem Dilemma, gerendert als neue "Verlauf"-Sektion
   (neueste zuerst).
 
+Policy-Repeal-Mechanismus (Auftrag "Mach mit dem Policy-Repeal-Mechanismus
+weiter, schau vorher in Democracy 4 Mechaniken", 2026-09-09): vor der
+Umsetzung wurden gezielt Democracy 4s Repeal-/Budget-/Einnahmen-Mechaniken
+recherchiert (offizielle Modding-Dokumentation, Cliff Harris' Blogposts
+"Real World Numbers in Democracy 4" und "Modelling the limits to growth",
+Steam-Community-Modding-Guide -- zwei Fandom-Wiki-Seiten waren per WebFetch
+nicht erreichbar, 402). Kernbefunde: (1) D4 laesst zurueckgezogene Policies
+GRADUELL abklingen statt sie sofort zu entfernen; (2) Einfuehrung, Repeal
+und Regler-Anpassung kosten politisches Kapital SEPARAT; (3) Einnahmen
+kommen aus echten, vom Spieler gewaehlten Steuer-Policies
+(`MinIncome`/`MaxIncome`), nicht aus einem unsichtbaren Zuschuss, und
+skalieren teils an einer zugrunde liegenden Wirtschaftsstatistik. Daraus
+umgesetzt (siehe "Policy-Repeal" und "Echte Einnahmen-Policies" in den
+Kernmechaniken oben fuer die Details):
+- `EnactedPolicy.repealed_turn` (sim + DB, ersetzt `active: bool`),
+  `_effect_delta()` um symmetrischen Abbau erweitert, `advance_turn(...,
+  newly_repealed_keys=...)`, drei neue Fehlerklassen
+  (`PolicyAlreadyActiveError`, `PolicyNotActiveError`,
+  `PolicyRequiredByActivePolicyError`).
+- `Policy.income_per_turn` plus neue Beispiel-Policy `vermoegensteuer`
+  (`income_per_turn=20.0`, hoechster `capital_cost` aller Policies) --
+  Balance-Runner bestaetigt weiterhin "Keine vermutlich dominante Policy
+  gefunden" mit jetzt 5 Policies.
+- Backend: `repeal_policy_keys` auf `AdvanceTurnRequest`/`PreviewRequest`,
+  `sim_bridge.py::load_sim_state()` laedt jetzt ALLE `EnactedPolicy`-Zeilen
+  statt nur aktive (siehe Kernmechaniken-Abschnitt fuer die Begruendung).
+- Tests: 8 neue sim-Engine-Tests (`sim/tests/test_engine.py`, u.a.
+  `test_repealed_policy_effect_decays_symmetrically_instead_of_vanishing`,
+  `test_repeal_blocked_when_still_required_by_an_active_dependent_policy`)
+  und 10 neue Backend-API-Tests (`backend/tests/test_repeal.py`) --
+  inklusive eines Regressionstests dafuer, dass eine zurueckgezogene Policy
+  ueber MEHRERE GETRENNTE API-Requests hinweg weiter korrekt abklingt
+  (`test_repeal_stops_upkeep_but_keeps_effect_decaying_across_requests`),
+  da der State bei jedem Request frisch aus der DB aufgebaut wird.
+- Live per curl gegen `/advance`/`/preview` end-to-end verifiziert
+  (Enact -> mehrere Runden aufbauen -> Repeal -> Abkling-Kurve ueber
+  mehrere Requests beobachtet -- Deltas nahmen exakt mit Faktor `(1-alpha)`
+  pro Runde ab, wie von `_effect_delta` erwartet). Dabei eine echte
+  Umgebungs-Falle gefunden und in `mistakes.md` dokumentiert: ein
+  `SQLModel.metadata.drop_all/create_all`-Reset-Skript ohne vorherigen
+  `import app.models` aendert scheinbar erfolgreich, aber tatsaechlich gar
+  nichts am DB-Schema.
+
 Bekannte, bewusst offene Vereinfachungen:
-- Es gibt weiterhin keine Policy-Repeal-Mechanik — eine einmal eingeführte
-  Policy läuft (und kostet Upkeep) unbegrenzt weiter. Die neue
-  Grundeinnahme macht das für 1-2 gleichzeitig aktive Policies unkritisch,
-  bei 3-4 gleichzeitig bleibt Budget spürbar unter Druck (siehe
-  Balance-Runner-Ausgabe).
+- `income_per_turn` ist ein fixer Betrag ohne Regler und ohne Kopplung an
+  eine zugrunde liegende Wirtschaftsstatistik — Democracy 4 skaliert echte
+  Steuereinnahmen z.B. an den tatsächlichen Alkoholkonsum (siehe
+  Recherche-Notizen im Repeal-Abschnitt oben); ein "Steuersatz x
+  Wirtschaftsaktivität"-Modell ist bewusst außerhalb des MVP-Scopes.
+- Repeal kostet aktuell denselben `capital_cost` wie die Einführung — kein
+  eigener, günstigerer "Cancel"-Kostensatz wie in Democracy 4 möglich
+  (siehe dort: Einführung/Cancel/Regler-Anpassung sind drei separate
+  Kostenfälle). Für die MVP-Policy-Anzahl (kein Regler-System) reicht die
+  Vereinfachung.
 - Die meisten ursprünglichen Event-/Dilemma-Schwellenwerte
   (`arbeitsmarktkrise` u.a.) bleiben im organischen Spielverlauf praktisch
   unerreichbar, weil nichts in den Beispiel-Policies die Statistiken so
@@ -263,6 +333,12 @@ sudo -u postgres psql -c "DROP DATABASE IF EXISTS landtag_sim;" && sudo -u postg
 # hat die App-Rolle sonst kein CREATE-Recht im public-Schema einer frisch angelegten DB.
 sudo -u postgres psql -d landtag_sim -c "ALTER DATABASE landtag_sim OWNER TO landtag;"
 sudo -u postgres psql -d landtag_sim -c "ALTER SCHEMA public OWNER TO landtag;"
+# ACHTUNG bei einem Schema-Update OHNE volles DROP/CREATE DATABASE (z.B. ein
+# schneller `SQLModel.metadata.drop_all(engine); create_all(engine)`-Einzeiler):
+# vorher `import app.models` ausfuehren, sonst registriert SQLModel die
+# Tabellen gar nicht erst und der Reset aendert scheinbar fehlerfrei, aber
+# TATSAECHLICH GAR NICHTS am Schema (siehe mistakes.md, Policy-Repeal-
+# Nachschaerfung 2026-09-09) -- mit `psql \d <tabelle>` verifizieren.
 
 # Backend-API-Testsuite (backend/tests/, seit Doku-Audit 2026-09-09) braucht
 # eine EIGENE Test-DB (siehe conftest.py) -- einmalig anlegen, gleicher

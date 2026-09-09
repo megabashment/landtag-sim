@@ -2,7 +2,7 @@ import random
 
 import pytest
 
-from landtag_sim.engine import BASE_BUDGET_INCOME_PER_TURN, advance_turn, resolve_dilemma
+from landtag_sim.engine import CAPITAL_CAP, CAPITAL_PER_TURN, BASE_BUDGET_INCOME_PER_TURN, advance_turn, resolve_dilemma
 from landtag_sim.models import (
     DilemmaOption,
     DilemmaPendingError,
@@ -10,7 +10,10 @@ from landtag_sim.models import (
     EventRule,
     InsufficientCapitalError,
     Policy,
+    PolicyAlreadyActiveError,
     PolicyEffect,
+    PolicyNotActiveError,
+    PolicyRequiredByActivePolicyError,
     UnmetPrerequisiteError,
 )
 from landtag_sim.sample_data import (
@@ -563,3 +566,134 @@ def test_three_policy_combination_no_longer_goes_budget_negative():
         result = advance_turn(state, SAMPLE_POLICIES, [], dilemma_rules=SAMPLE_DILEMMA_RULES)
         state = result.state
     assert state.budget >= 0
+
+
+# --- Policy-Repeal-Mechanismus (Democracy-4-Vorbild) ---------------------
+#
+# Vorbild: Democracy 4 loescht eine zurueckgezogene Policy nicht schlagartig,
+# sondern laesst ihre Wirkung graduell abklingen (siehe CLAUDE.md/mistakes.md
+# fuer die Recherche-Notizen zu Repeal/Budget/Einnahmen). Die Tests hier
+# pruefen: (1) Upkeep/Einnahmen stoppen sofort, (2) der Effekt selbst klingt
+# symmetrisch zum Aufbau ab statt abrupt zu verschwinden, (3) Repeal kostet
+# ebenfalls Political Capital, (4) die drei neuen Fehlerfaelle (Doppel-Enact,
+# Repeal einer inaktiven Policy, Repeal einer noch benoetigten Policy).
+
+
+def test_repeal_stops_upkeep_cost_immediately():
+    state = build_initial_state()
+    result = advance_turn(state, SAMPLE_POLICIES, SAMPLE_EVENT_RULES, newly_enacted_keys=["erneuerbare_foerderung"])
+    result = advance_turn(result.state, SAMPLE_POLICIES, SAMPLE_EVENT_RULES)
+    budget_after_normal_turn = result.state.budget
+
+    result = advance_turn(result.state, SAMPLE_POLICIES, SAMPLE_EVENT_RULES, newly_repealed_keys=["erneuerbare_foerderung"])
+    # Repeal-Runde: nur noch die Grundeinnahme, kein upkeep_cost (5.0) mehr --
+    # anders als eine normale Runde, die budget_after_normal_turn erreicht hat.
+    assert result.state.budget == pytest.approx(budget_after_normal_turn + BASE_BUDGET_INCOME_PER_TURN)
+
+    # Und bleibt auch in Folgerunden aus.
+    result2 = advance_turn(result.state, SAMPLE_POLICIES, SAMPLE_EVENT_RULES)
+    assert result2.state.budget == pytest.approx(result.state.budget + BASE_BUDGET_INCOME_PER_TURN)
+
+
+def test_repealing_a_policy_also_costs_political_capital():
+    state = build_initial_state()
+    result = advance_turn(state, SAMPLE_POLICIES, SAMPLE_EVENT_RULES, newly_enacted_keys=["erneuerbare_foerderung"])
+    capital_before_repeal = result.state.political_capital
+
+    result = advance_turn(result.state, SAMPLE_POLICIES, SAMPLE_EVENT_RULES, newly_repealed_keys=["erneuerbare_foerderung"])
+    expected = min(CAPITAL_CAP, capital_before_repeal + CAPITAL_PER_TURN) - 4.0  # capital_cost der Policy
+    assert result.state.political_capital == pytest.approx(expected)
+
+
+def test_repealed_policy_effect_decays_symmetrically_instead_of_vanishing():
+    """Kernstueck des Democracy-4-Vorbilds: KEIN abruptes Verschwinden. Ein
+    frei erfundenes Testpolicy (statt SAMPLE_POLICIES) haelt die Rechnung
+    unabhaengig von anderen Effekten/Events nachvollziehbar."""
+    testpolicy = Policy(
+        key="testpolicy",
+        name="Testpolicy",
+        effects=[PolicyEffect(statistic_key="renewable_share", magnitude=10.0, delay_turns=0, inertia=2)],
+    )
+    baseline = STARTING_STATISTICS["renewable_share"]
+    state = build_initial_state()
+
+    result = advance_turn(state, [testpolicy], [], newly_enacted_keys=["testpolicy"])
+    state = result.state
+    for _ in range(3):
+        result = advance_turn(state, [testpolicy], [])
+        state = result.state
+    value_at_repeal = state.statistics["renewable_share"]
+    assert value_at_repeal > baseline  # Effekt hat sich sichtbar aufgebaut
+
+    result = advance_turn(state, [testpolicy], [], newly_repealed_keys=["testpolicy"])
+    state = result.state
+    decay_deltas = []
+    for _ in range(12):
+        delta = next((a.delta for a in result.attributions if a.statistic_key == "renewable_share"), 0.0)
+        decay_deltas.append(delta)
+        result = advance_turn(state, [testpolicy], [])
+        state = result.state
+
+    # Jeder Schritt baut ab (negativ), keiner springt auf einmal auf 0 --
+    # das waere das alte, abrupte Verhalten.
+    nonzero_deltas = [d for d in decay_deltas if d != 0.0]
+    assert nonzero_deltas, "Repeal sollte ueberhaupt Abbau-Deltas erzeugen"
+    assert all(d < 0 for d in nonzero_deltas)
+    # Abklingen ist monoton schwaecher werdend (exponentiell, wie der Aufbau).
+    assert all(abs(nonzero_deltas[i]) >= abs(nonzero_deltas[i + 1]) for i in range(len(nonzero_deltas) - 1))
+    # Nach genug Runden ist der Effekt wieder (fast) vollstaendig abgebaut.
+    assert state.statistics["renewable_share"] == pytest.approx(baseline, abs=0.05)
+
+
+def test_enacting_an_already_active_policy_raises():
+    state = build_initial_state()
+    result = advance_turn(state, SAMPLE_POLICIES, SAMPLE_EVENT_RULES, newly_enacted_keys=["gesundheitsreform"])
+    with pytest.raises(PolicyAlreadyActiveError):
+        advance_turn(result.state, SAMPLE_POLICIES, SAMPLE_EVENT_RULES, newly_enacted_keys=["gesundheitsreform"])
+
+
+def test_repealing_an_inactive_policy_raises():
+    state = build_initial_state()
+    with pytest.raises(PolicyNotActiveError):
+        advance_turn(state, SAMPLE_POLICIES, SAMPLE_EVENT_RULES, newly_repealed_keys=["gesundheitsreform"])
+
+
+def test_repeal_blocked_when_still_required_by_an_active_dependent_policy():
+    state = build_initial_state()
+    result = advance_turn(state, SAMPLE_POLICIES, SAMPLE_EVENT_RULES, newly_enacted_keys=["bildungsoffensive"])
+    result = advance_turn(
+        result.state, SAMPLE_POLICIES, SAMPLE_EVENT_RULES, newly_enacted_keys=["steuersenkung_mittelstand"]
+    )
+    with pytest.raises(PolicyRequiredByActivePolicyError):
+        advance_turn(result.state, SAMPLE_POLICIES, SAMPLE_EVENT_RULES, newly_repealed_keys=["bildungsoffensive"])
+
+
+def test_repeal_allowed_once_the_dependent_policy_is_also_repealed_same_turn():
+    state = build_initial_state()
+    result = advance_turn(state, SAMPLE_POLICIES, SAMPLE_EVENT_RULES, newly_enacted_keys=["bildungsoffensive"])
+    result = advance_turn(
+        result.state, SAMPLE_POLICIES, SAMPLE_EVENT_RULES, newly_enacted_keys=["steuersenkung_mittelstand"]
+    )
+    # Beide gleichzeitig zurueckziehen ist erlaubt -- die abhaengige Policy
+    # ist ja im selben Atemzug ebenfalls nicht mehr aktiv.
+    result = advance_turn(
+        result.state,
+        SAMPLE_POLICIES,
+        SAMPLE_EVENT_RULES,
+        newly_repealed_keys=["bildungsoffensive", "steuersenkung_mittelstand"],
+    )
+    active_keys = {ep.policy_key for ep in result.state.active_policies if ep.repealed_turn is None}
+    assert "bildungsoffensive" not in active_keys
+    assert "steuersenkung_mittelstand" not in active_keys
+
+
+def test_can_reenact_a_policy_after_it_was_repealed():
+    state = build_initial_state()
+    result = advance_turn(state, SAMPLE_POLICIES, SAMPLE_EVENT_RULES, newly_enacted_keys=["gesundheitsreform"])
+    result = advance_turn(result.state, SAMPLE_POLICIES, SAMPLE_EVENT_RULES, newly_repealed_keys=["gesundheitsreform"])
+    result = advance_turn(result.state, SAMPLE_POLICIES, SAMPLE_EVENT_RULES, newly_enacted_keys=["gesundheitsreform"])
+
+    all_keys = [ep.policy_key for ep in result.state.active_policies]
+    assert all_keys.count("gesundheitsreform") == 2  # der alte (zurueckgezogene) + der neue Eintrag
+    active_keys = [ep.policy_key for ep in result.state.active_policies if ep.repealed_turn is None]
+    assert active_keys.count("gesundheitsreform") == 1

@@ -22,17 +22,21 @@ export const api = {
   listPolicies: () => request("/policies"),
   createSession: () => request("/sessions", { method: "POST" }),
   getSession: (id) => request(`/sessions/${id}`),
-  advanceTurn: (id, enactPolicyKeys) =>
+  // repealPolicyKeys: Democracy-4-Vorbild "Policy-Repeal" (siehe
+  // landtag_sim.engine.py::advance_turn) -- Policies, die diese Runde
+  // zurueckgezogen werden sollen. Optional, damit bestehende Aufrufer ohne
+  // Repeal-UI nicht angepasst werden muessen.
+  advanceTurn: (id, enactPolicyKeys, repealPolicyKeys = []) =>
     request(`/sessions/${id}/advance`, {
       method: "POST",
-      body: JSON.stringify({ enact_policy_keys: enactPolicyKeys }),
+      body: JSON.stringify({ enact_policy_keys: enactPolicyKeys, repeal_policy_keys: repealPolicyKeys }),
     }),
   // P0-Punkt "Effekt-Vorschau vor Entscheidung" (docs/game-design-roadmap.md):
   // simuliert die naechste Runde, persistiert aber nichts.
-  previewTurn: (id, enactPolicyKeys) =>
+  previewTurn: (id, enactPolicyKeys, repealPolicyKeys = []) =>
     request(`/sessions/${id}/preview`, {
       method: "POST",
-      body: JSON.stringify({ enact_policy_keys: enactPolicyKeys }),
+      body: JSON.stringify({ enact_policy_keys: enactPolicyKeys, repeal_policy_keys: repealPolicyKeys }),
     }),
   // P1-Punkt "Dilemma-Events mit echten Entscheidungsoptionen": wendet die
   // gewaehlte Option eines offenen Dilemmas an, zaehlt keine eigene Runde.

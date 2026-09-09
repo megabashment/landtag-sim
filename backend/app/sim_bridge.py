@@ -41,6 +41,7 @@ def load_policy_catalog(db: Session) -> list[Policy]:
             one_time_cost=row.one_time_cost,
             upkeep_cost=row.upkeep_cost,
             capital_cost=row.capital_cost,
+            income_per_turn=row.income_per_turn,
             effects=[PolicyEffect(**effect) for effect in row.effects],
             requires=list(row.requires),
         )
@@ -171,13 +172,16 @@ def load_sim_state(
         for vg in db.exec(select(DbVoterGroup).where(DbVoterGroup.session_id == session_id))
     ]
 
+    # WICHTIG: bewusst ALLE Zeilen laden, nicht nur die noch aktiven --
+    # eine zurueckgezogene Policy (repealed_turn gesetzt) braucht ihren
+    # enacted_turn/repealed_turn weiterhin, damit ihre Wirkung beim naechsten
+    # Laden korrekt weiter abklingt (siehe landtag_sim.engine.py::
+    # _effect_delta). Der State wird bei JEDEM API-Request frisch aus der DB
+    # aufgebaut -- ein Filtern auf "aktiv" wuerde das Abkling-Gedaechtnis
+    # jeder reparierten Policy sofort und dauerhaft verlieren.
     active_policies = [
-        SimEnactedPolicy(policy_key=ep.policy_key, enacted_turn=ep.enacted_turn)
-        for ep in db.exec(
-            select(DbEnactedPolicy).where(
-                DbEnactedPolicy.session_id == session_id, DbEnactedPolicy.active == True  # noqa: E712
-            )
-        )
+        SimEnactedPolicy(policy_key=ep.policy_key, enacted_turn=ep.enacted_turn, repealed_turn=ep.repealed_turn)
+        for ep in db.exec(select(DbEnactedPolicy).where(DbEnactedPolicy.session_id == session_id))
     ]
 
     return SimState(

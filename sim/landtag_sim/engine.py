@@ -54,6 +54,9 @@ from landtag_sim.models import (
     InsufficientCapitalError,
     PendingDilemma,
     Policy,
+    PolicyAlreadyActiveError,
+    PolicyNotActiveError,
+    PolicyRequiredByActivePolicyError,
     SimState,
     TurnResult,
     UnmetPrerequisiteError,
@@ -103,21 +106,59 @@ def _policy_by_key(policies: list[Policy], key: str) -> Policy | None:
     return next((p for p in policies if p.key == key), None)
 
 
-def _effect_delta(effect, turns_since_enacted: int) -> float:
+def _cumulative_fraction(effect, turns_since_enacted: int) -> float:
+    """Anteil von `magnitude`, der nach `turns_since_enacted` Runden Aufbau
+    (unter Beruecksichtigung von delay_turns) erreicht ist. Reine Hilfs-
+    funktion fuer _effect_delta -- sowohl fuer den Aufbau (Policy aktiv) als
+    auch als Ankerpunkt fuer den Abbau (Policy zurueckgezogen, siehe unten)."""
+    t = turns_since_enacted - effect.delay_turns
+    if t < 0:
+        return 0.0
+    alpha = 1.0 / max(effect.inertia, 1)
+    return 1 - (1 - alpha) ** (t + 1)
+
+
+def _effect_delta(
+    effect,
+    current_turn: int,
+    enacted_turn: int,
+    repealed_turn: int | None = None,
+) -> float:
     """Delta-Beitrag DIESER Runde (nicht der kumulierte Gesamteffekt).
 
     contribution(t) = magnitude * (1 - (1-alpha)^t) naehert sich `magnitude`
     an; wir brauchen aber die Differenz zur Vorrunde, weil SimState.statistics
     bereits laufend kumulierte Werte haelt (jede Runde wird nur das Delta
     addiert, siehe advance_turn).
+
+    Democracy-4-Vorbild fuer Repeal (siehe EnactedPolicy.repealed_turn):
+    eine zurueckgezogene Policy verschwindet nicht schlagartig, sondern klingt
+    SYMMETRISCH zum Aufbau wieder ab -- mit derselben Alpha-Rate, ausgehend
+    von dem Anteil, der bis zur letzten Runde vor dem Repeal erreicht war
+    ("frozen_fraction"). Das ist dieselbe exponentielle Glaettung wie beim
+    Aufbau, nur rueckwaerts.
     """
-    t = turns_since_enacted - effect.delay_turns
-    if t < 0:
-        return 0.0
     alpha = 1.0 / max(effect.inertia, 1)
-    contrib_today = 1 - (1 - alpha) ** (t + 1)
-    contrib_yesterday = 1 - (1 - alpha) ** t if t > 0 else 0.0
-    return effect.magnitude * (contrib_today - contrib_yesterday)
+    turns_since_enacted = current_turn - enacted_turn
+
+    if repealed_turn is None or current_turn < repealed_turn:
+        return effect.magnitude * (
+            _cumulative_fraction(effect, turns_since_enacted)
+            - _cumulative_fraction(effect, turns_since_enacted - 1)
+        )
+
+    # frozen_fraction = der Anteil von magnitude, der in der LETZTEN Runde vor
+    # dem Repeal (current_turn == repealed_turn - 1) erreicht war. Ab da klingt
+    # er mit derselben Alpha-Rate wieder ab -- symmetrisch zum Aufbau, d.h. der
+    # erste Abbau-Schritt ist auch der groesste (bei turns_since_repeal == 0 ist
+    # prev_fraction == frozen_fraction, das Delta ist der volle erste
+    # Alpha-Schritt nach unten).
+    turns_since_enacted_at_repeal = repealed_turn - enacted_turn
+    frozen_fraction = _cumulative_fraction(effect, turns_since_enacted_at_repeal - 1)
+    turns_since_repeal = current_turn - repealed_turn
+    prev_fraction = frozen_fraction * (1 - alpha) ** turns_since_repeal
+    current_fraction = frozen_fraction * (1 - alpha) ** (turns_since_repeal + 1)
+    return effect.magnitude * (current_fraction - prev_fraction)
 
 
 def _weighted_approval(state: SimState) -> float:
@@ -152,13 +193,25 @@ def _apply_reaction(state: SimState, attributions: list[EffectAttribution]) -> N
         )
 
 
-def _validate_prerequisites(policy_catalog: list[Policy], active_keys: set[str], newly_enacted_keys: list[str]) -> None:
+def _validate_prerequisites(
+    policy_catalog: list[Policy],
+    active_keys: set[str],
+    newly_enacted_keys: list[str],
+    newly_repealed_keys: list[str] | None = None,
+) -> None:
     """P1-Punkt 'Policy-Pfade/Voraussetzungen': jede neu einzufuehrende
     Policy braucht alle in `requires` gelisteten Policy-Keys bereits als
     aktiv (entweder schon vorher aktiv, oder in dieser selben Runde vorher
     in `newly_enacted_keys` gelistet -- Reihenfolge innerhalb einer Runde
-    spielt bewusst keine Rolle, nur DASS beide gewaehlt wurden)."""
-    already_or_newly_active = active_keys | set(newly_enacted_keys)
+    spielt bewusst keine Rolle, nur DASS beide gewaehlt wurden).
+
+    Repeal-erweitert: eine Voraussetzung, die DIESE Runde gleichzeitig
+    zurueckgezogen wird (newly_repealed_keys), zaehlt NICHT mehr als aktiv --
+    sonst koennte man in derselben Runde eine Policy einfuehren, deren
+    Voraussetzung im selben Atemzug wegfaellt.
+    """
+    newly_repealed_keys = newly_repealed_keys or []
+    already_or_newly_active = (active_keys - set(newly_repealed_keys)) | set(newly_enacted_keys)
     for key in newly_enacted_keys:
         policy = _policy_by_key(policy_catalog, key)
         if policy is None:
@@ -168,12 +221,38 @@ def _validate_prerequisites(policy_catalog: list[Policy], active_keys: set[str],
                 raise UnmetPrerequisiteError(policy_key=key, missing_requirement=requirement)
 
 
+def _validate_new_enactments(active_keys: set[str], newly_enacted_keys: list[str]) -> None:
+    """Verhindert ein unbemerktes Doppel-Enact derselben, bereits aktiven
+    Policy (vorher ein latenter Bug: die API liess das klaglos zu und
+    verdoppelte damit still Effekte/Kosten, siehe mistakes.md)."""
+    seen = set(active_keys)
+    for key in newly_enacted_keys:
+        if key in seen:
+            raise PolicyAlreadyActiveError(key)
+        seen.add(key)
+
+
+def _validate_repeals(policy_catalog: list[Policy], active_keys: set[str], newly_repealed_keys: list[str]) -> None:
+    """Repeal darf nur eine aktuell aktive Policy treffen (PolicyNotActiveError
+    sonst) und darf keine noch aktive, abhaengige Policy ihrer Voraussetzung
+    berauben (PolicyRequiredByActivePolicyError, Democracy-4-Vorbild: manche
+    Policies sind ohne ihre Grundlage schlicht nicht sinnvoll weiterbetreibbar)."""
+    remaining_active = active_keys - set(newly_repealed_keys)
+    for key in newly_repealed_keys:
+        if key not in active_keys:
+            raise PolicyNotActiveError(key)
+        for other_policy in policy_catalog:
+            if other_policy.key in remaining_active and key in other_policy.requires:
+                raise PolicyRequiredByActivePolicyError(policy_key=key, dependent_policy_key=other_policy.key)
+
+
 def advance_turn(
     state: SimState,
     policy_catalog: list[Policy],
     event_rules: list,
     newly_enacted_keys: list[str] | None = None,
     dilemma_rules: list[DilemmaRule] | None = None,
+    newly_repealed_keys: list[str] | None = None,
 ) -> TurnResult:
     """Rechnet genau eine Runde. Gibt ein TurnResult zurueck (state, events,
     attributions, ggf. election_result/pending_dilemma).
@@ -181,7 +260,10 @@ def advance_turn(
     Reine Funktion: state wird nicht mutiert, sondern geklont -- wichtig,
     damit der Balance-Runner und der Preview-Endpunkt (siehe
     backend/app/api/routes_game.py) denselben Ausgangszustand mehrfach
-    wiederverwenden koennen, ohne Seiteneffekte.
+    wiederverwenden koennen, ohne Seiteneffekte. SimState.clone() kopiert
+    active_policies nur FLACH (gleiche EnactedPolicy-Instanzen) -- ein Repeal
+    ERSETZT den betroffenen Listeneintrag daher durch ein neues Objekt statt
+    ihn in-place zu mutieren.
 
     Wirft DilemmaPendingError, wenn state.pending_dilemma noch gesetzt ist --
     der Aufrufer muss zuerst resolve_dilemma() aufrufen, bevor eine weitere
@@ -190,20 +272,29 @@ def advance_turn(
     Wirft UnmetPrerequisiteError, wenn eine neu einzufuehrende Policy eine
     noch nicht aktive Voraussetzung hat (siehe Policy.requires).
 
-    Wirft InsufficientCapitalError, wenn die neu einzufuehrenden Policies
-    mehr Political Capital kosten, als nach der Regeneration dieser Runde
-    verfuegbar ist -- bewusst VOR jeder anderen Aenderung geprueft, damit
-    ein abgelehnter Zug den State nicht trotzdem mutiert.
+    Wirft PolicyAlreadyActiveError, wenn eine bereits aktive Policy erneut
+    eingefuehrt werden soll, und PolicyNotActiveError/
+    PolicyRequiredByActivePolicyError bei einem ungueltigen Repeal (siehe
+    _validate_repeals).
+
+    Wirft InsufficientCapitalError, wenn die neu einzufuehrenden UND die neu
+    zurueckzuziehenden Policies zusammen mehr Political Capital kosten, als
+    nach der Regeneration dieser Runde verfuegbar ist (Democracy-4-Vorbild:
+    auch ein Repeal kostet politisches Kapital, siehe capital_cost) --
+    bewusst VOR jeder anderen Aenderung geprueft, damit ein abgelehnter Zug
+    den State nicht trotzdem mutiert.
     """
     if state.pending_dilemma is not None:
         raise DilemmaPendingError(state.pending_dilemma.rule_key)
 
     newly_enacted_keys = newly_enacted_keys or []
+    newly_repealed_keys = newly_repealed_keys or []
     dilemma_rules = dilemma_rules or []
 
-    _validate_prerequisites(
-        policy_catalog, {ep.policy_key for ep in state.active_policies}, newly_enacted_keys
-    )
+    active_keys = {ep.policy_key for ep in state.active_policies if ep.repealed_turn is None}
+    _validate_prerequisites(policy_catalog, active_keys, newly_enacted_keys, newly_repealed_keys)
+    _validate_new_enactments(active_keys, newly_enacted_keys)
+    _validate_repeals(policy_catalog, active_keys, newly_repealed_keys)
 
     new_state = state.clone()
     new_state.turn += 1
@@ -213,7 +304,7 @@ def advance_turn(
 
     required_capital = sum(
         (_policy_by_key(policy_catalog, key).capital_cost if _policy_by_key(policy_catalog, key) else 0.0)
-        for key in newly_enacted_keys
+        for key in newly_enacted_keys + newly_repealed_keys
     )
     if required_capital > new_state.political_capital:
         raise InsufficientCapitalError(required_capital, new_state.political_capital)
@@ -225,19 +316,35 @@ def advance_turn(
         if policy:
             new_state.budget -= policy.one_time_cost
 
+    # Repeal ERSETZT den betroffenen Eintrag durch ein neues EnactedPolicy-
+    # Objekt (siehe Docstring oben) -- der Eintrag bleibt in active_policies,
+    # damit seine Effekte weiter abklingen koennen (siehe _effect_delta).
+    for key in newly_repealed_keys:
+        for index, enacted in enumerate(new_state.active_policies):
+            if enacted.policy_key == key and enacted.repealed_turn is None:
+                new_state.active_policies[index] = EnactedPolicy(
+                    policy_key=enacted.policy_key,
+                    enacted_turn=enacted.enacted_turn,
+                    repealed_turn=new_state.turn,
+                )
+                break
+
     attributions: list[EffectAttribution] = []
 
-    # 1) Policy-Effekte anwenden (weich, siehe _effect_delta) und Unterhaltskosten abziehen.
-    # Upkeep laeuft jede Runde, solange die Policy aktiv ist -- kein Fenster-Gating
-    # mehr wie im alten Modell (siehe Game-Director-Review, docs/architecture.md).
+    # 1) Policy-Effekte anwenden (weich, siehe _effect_delta) und Unterhalts-
+    # kosten/Einnahmen verrechnen. Upkeep/Einnahmen laufen jede Runde, SOLANGE
+    # die Policy noch nicht zurueckgezogen wurde (repealed_turn is None) --
+    # die Effekte selbst laufen fuer zurueckgezogene Policies weiter (nur
+    # abklingend statt aufbauend), siehe _effect_delta.
     for enacted in new_state.active_policies:
         policy = _policy_by_key(policy_catalog, enacted.policy_key)
         if policy is None:
             continue
-        turns_since_enacted = new_state.turn - enacted.enacted_turn
-        new_state.budget -= policy.upkeep_cost
+        if enacted.repealed_turn is None:
+            new_state.budget -= policy.upkeep_cost
+            new_state.budget += policy.income_per_turn
         for effect in policy.effects:
-            delta = _effect_delta(effect, turns_since_enacted)
+            delta = _effect_delta(effect, new_state.turn, enacted.enacted_turn, enacted.repealed_turn)
             if delta:
                 new_state.statistics[effect.statistic_key] = (
                     new_state.statistics.get(effect.statistic_key, 0.0) + delta

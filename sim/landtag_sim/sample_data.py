@@ -59,10 +59,14 @@ SAMPLE_VOTER_GROUPS = [
     VoterGroup(name="Junge Familien", population_share=0.18, weight_social=1.6, weight_economy=1.1, weight_environment=1.0),
 ]
 
-# Summe der capital_cost aller drei Policies (11) uebersteigt absichtlich das
-# CAPITAL_CAP der Engine (10) -- alle drei gleichzeitig einzufuehren ist nicht
-# machbar, jede Paarung schon. Erzwingt echte Prioritaeten statt "alles auf
-# einmal" (siehe Game-Director-Review, Political-Capital-Abschnitt).
+# Summe der capital_cost der urspruenglichen drei Policies (erneuerbare_
+# foerderung+bildungsoffensive+steuersenkung_mittelstand = 11) uebersteigt
+# absichtlich das CAPITAL_CAP der Engine (10) -- alle drei gleichzeitig
+# einzufuehren ist nicht machbar, jede Paarung schon. Erzwingt echte
+# Prioritaeten statt "alles auf einmal" (siehe Game-Director-Review,
+# Political-Capital-Abschnitt). gesundheitsreform und vermoegensteuer kamen
+# spaeter dazu (siehe deren eigene Kommentare) und verschaerfen dasselbe
+# Prinzip weiter, statt es aufzuweichen.
 SAMPLE_POLICIES = [
     Policy(
         key="erneuerbare_foerderung",
@@ -148,6 +152,34 @@ SAMPLE_POLICIES = [
             # ein sauberer Zielkonflikt ohne Ueberkompensation wie bei der
             # urspruenglichen bildungsoffensive (siehe deren Kommentar oben).
             PolicyEffect(statistic_key="gdp_growth", magnitude=-1.2, delay_turns=1, inertia=3),
+        ],
+    ),
+    # Democracy-4-Recherche (siehe CLAUDE.md "Woher kommen positive Budget-
+    # Werte?"): D4 modelliert Budget-Einnahmen nicht als unsichtbaren
+    # Pauschal-Zuschuss, sondern als vom Spieler gewaehlte, sichtbare
+    # Steuer-Policy (MinIncome/MaxIncome je nach Reglerposition). Diese
+    # Policy ist die erste echte Einnahmequelle im Sinne von
+    # Policy.income_per_turn -- BASE_BUDGET_INCOME_PER_TURN (engine.py)
+    # bleibt bewusst zusaetzlich bestehen (unmodellierte "Basissteuer" des
+    # Landes, siehe dortiger Kommentar), diese Policy kommt on top und ist
+    # per Repeal wieder abschaltbar. Hoechster capital_cost aller Policies:
+    # eine Vermoegensteuer ist politisch die umkaempfteste Massnahme, macht
+    # sie mit zwei anderen teuren Policies zusammen am selben Wahlzyklus
+    # kaum machbar (Democracy-4-Vorbild: echte Prioritaeten statt "alles auf
+    # einmal", siehe Political-Capital-Kommentar oben).
+    Policy(
+        key="vermoegensteuer",
+        name="Vermoegensteuer",
+        one_time_cost=0.0,
+        upkeep_cost=2.0,  # Verwaltungsaufwand der Erhebung
+        capital_cost=5.0,
+        income_per_turn=20.0,
+        effects=[
+            # Trade-off: hoehere Belastung bremst private Investitionen --
+            # trifft wirtschaftlich gewichtete Gruppen (Landwirtschaft,
+            # Industriearbeiter), analog zu erneuerbare_foerderungs
+            # Umwelt-vs-Wirtschaft-Abwaegung.
+            PolicyEffect(statistic_key="gdp_growth", magnitude=-1.4, delay_turns=1, inertia=4),
         ],
     ),
 ]

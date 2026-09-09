@@ -526,3 +526,47 @@ haben unterschiedliche Determinismus-Anforderungen (sim/tests fixiert
 bewusst den Zufall, Backend-Tests gegen die echte API bekommen ihn "kostenlos"
 mitgeliefert) -- das beim Testdesign von Anfang an einplanen, nicht erst
 nach dem ersten Flake.
+
+## Dev-DB-Schema-Reset per Skript aendert scheinbar nichts (Policy-Repeal-Nachschaerfung)
+
+**Wo:** Live-E2E-Verifikation der Policy-Repeal-Mechanik gegen die normale
+`landtag_sim`-Dev-DB (nicht die Test-DB), 2026-09-09.
+
+**Was:** Nach dem Hinzufuegen von `PolicyDefinition.income_per_turn` und dem
+Umbau von `EnactedPolicy.active` zu `EnactedPolicy.repealed_turn` schlug
+`GET /policies` gegen die laufende Dev-DB mit
+`UndefinedColumn: column policy_definition.income_per_turn does not exist`
+fehl -- erwartet, da die MVP-Strategie bewusst `create_all` statt Alembic-
+Migrationen nutzt (siehe `app/db.py::init_db`) und `create_all` keine
+Spalten zu bereits existierenden Tabellen hinzufuegt. Der naheliegende Fix
+(`SQLModel.metadata.drop_all(engine); SQLModel.metadata.create_all(engine)`
+in einem Einzeiler-Python-Skript) lief fehlerfrei durch ("done" ausgegeben),
+aendere aber NICHTS am tatsaechlichen DB-Schema (per `psql \d` verifiziert)
+-- der Fehler blieb identisch bestehen, auch nach Server-Neustart.
+
+**Gefunden:** `psql \d policy_definition` direkt nach dem "erfolgreichen"
+Reset-Skript zeigte weiterhin die alte Spaltenliste ohne `income_per_turn`.
+
+**Fix:** Ursache: `SQLModel.metadata` wird erst befuellt, wenn die
+`table=True`-Modellklassen tatsaechlich IMPORTIERT wurden (SQLModel
+registriert Tabellen als Nebeneffekt der Klassendefinition/Metaclass beim
+Import, nicht automatisch). Das Skript importierte nur `from app.db import
+engine` -- `app.db` selbst importiert KEINE Modelle (siehe `app/db.py`,
+dort nur `SQLModel`/`create_engine`). `SQLModel.metadata` war dadurch fast
+leer, `drop_all`/`create_all` hatten schlicht (fast) nichts zu tun. Fix:
+zuerst `import app.models` (das Package, das alle Modell-Module re-
+exportiert, siehe `app/models/__init__.py`), DANN `drop_all`/`create_all`
+-- danach zeigte `psql \d` sofort die neuen Spalten (`income_per_turn`,
+`repealed_turn`).
+
+**Lehre:** Ein `SQLModel.metadata.create_all(engine)`/`drop_all(engine)`
+in einem eigenstaendigen Skript (ausserhalb von `app.main`, wo der Import-
+Pfad ueber die Route-Module bereits alle Modelle laedt) ist nur dann
+vollstaendig, wenn VORHER explizit `import app.models` (oder jedes
+einzelne Modell-Modul) steht -- sonst laeuft der Reset "erfolgreich" durch,
+ohne dass ein Fehler geworfen wird, und veraendert trotzdem nichts. Bei
+JEDER manuellen Schema-Aenderung im MVP-`create_all`-Workflow: Erfolg nicht
+am fehlerfreien Skript-Exit ablesen, sondern per `psql \d <tabelle>`
+verifizieren, dass die erwartete Spalte tatsaechlich da ist -- genau wie
+beim Postgres-15-Owner-Fix oben gilt "kein Fehler" nicht als Beweis fuer
+"hat funktioniert".

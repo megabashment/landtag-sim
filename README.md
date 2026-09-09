@@ -148,16 +148,11 @@ der letzten (`App.jsx`, Sektion "Verlauf").
 
 ## Naechste Schritte fuer die Spielmechanik
 
-Die urspruengliche gewichtete 10-Punkte-Liste
-([docs/game-design-roadmap.md](./docs/game-design-roadmap.md)) ist
-**komplett umgesetzt** (P0/P1/P2). Die naechste Ausbaustufe steht in
-**[BACKLOG.md](./BACKLOG.md)** -- priorisierte Milestones M2-M4 aus der
-Community-Recherche vom 2026-09-09 (Democracy-3/4-Diskussionen,
-Positech-Devblog, Frostpunk/Suzerain). Kernpunkte M2: ein
-"Situations"-Layer als mittlerer Zeithorizont (selbstverstaerkende
-Zustaende mit Hysterese), ein Legislatur-Bogen mit Amtszeit-Bilanz, eine
-narrative Presseschau als Konsequenz-Ebene, eine transparente Wahlprognose
-mit Turnout-Modell und zustandsgekoppelte Risiko-Events.
+Eine gewichtete 10-Punkte-Liste (Impact x Aufwand, Genre-Best-Practices von
+Democracy/Frostpunk/Suzerain) steht in
+[docs/game-design-roadmap.md](./docs/game-design-roadmap.md) -- Stand:
+**alle 10 Punkte (P0/P1/P2) umgesetzt**, Details und Umsetzungsnotizen je
+Punkt direkt dort.
 
 ## Bekannte Vereinfachungen (MVP, bewusst offen fuer Diskussion)
 
@@ -178,9 +173,13 @@ mit Turnout-Modell und zustandsgekoppelte Risiko-Events.
   gesundheitsreform` ist ebenfalls behoben -- Ursache war kein
   Upkeep-Tuning-Problem, sondern dass das Budget ueberhaupt nie eine
   Einnahmequelle hatte (siehe `BASE_BUDGET_INCOME_PER_TURN` in
-  `sim/landtag_sim/engine.py` und `mistakes.md`). Es gibt weiterhin keine
-  Policy-Repeal-Mechanik -- eine einmal eingefuehrte Policy laeuft (und
-  kostet Upkeep) unbegrenzt weiter.
+  `sim/landtag_sim/engine.py` und `mistakes.md`). Es gibt jetzt eine
+  Policy-Repeal-Mechanik (Democracy-4-Vorbild, siehe CLAUDE.md): eine
+  zurueckgezogene Policy verschwindet nicht schlagartig, sondern klingt
+  ueber mehrere Runden symmetrisch zu ihrem Aufbau ab, Upkeep/Einnahme
+  stoppen sofort. Fuenfte Beispiel-Policy `vermoegensteuer` bringt dabei
+  die erste echte, spielerseitig wieder abschaltbare Einnahmequelle
+  (`Policy.income_per_turn`) neben der pauschalen Grundeinnahme.
 - Es gibt jetzt drei Dilemmas (`arbeitsmarktkrise`, `rezession`,
   `pflegeausbau`) statt nur einem, an unterschiedliche Statistiken gekoppelt.
   Die meisten urspruenglichen Event-/Dilemma-Schwellenwerte

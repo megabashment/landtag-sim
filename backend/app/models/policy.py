@@ -24,7 +24,12 @@ class PolicyDefinition(SQLModel, table=True):
     category: str  # z.B. "wirtschaft", "umwelt", "bildung"
     one_time_cost: float = Field(default=0.0)  # Budget-Kosten bei Einfuehrung
     upkeep_cost: float = Field(default=0.0)  # Kosten pro Runde, solange aktiv
-    capital_cost: float = Field(default=0.0)  # Political-Capital-Kosten bei Einfuehrung
+    capital_cost: float = Field(default=0.0)  # Political-Capital-Kosten bei Einfuehrung/Repeal
+
+    # Democracy-4-Vorbild: echte, laufende Einnahme (z.B. eine Steuer-Policy)
+    # statt eines unsichtbaren Pauschal-Zuschusses -- siehe landtag_sim.
+    # models.Policy.income_per_turn und engine.py::advance_turn.
+    income_per_turn: float = Field(default=0.0)
 
     # Liste von Effekt-Objekten als JSON, z.B.:
     # [{"statistic_key": "unemployment_rate", "magnitude": -0.3,
@@ -49,4 +54,11 @@ class EnactedPolicy(SQLModel, table=True):
     session_id: int = Field(foreign_key="game_session.id", index=True)
     policy_key: str = Field(foreign_key="policy_definition.key")
     enacted_turn: int
-    active: bool = Field(default=True)
+
+    # Ersetzt das fruehere `active: bool` (siehe mistakes.md/CLAUDE.md,
+    # Policy-Repeal-Recherche): eine zurueckgezogene Policy wird nicht
+    # geloescht/deaktiviert, sondern behaelt die Runde ihres Repeals, damit
+    # ihre Wirkung weiter abklingen kann (siehe landtag_sim.engine.py::
+    # _effect_delta) -- ein reines Bool haette diese Information verworfen.
+    # None = weiterhin aktiv.
+    repealed_turn: int | None = Field(default=None)
