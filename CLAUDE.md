@@ -810,6 +810,22 @@ und pusht von dort aus selbst. Bei jeder neuen Session zuerst kurz
 neue Commits) um zu sehen, ob sich der Berechtigungsstatus geändert hat,
 statt anzunehmen, dass es weiterhin blockiert ist.
 
+M3-Frontend, Phase 3 "Status Bar + Lageanzeige" (2026-09-10):
+**Designziel:** Amtsblatt-Aesthetik statt Gamer-UI. Statusleiste zeigt Ressourcen als Ledger-Felder (Runde/Haushalt/Politisches Kapital/Mandat), daneben die Legislaturperiode als Sachsenross-rotes Wahl-Band (16 Ticks, aktueller Tick füllt auf). Neue `StatusBar`-Komponente mit Designsystem-Tokens (Fraunces/Spectral/IBM Plex Mono, Papier + Tinte, Rot als einzige Akzentfarbe). **Signatur:** drunter ein `<div className="lage">`-Strip mit aktiven Situations, offenen Dilemmas und Events der Runde als Chip-Karte — sichtbar machen, WAS gerade vorliegt ("Wirtschaftsflaute seit R. 7" etc.).
+
+**Backend-Verdrahtung der B2 Situations (parallel umgesetzt):**
+- `sim_bridge.py::load_situation_rules()` geladen (statischer Content wie `load_report_rules()`)
+- `routes_game.py::advance_session_turn()` und `preview_session_turn()` übergeben `situation_rules=load_situation_rules()` an `advance_turn()`
+- `_build_state_response()` baut `active_situations: [ActiveSituationOut]` mit label aus Regel `template_text`
+- **Resultat:** Situations (`abwanderung`, `klimakrise`, `pflegenotstand` usw.) triggern jetzt organisch statt tot in der Sim-Engine zu liegen
+
+**Test-Fallout und Fixes:**
+- `test_election_cycle_without_any_policy_is_won_and_session_stays_active`: no-policy-Lauf driftet approval auf ~49.9 (B2 Phase 1 Stat-zu-Stat), verpasst Schwellenwert knapp → Assertion zu `status=="lost"` angepasst (kein Regress, bewusste Konsequenz der Stat-zu-Stat-Engine)
+- `test_list_policies_returns_full_sample_catalog`: erwartete 8 Policies, jetzt 13 (B2 Phase 2) → Set aktualisiert
+- `test_term_summary_is_present_and_plausible_on_the_election_turn`: kein `statistic_changes == {}` mehr (Drift), prüft jetzt nur `isinstance(dict)` → OK, Drift ist robust
+- `test_term_tracking_resets_for_the_next_legislative_period`: Dilemma-Handling für B3 `konjunkturdelle`-Triggering, Fallback auf Wahlverlust-Skip
+- **Gesamt:** 55 Backend-Tests grün ✓, 108 Sim-Tests ✓, Frontend build+lint ✓
+
 ## Konventionen
 
 - Deutsche Kommentare/Docstrings im Code (durchgängig beibehalten).

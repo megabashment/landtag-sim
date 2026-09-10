@@ -25,6 +25,128 @@ const FAST_FORWARD_SAFETY_CAP = 40; // Sicherheitsnetz gegen Endlosschleifen im 
 // eine lange Partie mit vielen Vorspul-Runden nicht unbegrenzt waechst.
 const HISTORY_LIMIT = 60;
 
+// UI-Konstanten, die die Engine kennt, das Backend aber nicht pro Session
+// mitschickt (siehe CLAUDE.md): Laenge einer Legislaturperiode (Wahl-Zyklus)
+// und die Obergrenze fuer politisches Kapital (CAPITAL_CAP in
+// landtag_sim.engine). Rein fuer die Statusleiste-Darstellung.
+const ELECTION_CYCLE = 16;
+const CAPITAL_CAP = 10;
+
+// Phase 3 des Frontend-Umbaus: die persistente Statusleiste als "Amtsblatt-
+// Kopf" -- Ledger-Felder mit Kennzahl je Ressource, plus als Signatur ein
+// Legislatur-Band (16 Runden), das den Wahltermin von einer abstrakten Zahl
+// in einen sichtbaren Bogen der Amtszeit uebersetzt (L10 "take players on a
+// journey"). Die uebrigen Panels folgen in spaeteren Phasen.
+function StatusBar({ session, events }) {
+  const toElection = session.turns_until_election;
+  const elapsed = Math.max(0, Math.min(ELECTION_CYCLE, ELECTION_CYCLE - toElection));
+  const urgent = toElection <= 3;
+  const capitalSegments = Math.max(
+    0,
+    Math.min(CAPITAL_CAP, Math.round(session.political_capital))
+  );
+
+  // B2 "Situations-Layer": aktuell wirksame Zustaende (Rezession usw.). Dazu
+  // ein offenes Dilemma und die Ereignisse der letzten Runde -- zusammen die
+  // "Lage" unter der Statusleiste.
+  const situations = session.active_situations ?? [];
+  const dilemmaPending = Boolean(session.pending_dilemma);
+  const roundEvents = events ?? [];
+
+  const roleLabel = session.role === "opposition" ? "Opposition" : "Regierung";
+  const statusLabel =
+    session.status === "active"
+      ? "im Amt"
+      : session.status === "lost"
+        ? "abgewaehlt"
+        : session.status;
+
+  return (
+    <>
+    <section className="statusbar" aria-label="Lage des Kabinetts">
+      <div className="statusbar__fields">
+        <div className="field">
+          <span className="field__label">Runde</span>
+          <span className="field__value">{session.turn}</span>
+        </div>
+        <div className="field">
+          <span className="field__label">Haushalt</span>
+          <span className="field__value">{session.budget.toFixed(1)}</span>
+        </div>
+        <div className="field">
+          <span className="field__label">Politisches Kapital</span>
+          <span className="field__value">
+            {session.political_capital.toFixed(1)}
+            <span className="meter" aria-hidden="true">
+              {Array.from({ length: CAPITAL_CAP }, (_, i) => (
+                <span
+                  key={i}
+                  className={`meter__seg ${i < capitalSegments ? "meter__seg--on" : ""}`}
+                />
+              ))}
+            </span>
+          </span>
+        </div>
+        <div className="field field--role">
+          <span className="field__label">Mandat</span>
+          <span className="field__value">
+            {roleLabel} &middot; {statusLabel}
+          </span>
+        </div>
+      </div>
+
+      <div className={`term ${urgent ? "term--urgent" : ""}`}>
+        <span className="term__count">
+          {toElection === 0 ? "Wahltag" : `Wahl in ${toElection} Runden`}
+        </span>
+        <span
+          className="term__ribbon"
+          role="img"
+          aria-label={`Runde ${elapsed} von ${ELECTION_CYCLE} der Legislaturperiode`}
+        >
+          {Array.from({ length: ELECTION_CYCLE }, (_, i) => {
+            const seal = i === ELECTION_CYCLE - 1;
+            const done = i < elapsed;
+            return (
+              <span
+                key={i}
+                className={`term__tick ${done ? "term__tick--done" : ""} ${
+                  seal ? "term__tick--seal" : ""
+                }`}
+              />
+            );
+          })}
+        </span>
+      </div>
+    </section>
+
+    <div className="lage" aria-label="Aktuelle Lage">
+      <span className="lage__label">Lage</span>
+      {situations.length === 0 && !dilemmaPending && roundEvents.length === 0 ? (
+        <span className="lage__calm">Keine besonderen Vorkommnisse.</span>
+      ) : (
+        <ul className="lage__chips">
+          {dilemmaPending && (
+            <li className="chip chip--alert">Dilemma zu entscheiden</li>
+          )}
+          {situations.map((s) => (
+            <li key={s.key} className="chip chip--situation" title={s.label}>
+              {s.label.split(":")[0]}
+              <span className="chip__since">seit R. {s.since_turn}</span>
+            </li>
+          ))}
+          {roundEvents.map((text, i) => (
+            <li key={i} className="chip chip--event" title={text}>
+              {text}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+    </>
+  );
+}
+
 // Grobe Groessenklassen statt exakter Zahlen (P0-Punkt "Effekt-Vorschau",
 // Vorbild Frostpunks Book of Laws: qualitative Richtung, vage Quantitaet --
 // genug fuer eine informierte Entscheidung, ohne die Spannung durch exakte
@@ -348,7 +470,10 @@ export default function App() {
 
   return (
     <main className="layout">
-      <h1>Landtag-Sim &mdash; Niedersachsen (MVP)</h1>
+      <header className="masthead">
+        <span className="masthead__kicker">Landtag-Simulation &middot; MVP</span>
+        <h1>Niedersachsen</h1>
+      </header>
 
       {!session && (
         <button onClick={handleStart} disabled={loading}>
@@ -360,15 +485,7 @@ export default function App() {
 
       {session && (
         <>
-          <section className="status-bar">
-            <span>Runde {session.turn}</span>
-            <span>Budget: {session.budget.toFixed(1)}</span>
-            <span>Political Capital: {session.political_capital.toFixed(1)}</span>
-            <span>Naechste Wahl in {session.turns_until_election} Runden</span>
-            <span>Status: {session.status}</span>
-            {/* B8: Rolle der Spielerpartei (im MVP immer "Regierung"). */}
-            <span>Rolle: {session.role === "opposition" ? "Opposition" : "Regierung"}</span>
-          </section>
+          <StatusBar session={session} events={events} />
 
           {dilemmaPending && (
             <section className="panel dilemma-banner">

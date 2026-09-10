@@ -47,22 +47,26 @@ def test_list_policies_returns_full_sample_catalog(client):
     assert response.status_code == 200
     policies = response.json()
     keys = {p["key"] for p in policies}
-    # Fuenf Beispiel-Policies: vier nach der Balance-Nachschaerfung (siehe
-    # mistakes.md "Dominante-Strategie-Check ... Free Lunch"-Bug) plus
-    # vermoegensteuer aus der Policy-Repeal-/Einnahmen-Nachschaerfung
-    # (Democracy-4-Recherche, siehe CLAUDE.md).
+    # Acht Basis-Policies nach Balance-Nachschaerfung + fuenf nach B2 Phase 2
+    # (Policy-Zerstueckelung Healthcare/Renewables) = 13 gesamt. Details siehe
+    # CLAUDE.md "Nach-P2-Nachschaerfung" und "M3-Backlog, B2 Phase 2".
     assert keys == {
+        # Urspruengliche Basis (Balance-Nachschaerfung 2026-09-10):
         "erneuerbare_foerderung",
         "bildungsoffensive",
         "steuersenkung_mittelstand",
         "gesundheitsreform",
         "vermoegensteuer",
-        # B7 "Dynamische Policy-Freischaltung": drei zunaechst gesperrte
-        # Policies (unlock_conditions) -- GET /policies liefert sie trotzdem
-        # aus (das Frontend graut sie aus), siehe routes_game.py.
+        # B7 "Dynamische Policy-Freischaltung": drei gesperrt (unlock_conditions)
         "digitalpakt_schulen",
         "gruener_wasserstoff",
         "arbeitsmarkt_sofortprogramm",
+        # B2 Phase 2 "Policy-Zerstueckelung" (2026-09-10):
+        "elektronische_krankenschreibung",
+        "telemedizin_foerderung",
+        "digitale_patientenakte",
+        "solar_dachanlagen",
+        "windkraft_kleinanlagen",
     }
     steuersenkung = next(p for p in policies if p["key"] == "steuersenkung_mittelstand")
     assert steuersenkung["requires"] == ["bildungsoffensive"]

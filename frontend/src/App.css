@@ -1,18 +1,264 @@
 .layout {
-  max-width: 960px;
+  max-width: 1000px;
   margin: 0 auto;
-  padding: 2rem 1.5rem;
-  font-family: system-ui, sans-serif;
+  padding: 2.5rem 1.5rem 4rem;
+  text-align: left;
+  font-family: var(--body);
+  color: var(--ink);
 }
 
-.status-bar {
+/* --- Kopf ------------------------------------------------------------------ */
+.masthead {
+  border-bottom: 2px solid var(--ink);
+  padding-bottom: 0.7rem;
+  margin-bottom: 1.5rem;
+}
+
+.masthead__kicker {
+  display: block;
+  font-family: var(--data);
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+.masthead h1 {
+  font-size: clamp(2rem, 5vw, 2.9rem);
+  line-height: 1.03;
+  letter-spacing: -0.015em;
+  margin-top: 0.3rem;
+}
+
+/* --- Statusleiste (Phase 3) --------------------------------------------------
+   Ledger-Felder auf Papier, durch 1px-Hairlines getrennt (der Leisten-
+   Hintergrund scheint als Fuge durch). Rechts abgesetzt: der Wahltermin als
+   Sachsenross-rote Signatur mit Legislatur-Band.                            */
+.statusbar {
   display: flex;
-  gap: 1.5rem;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+  border-radius: 2px 2px 0 0;
+  overflow: hidden;
+}
+
+/* B2 "Situations-Layer": Lagebericht direkt unter der Statusleiste --
+   aktive Situations (Rezession usw.), offenes Dilemma, Ereignisse der
+   Runde. Optisch an die Leiste angedockt (geteilte Kante). */
+.lage {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.75rem;
+  padding: 0.6rem 1rem 0.7rem;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-top: 0;
+  border-radius: 0 0 2px 2px;
+}
+
+.lage__label {
+  font-family: var(--data);
+  font-size: 0.62rem;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+.lage__calm {
+  font-size: 0.9rem;
+  color: var(--ink-dim);
+}
+
+.lage__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  max-width: 30rem;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.82rem;
+  line-height: 1.3;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  background: var(--paper);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chip__since {
+  font-family: var(--data);
+  font-size: 0.66rem;
+  color: var(--ink-dim);
+}
+
+.chip--situation {
+  border-color: var(--seal);
+  color: var(--seal);
+  background: var(--seal-bg);
+}
+
+.chip--alert {
+  border-color: var(--seal);
+  background: var(--seal);
+  color: var(--paper);
+  font-weight: 500;
+}
+
+.chip--event {
+  border-color: var(--gold);
+  background: var(--paper);
+  background: color-mix(in srgb, var(--gold) 10%, var(--paper));
+}
+
+.statusbar__fields {
+  display: flex;
+  flex: 1 1 22rem;
+  flex-wrap: wrap;
+  gap: 1px;
+  background: var(--rule);
+}
+
+.field {
+  flex: 1 1 8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.7rem 1rem 0.8rem;
+  background: var(--paper-raised);
+}
+
+.field__label {
+  font-family: var(--data);
+  font-size: 0.62rem;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+.field__value {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-family: var(--data);
+  font-size: 1.35rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.field--role .field__value {
+  font-family: var(--body);
+  font-size: 0.95rem;
+}
+
+.meter {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.meter__seg {
+  width: 4px;
+  height: 15px;
+  background: var(--rule);
+  border-radius: 1px;
+}
+
+.meter__seg--on {
+  background: var(--gold);
+}
+
+/* Signatur: Wahltermin + Legislatur-Band */
+.term {
+  flex: 1 1 15rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.55rem;
+  padding: 0.7rem 1.15rem 0.8rem;
+  background: var(--seal-bg);
+  border-left: 2px solid var(--seal);
+}
+
+.term__count {
+  font-family: var(--data);
+  font-size: 0.9rem;
   font-weight: 600;
-  margin: 1rem 0;
-  padding: 0.75rem 1rem;
-  background: #f2f2f5;
-  border-radius: 8px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--seal);
+}
+
+.term__ribbon {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.term__tick {
+  flex: 1 1 auto;
+  height: 6px;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--seal);
+  opacity: 0.45;
+}
+
+.term__tick--done {
+  background: var(--seal);
+  box-shadow: none;
+  opacity: 1;
+}
+
+.term__tick--seal {
+  flex: 0 0 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--seal);
+  box-shadow: none;
+  opacity: 1;
+}
+
+.term--urgent {
+  animation: termPulse 2s ease-in-out infinite;
+}
+
+@keyframes termPulse {
+  0%,
+  100% {
+    background: var(--seal-bg);
+  }
+  50% {
+    background: var(--seal-strong);
+  }
+}
+
+@media (max-width: 640px) {
+  .term {
+    border-left: 0;
+    border-top: 2px solid var(--seal);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .term--urgent {
+    animation: none;
+  }
 }
 
 .grid {
@@ -22,9 +268,16 @@
 }
 
 .panel {
-  border: 1px solid #e0e0e5;
-  border-radius: 8px;
-  padding: 1rem;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: 1.1rem 1.2rem;
+}
+
+.panel h2 {
+  font-size: 1.15rem;
+  letter-spacing: -0.01em;
+  margin-bottom: 0.6rem;
 }
 
 .panel ul {
@@ -37,7 +290,7 @@
   display: flex;
   justify-content: space-between;
   padding: 0.25rem 0;
-  border-bottom: 1px solid #f0f0f3;
+  border-bottom: 1px solid var(--rule);
 }
 
 .policy-list li {
@@ -86,13 +339,13 @@
 }
 
 .error {
-  color: #b3261e;
+  color: var(--seal);
   font-weight: 600;
 }
 
 .hint {
-  color: #555;
-  font-size: 0.9rem;
+  color: var(--ink-dim);
+  font-size: 0.88rem;
   margin-top: 0.5rem;
 }
 
@@ -123,11 +376,11 @@
 }
 
 .delta-up {
-  color: #1e7a34;
+  color: var(--positive);
 }
 
 .delta-down {
-  color: #b3261e;
+  color: var(--seal);
 }
 
 .attributions {
@@ -271,17 +524,22 @@
 
 button {
   margin-top: 0.75rem;
-  padding: 0.5rem 1rem;
-  border-radius: 6px;
-  border: 1px solid #444;
-  background: #222;
-  color: #fff;
+  padding: 0.55rem 1.1rem;
+  border-radius: 2px;
+  border: 1px solid var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--data);
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   cursor: pointer;
 }
 
 button.secondary {
-  background: #fff;
-  color: #222;
+  background: transparent;
+  color: var(--ink);
 }
 
 button:disabled {

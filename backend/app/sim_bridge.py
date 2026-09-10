@@ -31,10 +31,15 @@ from landtag_sim.models import (
     ReportRule,
     ScenarioGoal,
     SimState,
+    SituationRule,
     UnlockCondition,
     VoterGroup as SimVoterGroup,
 )
-from landtag_sim.sample_data import SAMPLE_REPORT_RULES, SAMPLE_SCENARIO_GOALS
+from landtag_sim.sample_data import (
+    SAMPLE_REPORT_RULES,
+    SAMPLE_SCENARIO_GOALS,
+    SAMPLE_SITUATION_RULES,
+)
 
 
 def load_policy_catalog(db: Session) -> list[Policy]:
@@ -115,6 +120,18 @@ def load_scenario_goals() -> list[ScenarioGoal]:
     routes_game), damit ein spaeterer Umzug in eine DB-Tabelle / pro-Szenario-
     Zuordnung nur diese Stelle beruehrt. Kein `db`-Parameter -- bewusst."""
     return list(SAMPLE_SCENARIO_GOALS)
+
+
+def load_situation_rules() -> list[SituationRule]:
+    """B2 "Situations-Layer" (BACKLOG.md): wie load_report_rules() /
+    load_scenario_goals() reiner statischer Content ohne DB/Session-Zustand.
+    Die AKTIVEN Situations einer Session (ActiveSituation) stecken dagegen in
+    Postgres und werden in load_sim_state() geladen -- hier kommen nur die
+    REGELN her, gegen die advance_turn() je Runde die Hysterese auswertet.
+    Loader-Signatur (statt Direktimport in routes_game), damit ein spaeterer
+    Umzug in eine SituationDefinition-Tabelle nur diese Stelle beruehrt.
+    Kein `db`-Parameter -- bewusst."""
+    return list(SAMPLE_SITUATION_RULES)
 
 
 def _dilemma_option_from_dict(data: dict) -> DilemmaOption:

@@ -102,6 +102,18 @@ class FactionOut(BaseModel):
     stance_environment: float
 
 
+class ActiveSituationOut(BaseModel):
+    """B2 "Situations-Layer" (BACKLOG.md, L2): ein aktuell wirksamer Zustand
+    (z.B. "abwanderung"/Rezession). Fuer die Statusleisten-Lageanzeige --
+    `label` ist der `template_text` der Regel, `since_turn` seit wann er
+    laeuft. Fehlt eine Regel zum gespeicherten `key` (Content entfernt),
+    faellt `label` auf den Key zurueck."""
+
+    key: str
+    label: str
+    since_turn: int
+
+
 class SessionStateResponse(BaseModel):
     session_id: int
     turn: int
@@ -120,6 +132,8 @@ class SessionStateResponse(BaseModel):
     election_projection: ElectionProjectionOut | None = None
     # B8: Sitzverteilung im Landtag (reine Anzeige).
     factions: list[FactionOut] = []
+    # B2: aktuell wirksame Situations (Lageanzeige in der Statusleiste).
+    active_situations: list[ActiveSituationOut] = []
 
 
 class AttributionOut(BaseModel):

@@ -6,6 +6,7 @@ from app.models import EnactedPolicy, Faction, GameSession, PolicyDefinition, Vo
 from app.models import StatisticValue
 from app.models.game import SessionRole, SessionStatus
 from app.schemas.game import (
+    ActiveSituationOut,
     AdvanceTurnRequest,
     AdvanceTurnResponse,
     AttributionOut,
@@ -35,6 +36,7 @@ from app.sim_bridge import (
     load_report_rules,
     load_scenario_goals,
     load_sim_state,
+    load_situation_rules,
     persist_sim_state,
     serialize_pending_dilemma,
 )
@@ -226,6 +228,17 @@ def _build_state_response(db: Session, session: GameSession) -> SessionStateResp
         )
         for f in sorted(faction_rows, key=lambda f: f.seats, reverse=True)
     ]
+    # B2: aktuell wirksame Situations fuer die Lageanzeige. `label` aus dem
+    # template_text der Regel; unbekannter key (Content entfernt) -> key.
+    situation_labels = {r.key: r.template_text for r in load_situation_rules()}
+    active_situations = [
+        ActiveSituationOut(
+            key=s.rule_key,
+            label=situation_labels.get(s.rule_key) or s.rule_key,
+            since_turn=s.since_turn,
+        )
+        for s in sorted(sim_state.active_situations, key=lambda s: s.since_turn)
+    ]
     return SessionStateResponse(
         session_id=session.id,
         turn=session.current_turn,
@@ -240,6 +253,7 @@ def _build_state_response(db: Session, session: GameSession) -> SessionStateResp
         pending_dilemma=_pending_dilemma_out(session),
         election_projection=_election_projection_out(session, sim_state),
         factions=factions,
+        active_situations=active_situations,
     )
 
 
@@ -296,6 +310,7 @@ def preview_session_turn(
     policy_catalog = load_policy_catalog(db)
     event_rules = load_event_rules(db)
     dilemma_rules = load_dilemma_rules(db)
+    situation_rules = load_situation_rules()
     sim_state = _load_state_for_session(db, session)
 
     policy_by_key = {p.key: p for p in policy_catalog}
@@ -316,6 +331,7 @@ def preview_session_turn(
             body.enact_policy_keys,
             dilemma_rules,
             body.repeal_policy_keys,
+            situation_rules=situation_rules,
         )
     except InsufficientCapitalError as exc:
         return PreviewResponse(
@@ -451,6 +467,7 @@ def advance_session_turn(
     dilemma_rules = load_dilemma_rules(db)
     report_rules = load_report_rules()
     scenario_goals = load_scenario_goals()
+    situation_rules = load_situation_rules()
     sim_state = _load_state_for_session(db, session)
 
     try:
@@ -463,6 +480,7 @@ def advance_session_turn(
             body.repeal_policy_keys,
             report_rules=report_rules,
             scenario_goals=scenario_goals,
+            situation_rules=situation_rules,
         )
     except InsufficientCapitalError as exc:
         raise HTTPException(
