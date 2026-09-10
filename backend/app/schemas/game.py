@@ -39,6 +39,17 @@ class PolicyOut(BaseModel):
     unlock_conditions: list[UnlockConditionOut] = []  # B7
 
 
+class OppositionCampaignOut(BaseModel):
+    """M5 "Opposition-Loop" (BACKLOG.md B15): PR-Kampagne statt Policy
+    fuer die Opposition. Wirkt auf Waehler-Satisfaction, kostet PC."""
+
+    key: str
+    name: str
+    description: str
+    capital_cost: float
+    satisfaction_deltas: dict[str, float]  # pro Wählergruppe
+
+
 class CreateSessionResponse(BaseModel):
     session_id: int
     admin_unit: str
@@ -189,6 +200,9 @@ class AdvanceTurnRequest(BaseModel):
     # newly_repealed_keys). Ihre Wirkung verschwindet nicht sofort, sondern
     # klingt ueber mehrere Runden ab.
     repeal_policy_keys: list[str] = []
+    # M5 "Opposition-Loop" (BACKLOG.md B15): wenn opposition_mode==True,
+    # wird opposition_campaign_key statt enact_policy_keys verwendet.
+    opposition_campaign_key: str | None = None
 
 
 class AdvanceTurnResponse(BaseModel):

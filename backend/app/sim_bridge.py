@@ -194,6 +194,9 @@ def load_sim_state(
     term_start_approval: float = 50.0,
     term_dilemma_count: int = 0,
     term_event_count: int = 0,
+    opposition_mode: bool = False,
+    opposition_satisfaction: dict[str, float] | None = None,
+    opposition_momentum: dict[str, float] | None = None,
 ) -> SimState:
     latest_values: dict[str, float] = {}
     for row in db.exec(
@@ -263,6 +266,9 @@ def load_sim_state(
         term_start_approval=term_start_approval,
         term_dilemma_count=term_dilemma_count,
         term_event_count=term_event_count,
+        opposition_mode=opposition_mode,
+        opposition_satisfaction=dict(opposition_satisfaction or {}),
+        opposition_momentum=dict(opposition_momentum or {}),
     )
 
 

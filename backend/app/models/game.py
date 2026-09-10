@@ -82,3 +82,12 @@ class GameSession(SQLModel, table=True):
     # Ausloesen mit dem damaligen Statistik-Wert gerendert und darf sich
     # nicht aendern, nur weil sich die Statistik inzwischen weiterbewegt hat.
     pending_dilemma: dict | None = Field(default=None, sa_column=Column(JSON))
+
+    # M5 "Opposition-Loop" (BACKLOG.md B15): Opposition-Modus und Zufriedenheits-Tracking
+    opposition_mode: bool = Field(default=False)
+    opposition_satisfaction: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    opposition_momentum: dict = Field(default_factory=dict, sa_column=Column(JSON))
+
+    # Ressourcen-Basis pro Runde (skaliert mit coalition_viability am Wahl-Abend)
+    political_capital_per_turn: float = Field(default=3.0)
+    budget_income_per_turn: float = Field(default=15.0)

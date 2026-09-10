@@ -178,6 +178,9 @@ def _load_state_for_session(db: Session, session: GameSession):
         session.term_start_approval,
         session.term_dilemma_count,
         session.term_event_count,
+        session.opposition_mode,
+        session.opposition_satisfaction,
+        session.opposition_momentum,
     )
 
 
