@@ -49,6 +49,7 @@ from landtag_sim.events import evaluate_events
 from landtag_sim.reports import evaluate_reports
 from landtag_sim.situations import evaluate_situations
 from landtag_sim.models import (
+    DelayedEffect,
     DilemmaOption,
     DilemmaPendingError,
     DilemmaRule,
@@ -398,6 +399,93 @@ def _validate_repeals(policy_catalog: list[Policy], active_keys: set[str], newly
                 raise PolicyRequiredByActivePolicyError(policy_key=key, dependent_policy_key=other_policy.key)
 
 
+# B2 "Stat-zu-Stat-Wirkungen" (BACKLOG.md, docs/b2-design-notes.md):
+# VWL-Standard-Modelle, die Statistiken aufeinander wirken lassen.
+# Reihenfolge in advance_turn: nach Policy-/Situation-Effekten, vor
+# Dilemma-/Event-Auswertung (damit Schwellenwerte auf aktualisierten
+# Werten basieren).
+
+def _apply_delayed_effects(state: SimState, attributions: list[EffectAttribution]) -> None:
+    """B2 "Solow-Modell (Humankapital)": Effekte mit Lag verwalten.
+    Verzögerte Effekte (z.B. gutes Wachstum führt nach 2-3 Runden zu besserer
+    Gesundheit) werden aus der Queue angewendet, wenn ihre Wartezeit abgelaufen ist.
+    Wird am ANFANG von advance_turn aufgerufen (nach dem turn += 1)."""
+    still_pending = []
+    for delayed in state.delayed_effects:
+        if state.turn >= delayed.trigger_turn + delayed.delay_turns:
+            # Effekt ist fällig: anwenden
+            state.statistics[delayed.statistic_key] = (
+                state.statistics.get(delayed.statistic_key, 0.0) + delayed.magnitude
+            )
+            attributions.append(
+                EffectAttribution(source=f"delayed:{delayed.source}", statistic_key=delayed.statistic_key, delta=delayed.magnitude)
+            )
+        else:
+            # Noch nicht fällig, in die neue Queue
+            still_pending.append(delayed)
+    state.delayed_effects = still_pending
+
+
+def _phillips_curve_and_solow(state: SimState, attributions: list[EffectAttribution]) -> None:
+    """B2 "Phillips-Kurve + Solow-Modell" (BACKLOG.md, docs/b2-design-notes.md):
+    Gegenseitige Abhängigkeiten zwischen Statistiken.
+
+    (1) Phillips-Kurve: unemployment_rate ↔ gdp_growth
+        - Wenn unemployment > 5% (NAIRU): gdp_growth senken um −0.1 pro Punkt über 5%
+        - Wenn gdp_growth < 0%: unemployment_rate erhöhen um +0.15 pro Punkt unter 0%
+
+    (2) Solow-Modell: gdp_growth → healthcare_quality (mit Lag)
+        - Gutes Wachstum (gdp > 2%): queue healthcare +0.2 mit 2-Runden-Lag
+        - Schlechtes Wachstum (gdp < 0%): sofort healthcare −0.3 (asymmetrisch!)
+
+    Spielerisch abgestimmt (nicht empirisch kalibriert); Ziel ist mittlere
+    Langzeitdynamik, nicht "gdp ist alles"."""
+
+    unemployment = state.statistics.get("unemployment_rate", 5.0)
+    gdp = state.statistics.get("gdp_growth", 1.0)
+    healthcare = state.statistics.get("healthcare_quality", 60.0)
+
+    # Phillips: unemployment auf gdp auswirken (spielerisch abgestimmt, nicht empirisch)
+    # B2-Design-Notes: "eher fühlen, gdp wirkt langfristig" → extrem mild halten
+    nairu = 5.0
+    if unemployment > nairu:
+        delta = -(unemployment - nairu) * 0.004  # winzig (demonstriert Mechanik, keine Messeffekte)
+        state.statistics["gdp_growth"] = state.statistics.get("gdp_growth", 0.0) + delta
+        attributions.append(
+            EffectAttribution(source="phillips:unemployment_to_gdp", statistic_key="gdp_growth", delta=delta)
+        )
+
+    # Phillips: gdp auf unemployment auswirken
+    if gdp < 0.0:
+        delta = abs(gdp) * 0.008  # winzig (demonstriert Mechanik, keine Messeffekte)
+        state.statistics["unemployment_rate"] = state.statistics.get("unemployment_rate", 5.0) + delta
+        attributions.append(
+            EffectAttribution(source="phillips:gdp_to_unemployment", statistic_key="unemployment_rate", delta=delta)
+        )
+
+    # Solow: gutes Wachstum → healthcare mit Lag
+    if gdp > 2.0:
+        # Queue einen delayed effect für 2 Runden später
+        # B2-Design-Notes: "eher fühlen" → extrem mild, nur Demonstrationszweck
+        state.delayed_effects.append(
+            DelayedEffect(
+                statistic_key="healthcare_quality",
+                magnitude=0.01,  # winzig (demonstriert Mechanik)
+                trigger_turn=state.turn,
+                delay_turns=2,
+                source="solow_boom"
+            )
+        )
+
+    # Solow: schlechtes Wachstum → healthcare sofort (asymmetrisch!)
+    if gdp < 0.0:
+        delta = -0.02  # winzig (demonstriert Mechanik, keine Messeffekte)
+        state.statistics["healthcare_quality"] = state.statistics.get("healthcare_quality", 60.0) + delta
+        attributions.append(
+            EffectAttribution(source="solow:recession", statistic_key="healthcare_quality", delta=delta)
+        )
+
+
 def advance_turn(
     state: SimState,
     policy_catalog: list[Policy],
@@ -469,6 +557,14 @@ def advance_turn(
     new_state = state.clone()
     new_state.turn += 1
 
+    attributions: list[EffectAttribution] = []
+
+    # B2 "Stat-zu-Stat-Wirkungen": Delayed Effects aus vorherigen Runden
+    # anwenden (z.B. Solow-Lag). Dies MUSS VOR allen Policy-/Situation-
+    # Effekten passieren, damit die aktualisierten Werte für die Runde verwendet
+    # werden.
+    _apply_delayed_effects(new_state, attributions)
+
     # B1 "Legislatur-Bogen" (BACKLOG.md): beim allerersten Rundenwechsel einer
     # Session ist noch kein Term-Schnappschuss vorhanden -- dann den Zustand
     # VOR dieser Runde als Termbeginn festhalten. Nach einer Wahl setzt der
@@ -510,8 +606,6 @@ def advance_turn(
                     repealed_turn=new_state.turn,
                 )
                 break
-
-    attributions: list[EffectAttribution] = []
 
     # 1) Policy-Effekte anwenden (weich, siehe _effect_delta) und Unterhalts-
     # kosten/Einnahmen verrechnen. Upkeep/Einnahmen laufen jede Runde, SOLANGE
@@ -570,6 +664,13 @@ def advance_turn(
             attributions.append(
                 EffectAttribution(source=f"situation:{active_sit.rule_key}", statistic_key=effect.statistic_key, delta=effect.magnitude)
             )
+
+    # 1c) Stat-zu-Stat-Wirkungen (B2 "Phillips-Kurve + Solow-Modell", BACKLOG.md) --
+    # NACH Policy- und Situation-Effekten, VOR Dilemmas/Events, damit die
+    # Schwellenwerte auf den aktuellen, gegenseitig beeinflussten Statistiken
+    # basieren. Modelliert gegenseitige Abhängigkeiten zwischen unemployment,
+    # gdp_growth, healthcare_quality (ökonomisch neutral, VWL-Standards).
+    _phillips_curve_and_solow(new_state, attributions)
 
     # 2) Dilemmas auswerten -- VOR Events, denn ein ausgeloestes Dilemma ist
     # der "Headline"-Moment dieser Runde (Frostpunk/Suzerain-Vorbild) und

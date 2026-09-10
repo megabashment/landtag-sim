@@ -534,6 +534,20 @@ class TurnResult:
 
 
 @dataclass
+class DelayedEffect:
+    """B2 "Stat-zu-Stat-Wirkungen" (BACKLOG.md): Effekt, der in einer
+    zukuenftigen Runde ausgefuehrt wird (z.B. Solow-Lag: gdp_growth > 2%
+    wird zu healthcare_quality +0.2 nach 2-3 Runden). Queue in SimState,
+    engine.py appliziert diese pro Runde wenn trigger_turn + delay_turns
+    erreicht ist."""
+    statistic_key: str
+    magnitude: float
+    trigger_turn: int  # Runde, in der diese DelayedEffect erzeugt wurde
+    delay_turns: int   # Warten bis turn >= trigger_turn + delay_turns
+    source: str = "solow"  # Kennzeichnung: "solow" fuer Budgetlag, evtl. spaeter andere
+
+
+@dataclass
 class SimState:
     turn: int
     budget: float
@@ -541,6 +555,12 @@ class SimState:
     voter_groups: list[VoterGroup]
     active_policies: list[EnactedPolicy] = field(default_factory=list)
     event_cooldowns: dict[str, int] = field(default_factory=dict)
+
+    # B2 "Stat-zu-Stat-Wirkungen" (BACKLOG.md): Queue fuer Effekte mit Lag
+    # (z.B. Solow-Modell: gutes Wachstum fuehrt mit Verzoegerung zu besserer
+    # Gesundheit). Diese werden in advance_turn pro Runde geprueft und
+    # angewendet, wenn ihre Wartezeit abgelaufen ist.
+    delayed_effects: list[DelayedEffect] = field(default_factory=list)
 
     # Zweite Ressource neben dem Geldbudget (Democracy-Vorbild: "politisches
     # Kapital", generiert durch loyale Minister, begrenzt wie viele Reformen
@@ -593,6 +613,7 @@ class SimState:
             voter_groups=[VoterGroup(**vars(vg)) for vg in self.voter_groups],
             active_policies=list(self.active_policies),
             event_cooldowns=dict(self.event_cooldowns),
+            delayed_effects=list(self.delayed_effects),
             political_capital=self.political_capital,
             turns_until_election=self.turns_until_election,
             dilemma_cooldowns=dict(self.dilemma_cooldowns),
