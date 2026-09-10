@@ -2,9 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
 from app.db import get_session
-from app.models import EnactedPolicy, Faction, GameSession, PolicyDefinition, VoterGroup
+from app.models import EnactedPolicy, Faction, GameSession, Party, PolicyDefinition, VoterGroup
 from app.models import StatisticValue
 from app.models.game import SessionRole, SessionStatus
+from app.models.party import PartyIdeology
 from app.schemas.game import (
     ActiveSituationOut,
     AdvanceTurnRequest,
@@ -17,6 +18,7 @@ from app.schemas.game import (
     ElectionResultOut,
     FactionOut,
     GoalResultOut,
+    NewPartyRequest,
     PendingDilemmaOut,
     PolicyEffectOut,
     PolicyOut,
@@ -96,6 +98,84 @@ def list_policies(db: Session = Depends(get_session)) -> list[PolicyOut]:
         )
         for row in rows
     ]
+
+
+@router.post("/sessions/new-party", response_model=CreateSessionResponse)
+def create_party_session(request: NewPartyRequest, db: Session = Depends(get_session)) -> CreateSessionResponse:
+    """B23 'Party-Gründung (Persistente Meta-Ebene)': Gründe eine neue Partei
+    mit einer Ideologie und starte eine neue Session für diese Partei."""
+    run_all_seeds(db)
+    admin_unit = ensure_niedersachsen(db)
+
+    # Party gründen
+    try:
+        ideology = PartyIdeology(request.ideology)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Ungültige Ideologie: {request.ideology}. Erlaubte Werte: green, red, blue"
+        )
+
+    party = Party(
+        name=request.name,
+        ideology=ideology,
+        base_electability=50.0,
+        reputation=50.0
+    )
+    db.add(party)
+    db.commit()
+    db.refresh(party)
+
+    # Session für diese Partei erstellen
+    session = GameSession(
+        admin_unit_id=admin_unit.id,
+        party_id=party.id,
+        budget=1000.0,
+        current_turn=0
+    )
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+
+    # Statistiken, Wählergruppen und Fraktionen seeden (gleich wie in create_session)
+    for stat_key, value in jittered_starting_statistics().items():
+        db.add(StatisticValue(session_id=session.id, statistic_key=stat_key, turn_number=0, value=value))
+
+    for vg in SAMPLE_VOTER_GROUPS:
+        db.add(
+            VoterGroup(
+                session_id=session.id,
+                name=vg.name,
+                population_share=vg.population_share,
+                satisfaction=vg.satisfaction,
+                weight_economy=vg.weight_economy,
+                weight_social=vg.weight_social,
+                weight_environment=vg.weight_environment,
+            )
+        )
+
+    for f in SAMPLE_FACTIONS:
+        db.add(
+            Faction(
+                session_id=session.id,
+                name=f.name,
+                seats=f.seats,
+                stance_economy=f.stance_economy,
+                stance_social=f.stance_social,
+                stance_environment=f.stance_environment,
+            )
+        )
+    db.commit()
+
+    return CreateSessionResponse(
+        session_id=session.id,
+        admin_unit=admin_unit.name,
+        turn=session.current_turn,
+        budget=session.budget,
+        party_id=party.id,
+        party_name=party.name,
+        party_ideology=party.ideology.value
+    )
 
 
 @router.post("/sessions", response_model=CreateSessionResponse)

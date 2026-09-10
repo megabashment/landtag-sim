@@ -733,3 +733,131 @@ button:disabled {
 .opposition-choice .button-secondary:hover {
   background: #d0d0d0;
 }
+
+/* B23 "Party-Gründung (Persistente Meta-Ebene)" Phase 2: Game-Start-Menu */
+.game-start-menu {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: white;
+  border: 2px solid #333;
+  padding: 40px;
+  border-radius: 4px;
+  text-align: center;
+  min-width: 300px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.game-start-menu h2 {
+  margin-top: 0;
+  color: #d32f2f;
+  font-size: 28px;
+}
+
+.game-start-menu p {
+  margin-bottom: 20px;
+  color: #666;
+}
+
+.game-start-menu button {
+  display: block;
+  width: 100%;
+  margin: 10px 0;
+  padding: 12px;
+  font-size: 16px;
+}
+
+/* Modal Overlay */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: white;
+  border: 2px solid #333;
+  padding: 30px;
+  border-radius: 4px;
+  max-width: 400px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+.modal-content h2 {
+  margin-top: 0;
+  color: #d32f2f;
+}
+
+.modal-content label {
+  display: block;
+  margin-top: 15px;
+  margin-bottom: 8px;
+  font-weight: bold;
+  color: #333;
+}
+
+.modal-content input[type="text"] {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+.ideology-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 15px 0;
+}
+
+.ideology-button {
+  padding: 12px;
+  border: 2px solid #ddd;
+  border-radius: 4px;
+  background: #f9f9f9;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s;
+}
+
+.ideology-button:hover {
+  border-color: #999;
+  background: #f0f0f0;
+}
+
+.ideology-button.selected {
+  border-color: #d32f2f;
+  background: #fff3cd;
+}
+
+.ideology-label {
+  font-weight: bold;
+  margin-bottom: 4px;
+}
+
+.ideology-desc {
+  font-size: 12px;
+  color: #666;
+}
+
+.modal-content .button-row {
+  margin-top: 20px;
+  display: flex;
+  gap: 10px;
+}
+
+.modal-content button {
+  flex: 1;
+  padding: 10px;
+  font-size: 14px;
+}

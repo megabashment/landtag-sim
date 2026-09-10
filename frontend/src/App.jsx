@@ -64,6 +64,85 @@ const _OPPOSITION_CAMPAIGNS = [
 // M5 "Opposition-Loop" (BACKLOG.md B15 Phase 4): Sonntagsfrage-Overlay
 // im Stil deutscher Umfragen. Zeigt Regierung vs. Opposition mit
 // Koalitionsfähigkeit-Schwelle (30%).
+// B23 "Party-Gründung (Persistente Meta-Ebene)" Phase 2: Game-Start-Menu
+// mit Option "Neue Partei gründen" vs. "Existierende laden"
+function GameStartMenu({ onNewParty, onStartClassic, disabled }) {
+  return (
+    <div className="game-start-menu">
+      <h2>Landtag-Simulation</h2>
+      <p>Wähle einen Modus zum Starten:</p>
+      <button className="button-primary" onClick={onNewParty} disabled={disabled}>
+        🟢 Neue Partei gründen
+      </button>
+      <button className="button-secondary" onClick={onStartClassic} disabled={disabled}>
+        ▶ Klassische Partie
+      </button>
+    </div>
+  );
+}
+
+// Party-Gründungs-Dialog mit Name-Input und Ideologie-Wahl
+function PartyCreationDialog({
+  onClose,
+  onConfirm,
+  disabled,
+  name,
+  setName,
+  ideology,
+  setIdeology,
+  error
+}) {
+  const ideologies = [
+    { key: "green", label: "🟢 Grün", desc: "+Umwelt, -Wirtschaft" },
+    { key: "red", label: "🔴 Rot", desc: "+Arbeit, -Konservativ" },
+    { key: "blue", label: "🔵 Blau", desc: "+Wirtschaft, -Umwelt" },
+  ];
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal-content">
+        <h2>Neue Partei gründen</h2>
+        {error && <p className="error">{error}</p>}
+
+        <label>
+          Parteiname:
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="z.B. Die Grünen"
+            disabled={disabled}
+          />
+        </label>
+
+        <label>Ideologie (Effekte auf Wählergruppen):</label>
+        <div className="ideology-buttons">
+          {ideologies.map((id) => (
+            <button
+              key={id.key}
+              className={`ideology-button ${ideology === id.key ? "selected" : ""}`}
+              onClick={() => setIdeology(id.key)}
+              disabled={disabled}
+            >
+              <div className="ideology-label">{id.label}</div>
+              <div className="ideology-desc">{id.desc}</div>
+            </button>
+          ))}
+        </div>
+
+        <div className="button-row">
+          <button onClick={onConfirm} disabled={disabled || !name.trim()}>
+            Partei gründen
+          </button>
+          <button onClick={onClose} disabled={disabled} className="button-secondary">
+            Abbrechen
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SonntagsfragOverlay({ session }) {
   if (!session) return null;
 
@@ -306,6 +385,11 @@ export default function App() {
   // Verlaufsansicht (siehe HISTORY_LIMIT oben): ein Eintrag pro Runde
   // (advance/fast-forward) bzw. pro aufgeloestem Dilemma, neueste zuerst.
   const [history, setHistory] = useState([]);
+  // B23 "Party-Gründung (Persistente Meta-Ebene)": UI-State für Partei-Gründungs-Dialog
+  const [showGameStart, setShowGameStart] = useState(true);
+  const [showPartyCreation, setShowPartyCreation] = useState(false);
+  const [partyName, setPartyName] = useState("");
+  const [partyIdeology, setPartyIdeology] = useState("green");
 
   function pushHistoryEntry(entry) {
     setHistory((prev) => [entry, ...prev].slice(0, HISTORY_LIMIT));
@@ -368,6 +452,36 @@ export default function App() {
       const created = await api.createSession();
       const state = await api.getSession(created.session_id);
       setSession(state);
+      setShowGameStart(false);
+      setEvents([]);
+      setAttributions([]);
+      setReports([]);
+      setElectionResult(null);
+      setTermSummary(null);
+      setSelectedPolicies([]);
+      setSelectedRepeals([]);
+      setHistory([]);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleCreateParty() {
+    if (!partyName.trim()) {
+      setError("Parteiname erforderlich");
+      return;
+    }
+    setError(null);
+    setLoading(true);
+    try {
+      const created = await api.createPartySession(partyName, partyIdeology);
+      const state = await api.getSession(created.session_id);
+      setSession(state);
+      setShowGameStart(false);
+      setShowPartyCreation(false);
+      setPartyName("");
       setEvents([]);
       setAttributions([]);
       setReports([]);
@@ -588,13 +702,33 @@ export default function App() {
         <h1>Niedersachsen</h1>
       </header>
 
-      {!session && (
-        <button onClick={handleStart} disabled={loading}>
-          Neue Partie starten
-        </button>
+      {!session && showGameStart && (
+        <>
+          <GameStartMenu
+            onNewParty={() => setShowPartyCreation(true)}
+            onStartClassic={handleStart}
+            disabled={loading}
+          />
+          {showPartyCreation && (
+            <PartyCreationDialog
+              onClose={() => {
+                setShowPartyCreation(false);
+                setPartyName("");
+                setError(null);
+              }}
+              onConfirm={handleCreateParty}
+              disabled={loading}
+              name={partyName}
+              setName={setPartyName}
+              ideology={partyIdeology}
+              setIdeology={setPartyIdeology}
+              error={error}
+            />
+          )}
+        </>
       )}
 
-      {error && <p className="error">Fehler: {error}</p>}
+      {error && !showPartyCreation && <p className="error">Fehler: {error}</p>}
 
       {session && (
         <>

@@ -21,6 +21,12 @@ export const api = {
   // Konstante in App.jsx.
   listPolicies: () => request("/policies"),
   createSession: () => request("/sessions", { method: "POST" }),
+  // B23 "Party-Gründung (Persistente Meta-Ebene)": neue Session mit Party
+  createPartySession: (name, ideology) =>
+    request("/sessions/new-party", {
+      method: "POST",
+      body: JSON.stringify({ name, ideology }),
+    }),
   getSession: (id) => request(`/sessions/${id}`),
   // repealPolicyKeys: Democracy-4-Vorbild "Policy-Repeal" (siehe
   // landtag_sim.engine.py::advance_turn) -- Policies, die diese Runde

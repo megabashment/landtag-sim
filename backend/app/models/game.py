@@ -35,6 +35,7 @@ class GameSession(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     admin_unit_id: int = Field(foreign_key="admin_unit.id")
+    party_id: int | None = Field(default=None, foreign_key="party.id")
     name: str = Field(default="Neue Partie")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

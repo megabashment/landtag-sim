@@ -1,6 +1,37 @@
 from pydantic import BaseModel
 
 
+class PartyOut(BaseModel):
+    """B23 "Party-Gründung (Persistente Meta-Ebene)" (BACKLOG.md):
+    eine Partei mit persistenter Ideologie über mehrere Sessions hinweg."""
+
+    id: int
+    name: str
+    ideology: str  # "green" | "red" | "blue"
+    founded_at: str
+    base_electability: float
+    reputation: float
+
+
+class NewPartyRequest(BaseModel):
+    """Request zum Gründen einer neuen Partei und Starten einer Session."""
+
+    name: str
+    ideology: str  # "green" | "red" | "blue"
+
+
+class CreateSessionResponse(BaseModel):
+    """Alte Definition bleibt, aber PartyOut wird auch in Party-Gründung verwendet."""
+
+    session_id: int
+    admin_unit: str
+    turn: int
+    budget: float
+    party_id: int | None = None
+    party_name: str | None = None
+    party_ideology: str | None = None
+
+
 class PolicyEffectOut(BaseModel):
     statistic_key: str
     magnitude: float
@@ -48,13 +79,6 @@ class OppositionCampaignOut(BaseModel):
     description: str
     capital_cost: float
     satisfaction_deltas: dict[str, float]  # pro Wählergruppe
-
-
-class CreateSessionResponse(BaseModel):
-    session_id: int
-    admin_unit: str
-    turn: int
-    budget: float
 
 
 class DilemmaOptionOut(BaseModel):
