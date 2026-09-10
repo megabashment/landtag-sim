@@ -1,6 +1,19 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
+import { STAT_ICON_PATHS } from "./statIcons";
 import "./App.css";
+
+// B14: kleines Statistik-Icon (game-icons.net, CC BY 3.0 -- siehe CREDITS.md).
+// Faellt lautlos aus, wenn fuer einen Key kein Pfad hinterlegt ist.
+function StatIcon({ statKey }) {
+  const d = STAT_ICON_PATHS[statKey];
+  if (!d) return null;
+  return (
+    <svg className="stat-icon" viewBox="0 0 512 512" aria-hidden="true">
+      <path fill="currentColor" d={d} />
+    </svg>
+  );
+}
 
 const FAST_FORWARD_SAFETY_CAP = 40; // Sicherheitsnetz gegen Endlosschleifen im Client
 
@@ -489,7 +502,10 @@ export default function App() {
               <ul>
                 {Object.entries(session.statistics).map(([key, value]) => (
                   <li key={key}>
-                    <span>{key}</span>
+                    <span className="stat-label">
+                      <StatIcon statKey={key} />
+                      {key}
+                    </span>
                     <span className="stat-value">
                       <strong>{value.toFixed(1)}</strong>
                       {preview && <DeltaArrow delta={preview.statistic_deltas[key]} />}

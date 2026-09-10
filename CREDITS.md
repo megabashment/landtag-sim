@@ -7,7 +7,18 @@ unterscheiden (nicht alle CC0).
 
 | Asset | Quelle | Lizenz | Verwendung |
 |---|---|---|---|
-| *(noch keine Assets eingebunden)* | | | |
+| `suitcase` (Icon-Pfad) | [game-icons.net/1x1/delapouite/suitcase](https://game-icons.net/1x1/delapouite/suitcase.html) | CC BY 3.0 (Autor: Delapouite) | Statistik-Icon „Arbeitslosenquote" (`frontend/src/statIcons.js`) |
+| `two-coins` (Icon-Pfad) | [game-icons.net/1x1/delapouite/two-coins](https://game-icons.net/1x1/delapouite/two-coins.html) | CC BY 3.0 (Autor: Delapouite) | Statistik-Icon „BIP-Wachstum" |
+| `graduate-cap` (Icon-Pfad) | [game-icons.net/1x1/delapouite/graduate-cap](https://game-icons.net/1x1/delapouite/graduate-cap.html) | CC BY 3.0 (Autor: Delapouite) | Statistik-Icon „Bildungsausgaben" |
+| `health-normal` (Icon-Pfad) | [game-icons.net/1x1/sbed/health-normal](https://game-icons.net/1x1/sbed/health-normal.html) | CC BY 3.0 (Autor: sbed) | Statistik-Icon „Gesundheitsversorgung" |
+| `factory` (Icon-Pfad) | [game-icons.net/1x1/delapouite/factory](https://game-icons.net/1x1/delapouite/factory.html) | CC BY 3.0 (Autor: Delapouite) | Statistik-Icon „CO2-Emissionen" |
+| `windmill` (Icon-Pfad) | [game-icons.net/1x1/delapouite/windmill](https://game-icons.net/1x1/delapouite/windmill.html) | CC BY 3.0 (Autor: Delapouite) | Statistik-Icon „Anteil erneuerbare Energien" |
+
+Hinweis: eingebunden ist jeweils nur das `<path>`-Vektordatum (der schwarze
+Hintergrund-Rect der Originaldatei wurde entfernt, Rendering in
+`currentColor`) in `frontend/src/statIcons.js`. CC BY 3.0 verlangt
+Namensnennung — diese Tabelle plus der Icon-Kommentar in `statIcons.js`
+erfuellen das.
 
 ## Empfohlene/geprüfte Quellen (siehe Projekt-Setup-Diskussion)
 

@@ -79,6 +79,7 @@ landtag-sim/
 │   ├── sample_data.py    # SAMPLE_POLICIES, SAMPLE_EVENT_RULES, SAMPLE_DILEMMA_RULES, SAMPLE_SITUATION_RULES, SAMPLE_REPORT_RULES, SAMPLE_SCENARIO_GOALS, SAMPLE_VOTER_GROUPS, STARTING_STATISTICS, jittered_starting_statistics()
 │   └── tools/balance_runner.py  # Headless Szenario-Tester über alle (voraussetzungs-gültigen) Policy-Kombinationen + Dominante-Strategie-Check + B6-Trigger-Telemetrie (--seeds)
 ├── frontend/src/App.jsx  # Einzelnes Dashboard, Policy-Katalog per GET /policies (api.listPolicies)
+│   └── statIcons.js      # B14: game-icons.net-Pfade (CC BY 3.0) pro Statistik-Key, siehe CREDITS.md
 ├── data/                 # Datenquellen-Doku (Landesamt für Statistik Niedersachsen statt Weltbank/V-Dem, siehe data/README.md)
 └── docs/                 # architecture.md (Game-Director-Review), game-design-roadmap.md (Senior-Game-Designer-Review, 10 gewichtete Vorschläge)
 ```
@@ -557,6 +558,14 @@ Situations-Schwellen in Runde 0 ausloesen. `education_spending`/
 `healthcare_quality` bleiben synthetische Indizes. Kommentarblock ueber
 `STARTING_STATISTICS` fasst das je Wert zusammen. Zwei Report-Tests mit
 hart codiertem „6.0" auf „5.9" nachgezogen.
+
+M4-Backlog, B14 "Policy-/Statistik-Icons + CREDITS.md" (2026-09-10,
+BACKLOG.md): 6 Statistik-Icons von game-icons.net (CC BY 3.0,
+Delapouite/sbed) als reine `<path>`-Daten in `frontend/src/statIcons.js`
+(kein schwarzer Hintergrund-Rect, `currentColor`). `StatIcon`-Komponente
+in App.jsx rendert sie im „Statistiken"-Panel. `CREDITS.md`-Tabelle mit
+Lizenzzeile pro Icon (Pflicht, architecture.md Punkt 9). Visuell
+verifiziert. M4 damit vollstaendig (B12–B14).
 
 DB-Lauf 2026-09-10 (Docker Desktop jetzt auf Christians Windows-Rechner
 installiert): erstmals die komplette Backend-Testsuite lokal ausgeführt und

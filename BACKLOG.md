@@ -575,9 +575,17 @@ vorherigen auf).
     `healthcare_quality` bleiben synthetische 0-100-Indizes. 2 Report-
     Tests mit hart codiertem 6.0 nachgezogen. sim 108 / backend 55 grün,
     Balance-Runner unveraendert.
-- [ ] **B14 — Policy-/Statistik-Icons + `CREDITS.md` befuellen** · Impact 1 × Aufwand 2 → M4
-  - game-icons.net (CC-BY 3.0) / Kenney (CC0), jeder Eintrag mit
-    Lizenzzeile in `CREDITS.md` (Pflicht laut `architecture.md` Punkt 9).
+- [x] **B14 — Policy-/Statistik-Icons + `CREDITS.md` befuellen** · Impact 1 × Aufwand 2 → M4
+  - *Umsetzung 2026-09-10:* 6 Statistik-Icons von game-icons.net
+    (CC BY 3.0, Autoren Delapouite/sbed) als reine `<path>`-Vektordaten
+    in `frontend/src/statIcons.js` (schwarzer Hintergrund-Rect entfernt,
+    Rendering in `currentColor`). Neue `StatIcon`-Komponente rendert sie
+    im „Statistiken"-Panel vor jedem Key (`.stat-label`/`.stat-icon`,
+    faellt lautlos aus bei unbekanntem Key). `CREDITS.md`-Tabelle mit
+    einer Lizenzzeile pro Icon gefuellt (Pflicht laut architecture.md
+    Punkt 9). Visuell im Docker-Frontend verifiziert. Nur Policy-Icons
+    (statt Statistik-Icons) waeren ein Fast-Follow — Statistiken sind die
+    sichtbarste Stelle. Frontend build+lint grün.
 
 ---
 

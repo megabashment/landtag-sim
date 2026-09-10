@@ -102,6 +102,20 @@
   align-items: baseline;
 }
 
+/* B14 "Statistik-Icons" (game-icons.net, CC BY 3.0 -- CREDITS.md) */
+.stat-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.stat-icon {
+  width: 1em;
+  height: 1em;
+  flex-shrink: 0;
+  color: #666;
+}
+
 .delta {
   font-size: 0.8rem;
   font-weight: 600;
