@@ -589,6 +589,24 @@ vorherigen auf).
     (Session-Anlage, CORS-Preflight). README-Abschnitt "Alles mit Docker" +
     "Vom Handy im lokalen Netz testen" ergaenzt.
 
+**M3-Frontend, Phase 3 "Status Bar + Lageanzeige" (2026-09-10):**
+
+Designziel: Amtsblatt-Ästhetik statt Gamer-UI. Die Statusleiste zeigt nun nicht nur Ressourcen (Runde/Haushalt/Political Capital/Mandat) als klar strukturierte Ledger-Felder, sondern **die Legislaturperiode selbst als visuelles Band** — 16 Ticks, die sich mit jeder Runde füllen, am Ende ein Sachsenross-roter Siegel. **Signatur:** Drunter ein neuer `<div className="lage">`-Strip, der live anzeigt, **was gerade los ist** — aktive Situations (z.B. "Wirtschaftsflaute seit R. 7"), offene Dilemmas, Ereignisse der Runde — jeweils als farbcodierte Chips. Das macht "Lage des Kabinetts" nicht abstrakt (Zahlen), sondern narrativ fassbar ("welche Krisen brennen").
+
+**Backend-Integration der B2 Situations-Layer (parallel umgesetzt):**
+- Situations waren im Sim-Engine implementiert, aber in der API **tot**: die Regeln wurden nie evaluiert, `active_situations` immer leer.
+- Fix: `sim_bridge.py::load_situation_rules()` (statischer Content wie `load_report_rules()`), beide `advance` und `preview` übergeben jetzt `situation_rules=` an `advance_turn()`.
+- API: `_build_state_response()` baut `active_situations: [ActiveSituationOut]` für die Lageanzeige.
+- **Resultat:** `abwanderung` (Rezession), `klimakrise`, `pflegenotstand`, `gruenes_wachstum`, `bildungsaufstieg` triggern jetzt organisch statt tot.
+
+**Test-Konsequenzen:** Vier vorher rote Tests waren durch B2 Phase 1 (Stat-zu-Stat-Drift) und die Existenz der Situations betroffene. Fixes:
+- No-policy-Lauf verliert jetzt die Wahl (approval driftet auf ~49.9 < 50.0) → Assertion angepasst.
+- Policy-Katalog hat 13 statt 8 (B2 Phase 2 Split) → Expected-Set aktualisiert.
+- Term-Summary-Tests müssen Dilemma-Handling + Stat-Drift akzeptieren.
+- **Gesamt:** 55 Backend-Tests ✓, 108 Sim-Tests ✓, Frontend build+lint ✓.
+
+**M3 damit vollständig (B7–B11 + Frontend Phase 3).**
+
 ---
 
 ## Milestone M4 — Content & Daten (nach stabilem Systemgeruest)
