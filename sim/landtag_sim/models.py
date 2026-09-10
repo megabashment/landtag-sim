@@ -548,6 +548,18 @@ class DelayedEffect:
 
 
 @dataclass
+class OppositionCampaign:
+    """M5 "Opposition-Loop" (BACKLOG.md B15): Kampagne statt Policy fuer die
+    Opposition. Beeinflusst Wähler-Zufriedenheit direkt (nicht Statistiken),
+    kostet Political Capital, wirkt über Satisfaction-Momentum."""
+    key: str
+    name: str
+    capital_cost: float  # z.B. 2.0 PC
+    satisfaction_deltas: dict[str, float]  # pro Waehlergruppe: +/-Satisfaction
+    description: str = ""
+
+
+@dataclass
 class SimState:
     turn: int
     budget: float
@@ -605,6 +617,14 @@ class SimState:
     term_dilemma_count: int = 0
     term_event_count: int = 0
 
+    # M5 "Opposition-Loop" (BACKLOG.md B15): Opposition hat eigene Satisfaction
+    # je Waehlergruppe (unabhaengig von Regierungs-Stats), aufgebaut via
+    # PR-Kampagnen. opposition_mode=True bedeutet: Opposition ist Regierung,
+    # Policies laufen weiter, Opposition spielt Kampagnen.
+    opposition_mode: bool = False
+    opposition_satisfaction: dict[str, float] = field(default_factory=dict)
+    opposition_momentum: dict[str, float] = field(default_factory=dict)
+
     def clone(self) -> "SimState":
         return SimState(
             turn=self.turn,
@@ -626,4 +646,7 @@ class SimState:
             term_start_approval=self.term_start_approval,
             term_dilemma_count=self.term_dilemma_count,
             term_event_count=self.term_event_count,
+            opposition_mode=self.opposition_mode,
+            opposition_satisfaction=dict(self.opposition_satisfaction),
+            opposition_momentum=dict(self.opposition_momentum),
         )

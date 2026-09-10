@@ -18,6 +18,7 @@ from landtag_sim.models import (
     DilemmaRule,
     EventRule,
     Faction,
+    OppositionCampaign,
     Policy,
     PolicyEffect,
     ReportCondition,
@@ -1059,6 +1060,52 @@ SAMPLE_SCENARIO_GOALS = [
         metric="approval",
         operator=">",
         threshold=60.0,
+    ),
+]
+
+SAMPLE_OPPOSITION_CAMPAIGNS = [
+    OppositionCampaign(
+        key="arbeitsmarkt_kritik",
+        name="Kritik: Arbeitsmarktversprechungen nicht erfüllt",
+        capital_cost=2.0,
+        satisfaction_deltas={
+            "Arbeitnehmer": 8.0,
+            "Umweltbewusste Wähler": 3.0,
+            "Junge Familien": 2.0,
+        },
+        description="Attacke gegen Regierungs-Arbeitsmarktpolitik; wirkt stark bei Arbeitern",
+    ),
+    OppositionCampaign(
+        key="sozialversprechen_kampagne",
+        name="Sozialversprechen: Gerechtige Verteilung",
+        capital_cost=2.5,
+        satisfaction_deltas={
+            "Arbeitnehmer": 5.0,
+            "Junge Familien": 6.0,
+            "Gerechtigkeitsbewusste": 4.0,
+        },
+        description="Gemäßigte Position; sichere, moderate Wähler-Gewinne",
+    ),
+    OppositionCampaign(
+        key="umwelt_offensiv",
+        name="Klimaoffensive: Radikale Ziele",
+        capital_cost=3.0,
+        satisfaction_deltas={
+            "Umweltbewusste Wähler": 12.0,
+            "Junge Familien": 4.0,
+            "Wirtschaft": -6.0,
+        },
+        description="Aggressive Grünen-Politik; polarisiert stark",
+    ),
+    OppositionCampaign(
+        key="budget_kritik",
+        name="Haushaltskritik: Zu viele Schulden",
+        capital_cost=1.5,
+        satisfaction_deltas={
+            "Konservativ-Bürgerliche": 5.0,
+            "Wirtschaft": 4.0,
+        },
+        description="Finanzkonservative Kritik; billig, aber begrenzte Reichweite",
     ),
 ]
 

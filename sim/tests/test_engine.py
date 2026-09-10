@@ -7,6 +7,7 @@ from landtag_sim.engine import (
     CAPITAL_CAP,
     CAPITAL_PER_TURN,
     ELECTION_CYCLE_LENGTH,
+    _calculate_coalition_viability,
     advance_turn,
     policy_is_unlocked,
     project_election,
@@ -1488,3 +1489,76 @@ def test_sample_factions_are_well_formed():
         assert f.seats > 0
         for stance in (f.stance_economy, f.stance_social, f.stance_environment):
             assert -1.0 <= stance <= 1.0
+
+
+# M5 "Opposition-Loop" (BACKLOG.md B15): Koalitionsfaehigkeit als einheitliche Metrik
+
+def test_coalition_viability_government_positive_econ():
+    """Regierung mit guten Wirtschaftswerten + hoher Zufriedenheit → hohe Viability."""
+    state = build_initial_state()
+    state.statistics["gdp_growth"] = 3.0
+    state.statistics["unemployment_rate"] = 4.0
+    for group in state.voter_groups:
+        group.satisfaction = 70.0
+
+    viability = _calculate_coalition_viability(state, opposition_mode=False)
+    assert 65 < viability <= 100, f"Expected high viability (65-100), got {viability}"
+
+
+def test_coalition_viability_government_recession():
+    """Regierung in Rezession mit niedriger Zufriedenheit → niedrige Viability."""
+    state = build_initial_state()
+    state.statistics["gdp_growth"] = -2.0
+    state.statistics["unemployment_rate"] = 8.0
+    for group in state.voter_groups:
+        group.satisfaction = 30.0
+
+    viability = _calculate_coalition_viability(state, opposition_mode=False)
+    assert 0 <= viability < 40, f"Expected low viability (0-40), got {viability}"
+
+
+def test_coalition_viability_opposition_starts_at_zero():
+    """Opposition mit leeren satisfaction_deltas startet bei 0."""
+    state = build_initial_state()
+    state.opposition_mode = True
+    state.opposition_satisfaction = {g.name: 0.0 for g in state.voter_groups}
+
+    viability = _calculate_coalition_viability(state, opposition_mode=True)
+    assert viability == 0.0
+
+
+def test_coalition_viability_opposition_builds_up():
+    """Opposition baut Satisfaction auf via Kampagnen → steigende Viability."""
+    state = build_initial_state()
+    state.opposition_mode = True
+
+    # Intialisiere opposition_satisfaction für alle Gruppen
+    state.opposition_satisfaction = {g.name: 0.0 for g in state.voter_groups}
+
+    # Kampagne wirkt auf eine Gruppe (Industriearbeiter ~25% Basis)
+    state.opposition_satisfaction["Industriearbeiter"] = 20.0
+
+    viability = _calculate_coalition_viability(state, opposition_mode=True)
+    # Industriearbeiter sind ~25% der Basis, also 20 * 0.25 ≈ 5 Punkte Viability
+    assert 3 < viability < 10, f"Expected low viability (3-10), got {viability}"
+
+    # Kampagne wirkt auf alle Gruppen
+    for group_name in state.opposition_satisfaction:
+        state.opposition_satisfaction[group_name] = 50.0
+
+    viability = _calculate_coalition_viability(state, opposition_mode=True)
+    assert 45 < viability <= 100, f"Expected high viability (45-100), got {viability}"
+
+
+def test_opposition_campaigns_sample_data():
+    """Sample-Opposition-Kampagnen sind wohlgeformt."""
+    from landtag_sim.sample_data import SAMPLE_OPPOSITION_CAMPAIGNS
+
+    assert len(SAMPLE_OPPOSITION_CAMPAIGNS) >= 3, "Mindestens 3 Kampagnen erwartet"
+
+    for campaign in SAMPLE_OPPOSITION_CAMPAIGNS:
+        assert campaign.key, "Kampagne muss key haben"
+        assert campaign.name, "Kampagne muss name haben"
+        assert campaign.capital_cost > 0, "capital_cost muss positiv sein"
+        assert isinstance(campaign.satisfaction_deltas, dict), "satisfaction_deltas muss dict sein"
+        assert len(campaign.satisfaction_deltas) > 0, "satisfaction_deltas darf nicht leer sein"

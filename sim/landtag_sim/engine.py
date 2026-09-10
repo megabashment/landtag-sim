@@ -229,6 +229,40 @@ def _turnout_weighted_approval(state: SimState) -> float:
     )
 
 
+def _calculate_coalition_viability(state: SimState, opposition_mode: bool) -> float:
+    """M5 "Opposition-Loop" (BACKLOG.md B15): einheitliche Metrik fuer beide
+    Rollen (Regierung/Opposition). Regierung wirkt durch objektive Stats +
+    Waehler-Zufriedenheit; Opposition nur durch direkte Zufriedenheit
+    (unabhaengig von Stats).
+
+    - Regierung: 60% Zufriedenheit + 40% Wirtschafts-Performance
+    - Opposition: 100% direkte Opposition-Zufriedenheit (keine Stats)
+
+    Beide landen in [0, 100].
+    """
+    if not opposition_mode:
+        # GOVERNMENT: gewichtete Zufriedenheit + Wirtschafts-Performance
+        voter_score = _weighted_approval(state)
+
+        # Vereinfachte Wirtschafts-Performance: GDP + (1-unemployment/10) normiert
+        econ_component = (
+            (state.statistics.get("gdp_growth", 0.0) + 5.0) / 10.0 +  # GDP im Band [-5, +5] → [0, 1]
+            (1.0 - state.statistics.get("unemployment_rate", 5.0) / 10.0)  # unemployment im Band [0, 10%] → [1, 0]
+        ) / 2.0
+        econ_score = max(0.0, min(100.0, econ_component * 100.0))
+
+        return 0.6 * voter_score + 0.4 * econ_score
+    else:
+        # OPPOSITION: gewichtete Opposition-Zufriedenheit aller Gruppen
+        if not state.opposition_satisfaction:
+            return 0.0
+        total_share = sum(vg.population_share for vg in state.voter_groups) or 1.0
+        return sum(
+            state.opposition_satisfaction.get(vg.name, 0.0) * vg.population_share
+            for vg in state.voter_groups
+        ) / total_share
+
+
 def project_election(state: SimState) -> ElectionProjection:
     """B5 "Wahlprognose mit sichtbarem Turnout/Apathie" (BACKLOG.md, F4/L6):
     Vorausschau auf den Wahlausgang aus dem aktuellen Zustand.

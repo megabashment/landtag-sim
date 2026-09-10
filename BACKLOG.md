@@ -676,6 +676,124 @@ Designziel: Amtsblatt-Ästhetik statt Gamer-UI. Die Statusleiste zeigt nun nicht
 
 ---
 
+## Milestone M5 — Opposition-Loop & Party Meta (Planung 2026-09-10)
+
+**Vision:** Partei wird zur persistenten Meta-Entität über mehrere Wahlzyklen hinweg. 
+Jede Session (Regierung/Opposition in Niedersachsen) ist eine Phase der Partei-Geschichte. 
+Langfristig skalierbar auf Bundes-/EU-Ebene.
+
+**Architektur:**
+```
+PARTEI (persistent)
+├─ Meta-Werte (Wählbarkeit, Stammanzahl, Reputation, Ideologie)
+├─ Founded Institutions (gegründete Stiftungen, Unis, etc.)
+├─ Gegründete Policies (als Langzeit-Strukturen)
+└─ Sessions (jede Wahl/Legislatur ist eine Session dieser Partei)
+   ├─ Performance-Werte (3 Kategorien: Wirtschaft, Soziales, Umwelt)
+   │  └─ drunter 6 Detail-Statistiken (GDP, Healthcare, etc.)
+   ├─ Opposition/Government-Phase
+   └─ Gegründete Institutionen (erben zur nächsten Session)
+```
+
+---
+
+- [ ] **B15 — Opposition-Gameplay via Kampagnen** · Impact 4 × Aufwand 4 → M5
+  - *Warum (L8, L1):* Opposition ist der meistgewünschte Loop; mit Kampagnen-
+    Mechanik statt Policies wird es ein echtes paralleles Spielmodus.
+  - *Design (2026-09-10):* Nach Wahlverlust optional in Opposition gehen.
+    Opposition hat kein Policies-Enactment, stattdessen 3-4 **Kampagnen** pro
+    Runde (Budget: Political Capital). Kampagnen beeinflussen Voter-Satisfaction
+    direkt, unabhängig von Regierungs-Stats. **Einheitliche Metrik:**
+    `coalition_viability = f(voter_satisfaction + economic_performance)` für
+    beide Rollen — Regierung wirkt über Stats, Opposition direkt über Kampagnen.
+    Ressourcen-Multiplikator: PC/Runde und Budget basieren auf Koalitionsfähigkeit
+    am Wahl-Abend (z.B. Opposition mit 35% Viability startet nächsten Zyklus
+    mit nur 1.05 PC/Runde statt 3.0).
+  - *Scope:*
+    - `SimState.opposition_mode: bool`, `opposition_satisfaction: dict[str, float]`,
+      `opposition_momentum: dict[str, float]`
+    - `OppositionCampaign` Dataclass (key, name, capital_cost, satisfaction_deltas)
+    - `_calculate_coalition_viability(state, role) -> float` (einheitlich)
+    - 3-5 Sample-Kampagnen (Arbeitsmarkt-Kritik, Sozialversprechen, Umwelt-Offensiv)
+    - API: `/advance` mit `opposition_campaign_key` (statt policies)
+    - Frontend: Kampagnen-Buttons statt Policy-Buttons in Opposition
+    - Tests: Opposition-Kampagnen wirken, Ressourcen skalieren mit Viability,
+      Transition Government→Opposition und zurück korrekt
+  - *Abhängigkeit:* B8 (Faction-Datenmodell, bereits in M3)
+  - *Estimated:* sim 110-115 Tests, backend 60-65, Frontend UI-Anpassung
+
+- [ ] **B23 — Party-Gründung, Ideologie & Meta-Werte** · Impact 4 × Aufwand 3 → M5
+  - *Warum (M5-Vision):* Partei wird persistente Entity. Spieler gründet Partei,
+    sieht ihre Geschichte über Zyklen hinweg.
+  - *Scope:*
+    - Neue Tabelle `party` (`id`, `name`, `ideology`, `founded_at`, `founded_cycle`,
+      `base_electability`, `base_supporter_count`, `reputation`, `metadata`)
+    - Neue Seite/Dialog "Neue Partei gründen" (Name, Ideologie: center/left/right/green)
+    - Ideologie bestimmt: `IDEOLOGY_VOTER_AFFINITY` — z.B. Grüne +20% bei Umwelt-Wählern
+    - `GameSession.party_id` (Foreign Key)
+    - Meta-Werte persistieren über Sessions (Durchschnitt über alle Termine)
+    - `PartyLegacy` zeigt: gegründet wann, bisher X Legislaturen, Y Institutionen
+    - Tests: Party wird korrekt angelegt, Ideologie wirkt sich auf Startbedingungen aus
+  - *Estimated:* sim keine Changes, backend 8-10 Tests, DB-Migration
+
+- [ ] **B20 — Party Legacy & Session-History** · Impact 3 × Aufwand 2 → M5
+  - *Scope:*
+    - `Party.term_summaries: list[TermSummary]` — jede beendete Session speichern
+    - `Party.coalition_history: list[(cycle, role, viability%, result)]`
+    - UI "Party-Bilanz": "3 Legislaturen Regierung (avg. 62% Viability), 
+      2 in Opposition (avg. 28%), gegründet 2 Institutionen"
+    - Langzeit-Trend: Wählbarkeit der Partei über Zyklen (steigt bei Erfolg, 
+      sinkt bei Skandalen)
+  - *Abhängigkeit:* B15, B23
+
+- [ ] **B21 — Institution-Building & Policy-Tree** · Impact 4 × Aufwand 5 → M5
+  - *Warum (L7, L1):* Late-Game-Engagement. Institutionen sind "schwache aber 
+    schlaue Langzeiteffekte" — kosten viel, wirken graduell über 3+ Zyklen.
+  - *Design-Frage (2026-09-10):* Könnten Policies auch im **Institution-Tree** 
+    dargestellt werden? Statt lineare "aktiviere Policy X", könnte der Spieler
+    einen **Governance-Tree** bauen: "Bildungsreform (Basis)" → "Digitale Schulen
+    (Branch 1)" + "Lehrerfortbildung (Branch 2)" + später "Universität gründen
+    (Institution-Finale)". Das würde Policies weniger "isoliert" wirken lassen —
+    stattdessen sichtbare Struktur aufbauen. **Offene Designfrage für B21.**
+  - *Scope (MVP — ohne Policy-Tree, aber vorbereitet):*
+    - 5 begründbare Institutionen (wie oben skizziert):
+      1. Bildungsstiftung (Kosten PC 5, Budget 50; Effekt +0.5 education_spending/Runde für 3 Zyklen)
+      2. Universität gründen (PC 6, Budget 80; +1.5 education/Runde für 4 Zyklen, -30 Budget beim Gründen)
+      3. Öffentliches Krankenhaus (PC 5, Budget 70; +1.0 healthcare_quality/Runde für 3 Zyklen)
+      4. Wahlforschungsinstitut (PC 3, Budget 40; Election Projection +15% Genauigkeit)
+      5. Gewerkschaft/Arbeitgeberverband (PC 4, Budget 50; +8% Worker Satisfaction für 3 Zyklen, aber -6% Business)
+    - `FoundedInstitution` Dataclass (key, founded_turn, founded_cycle, active_until_cycle)
+    - `SimState.founded_institutions: list[FoundedInstitution]`
+    - Effekte werden automatisch in `advance_turn()` angewendet (wie Policy-Upkeep)
+    - API: `/advance` mit `found_institution_key` (neben Policies/Kampagnen)
+    - Narrative: `TurnResult.reports` erwähnen Institutionen-Effekte
+    - Frontend: "Party Legacy" Tab zeigt gegründete Institutionen + verbleibende Laufzeit
+    - Tests: Institutionen wirken korrekt für Dauer, werden dann inaktiv,
+      Effekte bleiben über Sessionwechsel bestehen
+  - *Future (nicht in MVP):* Policy-Tree-Visualisierung, hierarchische Policies
+  - *Estimated:* sim 115-120 Tests, backend 65-70, Frontend neue Sektion
+
+- [ ] **B24 — Scenario-Modus & Campaign Struktur** · Impact 3 × Aufwand 4 → M5
+  - *Warum (L10, Engagement):* vordefinierte Kampagnen machen das Spiel weniger 
+    "sandbox". Z.B. "Kleine Partei zur Bundesmacht", "Grüne vor Klimakrise".
+  - *Scope:*
+    - Game-Start-Menu neu: [ ] Freies Spiel | [ ] Szenario | [ ] Laden
+    - 3-5 vordefinierte Szenarien (Gründung Partei mit Startbedingungen)
+    - `Scenario` Dataclass (key, name, description, starting_stats_override, starting_viability, goal)
+    - Jedes Szenario gründet eine neue Partei mit Constraints
+    - Goal: optional (z.B. "erreiche Bundesmacht in 3 Zyklen")
+    - Szenarien nutzen die gleiche Engine wie freies Spiel
+    - Tests: Scenario-Start setzt korrekte Bedingungen, Partei wird angelegt
+  - *Abhängigkeit:* B15, B23, B20
+
+- [ ] **B22 — Party-interne Events & Dilemmas** · Impact 2 × Aufwand 3 → M5
+  - *Scope:* 4-5 Party-Events (Fraktions-Streit, Skandal, Politikerwechsel, Fusion)
+    - Trigger: nur in Opposition-Modus oder unter bestimmten Bedingungen
+    - Effekte: PC-Malus, Satisfaction-Hit, oder positiv (Fusion = neue Basis)
+    - Narrative: "Rücktritt des Co-Vorsitzenden" statt nur Zahlenänderung
+
+---
+
 ## Quellen (Recherche 2026-09-09)
 
 - [Democracy 4 — "How to win the game?" (Steam, Dev-Antwort "sandbox, not about winning")](https://steamcommunity.com/app/1410710/discussions/0/3200370471674035223)

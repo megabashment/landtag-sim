@@ -826,6 +826,56 @@ M3-Frontend, Phase 3 "Status Bar + Lageanzeige" (2026-09-10):
 - `test_term_tracking_resets_for_the_next_legislative_period`: Dilemma-Handling für B3 `konjunkturdelle`-Triggering, Fallback auf Wahlverlust-Skip
 - **Gesamt:** 55 Backend-Tests grün ✓, 108 Sim-Tests ✓, Frontend build+lint ✓
 
+---
+
+## Milestone M5 — Opposition-Loop & Party Meta (geplant 2026-09-10)
+
+**Vision:** Partei wird zur persistenten Meta-Entität über mehrere Wahlzyklen.
+Jede Session ist eine Phase der Partei-Geschichte. Langfristig skalierbar auf 
+Bundes-/EU-Ebene.
+
+**Sprint-Struktur (empfohlene Reihenfolge):**
+
+### **Sprint 1 — B15 Phase 1: Opposition-Engine**
+- Dauer: 2-3 Tage
+- Scope: Sim-Engine nur
+- Deliverable: `opposition_satisfaction`, `opposition_momentum`, `_calculate_coalition_viability()`, 108-115 Tests grün
+- Dateien:
+  - `sim/landtag_sim/models.py` — `opposition_satisfaction`, `opposition_momentum` zu `SimState`
+  - `sim/landtag_sim/engine.py` — `_calculate_coalition_viability()`, `advance_turn()` Opposition-Branch
+  - `sim/tests/test_engine.py` — 6-8 neue Tests (Opposition-Mechanik)
+
+### **Sprint 2 — B15 Phase 2: Backend-API**
+- Dauer: 1-2 Tage
+- Scope: DB, Routes, Schemas
+- Deliverable: API akzeptiert `opposition_campaign_key`, 60-65 Backend-Tests grün
+- Dateien:
+  - `backend/app/models/game.py` — `opposition_mode: bool` Spalte
+  - `backend/app/api/routes_game.py` — `/advance` mit Campaign-Branch
+  - `backend/app/schemas/` — `OppositionCampaignOut`
+
+### **Sprint 3 — B15 Phase 3: Frontend-UI**
+- Dauer: 1 Tag
+- Scope: Opposition-Modus Buttons statt Policies
+- Deliverable: Frontend zeigt Kampagnen in Opposition, build+lint grün
+
+### **Sprint 4 — B23: Party-Gründung**
+- Dauer: 1-2 Tage
+- Scope: Party-Datenmodell, Gründungs-Dialog, Ideologie-System
+- Deliverable: Neue Party-Tabelle, Game-Start-Menu zeigt Gründungs-Dialog
+
+### **Sprint 5 — B21 Phase 1: Institution-Building**
+- Dauer: 2 Tage
+- Scope: 5 Institutionen definieren, `FoundedInstitution`, Effekt-System
+- Deliverable: Spieler kann Institutionen gründen, sie wirken über Sessions
+
+### **Sprint 6 — B20 + B24: Legacy & Szenarien**
+- Dauer: 1-2 Tage
+- Scope: Party-Legacy-Tracking, Szenario-Modus
+- Deliverable: M5 MVP-Feature-Complete
+
+---
+
 ## Konventionen
 
 - Deutsche Kommentare/Docstrings im Code (durchgängig beibehalten).
