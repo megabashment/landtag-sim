@@ -25,6 +25,7 @@ from landtag_sim.models import (
     DilemmaOption,
     DilemmaRule,
     EventRule,
+    OppositionCampaign,
     PendingDilemma,
     Policy,
     PolicyEffect,
@@ -36,6 +37,7 @@ from landtag_sim.models import (
     VoterGroup as SimVoterGroup,
 )
 from landtag_sim.sample_data import (
+    SAMPLE_OPPOSITION_CAMPAIGNS,
     SAMPLE_REPORT_RULES,
     SAMPLE_SCENARIO_GOALS,
     SAMPLE_SITUATION_RULES,
@@ -120,6 +122,15 @@ def load_scenario_goals() -> list[ScenarioGoal]:
     routes_game), damit ein spaeterer Umzug in eine DB-Tabelle / pro-Szenario-
     Zuordnung nur diese Stelle beruehrt. Kein `db`-Parameter -- bewusst."""
     return list(SAMPLE_SCENARIO_GOALS)
+
+
+def load_opposition_campaigns() -> list[OppositionCampaign]:
+    """M5 "Opposition-Loop" (BACKLOG.md B15): wie load_report_rules() /
+    load_scenario_goals() reiner statischer Content -- Opposition-Kampagnen
+    ohne DB/Session-Zustand, kommen direkt aus landtag_sim.sample_data.
+    Loader-Signatur, damit ein spaeterer Umzug in eine DB-Tabelle nur
+    diese Stelle beruehrt. Kein `db`-Parameter."""
+    return list(SAMPLE_OPPOSITION_CAMPAIGNS)
 
 
 def load_situation_rules() -> list[SituationRule]:

@@ -32,6 +32,7 @@ from app.seed import ensure_niedersachsen, run_all_seeds
 from app.sim_bridge import (
     load_dilemma_rules,
     load_event_rules,
+    load_opposition_campaigns,
     load_policy_catalog,
     load_report_rules,
     load_scenario_goals,
@@ -442,6 +443,45 @@ def preview_session_turn(
     )
 
 
+def _apply_opposition_campaign(sim_state, campaign_key: str) -> tuple[float, dict[str, float]]:
+    """M5 "Opposition-Loop" (BACKLOG.md B15): wendet eine Opposition-Kampagne
+    auf den State an. Returnt (capital_cost, satisfaction_deltas).
+
+    Updatet im State:
+    - opposition_satisfaction: +delta pro Gruppe
+    - opposition_momentum: EMA-Glättung wie bei Regierungs-Policies
+    """
+    campaigns = load_opposition_campaigns()
+    campaign = next((c for c in campaigns if c.key == campaign_key), None)
+    if not campaign:
+        raise ValueError(f"Opposition-Kampagne '{campaign_key}' nicht gefunden")
+
+    # Satisfaction-Deltas anwenden + Momentum-EMA
+    SATISFACTION_MOMENTUM_ALPHA = 0.4  # siehe engine.py (samme value)
+    for group_name, delta in campaign.satisfaction_deltas.items():
+        # Initialisiere opposition_satisfaction/momentum falls leer
+        if not sim_state.opposition_satisfaction:
+            sim_state.opposition_satisfaction = {g.name: 0.0 for g in sim_state.voter_groups}
+            sim_state.opposition_momentum = {g.name: 0.0 for g in sim_state.voter_groups}
+
+        current = sim_state.opposition_satisfaction.get(group_name, 0.0)
+        current_momentum = sim_state.opposition_momentum.get(group_name, 0.0)
+
+        # EMA-Glättung: Momentum nähert sich dem Raw-Delta an
+        new_momentum = SATISFACTION_MOMENTUM_ALPHA * delta + (1 - SATISFACTION_MOMENTUM_ALPHA) * current_momentum
+
+        # Zufriedenheit wird vom Momentum beeinflusst (wie bei Policies)
+        new_satisfaction = current + new_momentum
+
+        # Clamping auf [0, 100]
+        new_satisfaction = max(0.0, min(100.0, new_satisfaction))
+
+        sim_state.opposition_satisfaction[group_name] = new_satisfaction
+        sim_state.opposition_momentum[group_name] = new_momentum
+
+    return campaign.capital_cost, dict(campaign.satisfaction_deltas)
+
+
 @router.post("/sessions/{session_id}/advance", response_model=AdvanceTurnResponse)
 def advance_session_turn(
     session_id: int, body: AdvanceTurnRequest, db: Session = Depends(get_session)
@@ -462,8 +502,14 @@ def advance_session_turn(
             detail="Ein offenes Dilemma muss zuerst aufgeloest werden (POST /sessions/{id}/resolve-dilemma)",
         )
 
-    _validate_policy_keys(db, body.enact_policy_keys)
-    _validate_policy_keys(db, body.repeal_policy_keys)
+    # Opposition-Modus? Kampagne statt Policies
+    if session.opposition_mode and body.opposition_campaign_key:
+        # keine Policy-Validierung nötig für Opposition
+        opposition_campaign_keys = []
+    else:
+        _validate_policy_keys(db, body.enact_policy_keys)
+        _validate_policy_keys(db, body.repeal_policy_keys)
+        opposition_campaign_keys = []
 
     policy_catalog = load_policy_catalog(db)
     event_rules = load_event_rules(db)
@@ -473,14 +519,27 @@ def advance_session_turn(
     situation_rules = load_situation_rules()
     sim_state = _load_state_for_session(db, session)
 
+    # Opposition-Kampagne vor advance_turn verarbeiten
+    if session.opposition_mode and body.opposition_campaign_key:
+        try:
+            capital_cost, _ = _apply_opposition_campaign(sim_state, body.opposition_campaign_key)
+            if sim_state.political_capital < capital_cost:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Nicht genug Political Capital für Kampagne: benötigt {capital_cost}, verfügbar {sim_state.political_capital}",
+                )
+            sim_state.political_capital -= capital_cost
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     try:
         result = advance_turn(
             sim_state,
             policy_catalog,
             event_rules,
-            body.enact_policy_keys,
+            body.enact_policy_keys if not session.opposition_mode else [],
             dilemma_rules,
-            body.repeal_policy_keys,
+            body.repeal_policy_keys if not session.opposition_mode else [],
             report_rules=report_rules,
             scenario_goals=scenario_goals,
             situation_rules=situation_rules,
@@ -562,6 +621,11 @@ def advance_session_turn(
     session.term_start_approval = new_state.term_start_approval
     session.term_dilemma_count = new_state.term_dilemma_count
     session.term_event_count = new_state.term_event_count
+
+    # M5 "Opposition-Loop" (BACKLOG.md B15): Opposition-Zufriedenheit speichern
+    session.opposition_mode = new_state.opposition_mode
+    session.opposition_satisfaction = dict(new_state.opposition_satisfaction)
+    session.opposition_momentum = dict(new_state.opposition_momentum)
 
     election_out: ElectionResultOut | None = None
     if result.election_result:
