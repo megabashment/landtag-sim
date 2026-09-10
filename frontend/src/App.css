@@ -848,6 +848,26 @@ button:disabled {
 .ideology-desc {
   font-size: 12px;
   color: #666;
+  margin-bottom: 8px;
+}
+
+.ideology-examples {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.party-icon {
+  font-size: 20px;
+  display: inline-block;
+  cursor: help;
+  opacity: 0.8;
+  transition: opacity 0.2s;
+}
+
+.party-icon:hover {
+  opacity: 1;
 }
 
 .modal-content .button-row {

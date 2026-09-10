@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
 import { STAT_ICON_PATHS } from "./statIcons";
+import { PARTY_ICONS } from "./partyIcons";
 import "./App.css";
 
 // B14: kleines Statistik-Icon (game-icons.net, CC BY 3.0 -- siehe CREDITS.md).
@@ -81,7 +82,7 @@ function GameStartMenu({ onNewParty, onStartClassic, disabled }) {
   );
 }
 
-// Party-Gründungs-Dialog mit Name-Input und Ideologie-Wahl
+// Party-Gründungs-Dialog mit Name-Input und Ideologie-Wahl + Party-Beispiele
 function PartyCreationDialog({
   onClose,
   onConfirm,
@@ -92,6 +93,13 @@ function PartyCreationDialog({
   setIdeology,
   error
 }) {
+  // Beispiel-Parteien je Ideologie
+  const partyExamples = {
+    green: ["die-grünen", "ökobewegung", "naturfreunde"],
+    red: ["spd", "linke", "arbeiterpartei"],
+    blue: ["cdu", "fwirtschaft", "unternehmerbund"],
+  };
+
   const ideologies = [
     { key: "green", label: "🟢 Grün", desc: "+Umwelt, -Wirtschaft" },
     { key: "red", label: "🔴 Rot", desc: "+Arbeit, -Konservativ" },
@@ -117,17 +125,30 @@ function PartyCreationDialog({
 
         <label>Ideologie (Effekte auf Wählergruppen):</label>
         <div className="ideology-buttons">
-          {ideologies.map((id) => (
-            <button
-              key={id.key}
-              className={`ideology-button ${ideology === id.key ? "selected" : ""}`}
-              onClick={() => setIdeology(id.key)}
-              disabled={disabled}
-            >
-              <div className="ideology-label">{id.label}</div>
-              <div className="ideology-desc">{id.desc}</div>
-            </button>
-          ))}
+          {ideologies.map((id) => {
+            const examples = partyExamples[id.key] || [];
+            return (
+              <button
+                key={id.key}
+                className={`ideology-button ${ideology === id.key ? "selected" : ""}`}
+                onClick={() => setIdeology(id.key)}
+                disabled={disabled}
+              >
+                <div className="ideology-label">{id.label}</div>
+                <div className="ideology-desc">{id.desc}</div>
+                <div className="ideology-examples">
+                  {examples.map((partyKey) => {
+                    const party = PARTY_ICONS[partyKey];
+                    return party ? (
+                      <span key={partyKey} title={party.name} className="party-icon">
+                        {party.icon}
+                      </span>
+                    ) : null;
+                  })}
+                </div>
+              </button>
+            );
+          })}
         </div>
 
         <div className="button-row">
