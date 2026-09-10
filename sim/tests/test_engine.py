@@ -99,6 +99,20 @@ def test_every_sample_policy_has_at_least_one_negative_effect():
         )
 
 
+def test_every_sample_policy_has_a_real_description():
+    """B10 (BACKLOG.md): das description-Feld war vorher tot (seed.py setzte
+    es auf policy.name). Jede Beispiel-Policy braucht jetzt einen echten,
+    vom Namen verschiedenen Beschreibungstext."""
+    for policy in SAMPLE_POLICIES:
+        assert policy.description, f"Policy '{policy.key}' hat keine Beschreibung"
+        assert policy.description.strip() != policy.name, (
+            f"Policy '{policy.key}': Beschreibung ist nur der Name (totes Feld)"
+        )
+        assert len(policy.description) > 30, (
+            f"Policy '{policy.key}': Beschreibung zu kurz fuer eine echte Wirkungsbeschreibung"
+        )
+
+
 def test_higher_unemployment_lowers_satisfaction():
     state = build_initial_state()
     bad_policy = Policy(

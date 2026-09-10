@@ -571,6 +571,9 @@ export default function App() {
                           {p.name} ({p.capital_cost} Political Capital{incomeHint})
                         </label>
                       )}
+                      {p.description && (
+                        <p className="policy-description">{p.description}</p>
+                      )}
                       {locked && missing.length > 0 && (
                         <p className="hint requirement-hint">
                           Braucht zuerst: {missing.map(policyLabel).join(", ")}

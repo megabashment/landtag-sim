@@ -505,12 +505,19 @@ vorherigen auf).
   - *Umsetzung 2026-09-10:* sim 107 / backend 55 grün, Frontend
     build+lint grün.
 
-- [ ] **B10 — `PolicyDefinition.description` mit echtem Text fuellen** · Impact 2 × Aufwand 1 → M3
+- [x] **B10 — `PolicyDefinition.description` mit echtem Text fuellen** · Impact 2 × Aufwand 1 → M3
   - *Warum (`architecture.md` offene Punkte):* totes Feld
-    (`seed.py` setzt `description = policy.name`). Mit B4/L5 im Hinterkopf:
-    kurze Wirkungsbeschreibung je Policy, im Frontend-Katalog + Tooltip.
-  - *Anker:* `sim/landtag_sim/sample_data.py` (Text an `Policy` oder
-    Parallel-Dict), `backend/app/seed.py`, `PolicyOut`, `App.jsx`.
+    (`seed.py` setzte `description = policy.name`).
+  - *Umsetzung 2026-09-10:* neues `Policy.description`-Feld (models.py),
+    reine Anzeige — die Engine wertet es nicht aus. Alle 8 Beispiel-
+    Policies mit ein bis zwei Saetzen Wirkungsbeschreibung (Haupteffekt
+    + Trade-off) in `sample_data.py`. `seed.py` setzt jetzt
+    `description=policy.description or policy.name`. Frontend rendert die
+    Beschreibung unter jeder Policy im Katalog (`.policy-description`).
+    Regressionstests: `test_every_sample_policy_has_a_real_description`
+    (sim), erweiterte Assertion in `test_list_policies_returns_full_
+    sample_catalog` (backend). sim 108 / backend 55 grün, Frontend
+    build+lint grün.
 
 - [ ] **B11 — `docker-compose.yml` Frontend-Service** · Impact 1 × Aufwand 1 → M3
   - *Warum (`architecture.md` offene Punkte):* `docker compose up`

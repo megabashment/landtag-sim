@@ -51,7 +51,7 @@ def ensure_policy_catalog(db: Session) -> None:
             PolicyDefinition(
                 key=policy.key,
                 name=policy.name,
-                description=policy.name,
+                description=policy.description or policy.name,
                 category="allgemein",
                 one_time_cost=policy.one_time_cost,
                 upkeep_cost=policy.upkeep_cost,

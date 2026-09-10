@@ -85,6 +85,11 @@ SAMPLE_POLICIES = [
     Policy(
         key="erneuerbare_foerderung",
         name="Foerderprogramm erneuerbare Energien",
+        description=(
+            "Zuschuesse fuer Wind- und Solarprojekte heben den Erneuerbaren-Anteil "
+            "und druecken den CO2-Ausstoss - die Foerderkosten bremsen kurzfristig "
+            "das Wirtschaftswachstum."
+        ),
         one_time_cost=50.0,
         upkeep_cost=5.0,
         capital_cost=4.0,
@@ -99,6 +104,11 @@ SAMPLE_POLICIES = [
     Policy(
         key="bildungsoffensive",
         name="Bildungsoffensive",
+        description=(
+            "Mehr Geld fuer Schulen und Weiterbildung senkt mittelfristig die "
+            "Arbeitslosigkeit, kostet aber laufend Haushaltsmittel und daempft "
+            "das Wachstum."
+        ),
         one_time_cost=30.0,
         upkeep_cost=10.0,
         capital_cost=4.0,
@@ -126,6 +136,11 @@ SAMPLE_POLICIES = [
     Policy(
         key="steuersenkung_mittelstand",
         name="Steuersenkung Mittelstand",
+        description=(
+            "Niedrigere Gewerbesteuer fuer kleine und mittlere Betriebe belebt "
+            "Wachstum und Beschaeftigung, reisst aber ein Loch in die "
+            "Bildungsausgaben. Setzt eine laufende Bildungsoffensive voraus."
+        ),
         one_time_cost=0.0,
         upkeep_cost=15.0,
         capital_cost=3.0,
@@ -145,6 +160,10 @@ SAMPLE_POLICIES = [
     Policy(
         key="gesundheitsreform",
         name="Gesundheitsreform",
+        description=(
+            "Investitionen in Kliniken und Pflege heben die Versorgungsqualitaet "
+            "spuerbar, die hoeheren Abgaben bremsen jedoch das Wachstum."
+        ),
         one_time_cost=40.0,
         upkeep_cost=12.0,
         capital_cost=3.0,
@@ -184,6 +203,10 @@ SAMPLE_POLICIES = [
     Policy(
         key="vermoegensteuer",
         name="Vermoegensteuer",
+        description=(
+            "Eine Abgabe auf grosse Vermoegen bringt verlaessliche Mehreinnahmen, "
+            "daempft aber private Investitionen und damit das Wachstum."
+        ),
         one_time_cost=0.0,
         upkeep_cost=2.0,  # Verwaltungsaufwand der Erhebung
         capital_cost=5.0,
@@ -210,6 +233,12 @@ SAMPLE_POLICIES = [
     Policy(
         key="digitalpakt_schulen",
         name="Digitalpakt Schulen",
+        description=(
+            "Breitband, Endgeraete und IT-Wartung fuer alle Schulen bauen auf einer "
+            "bereits gut finanzierten Bildungslandschaft auf; hohe Anschubkosten "
+            "belasten kurzfristig den Haushalt. Erst verfuegbar, wenn die "
+            "Bildungsausgaben hoch genug sind."
+        ),
         one_time_cost=25.0,
         upkeep_cost=6.0,
         capital_cost=3.0,
@@ -226,6 +255,11 @@ SAMPLE_POLICIES = [
     Policy(
         key="gruener_wasserstoff",
         name="Foerderung gruener Wasserstoff",
+        description=(
+            "Foerderung von Elektrolyse und H2-Infrastruktur senkt die Emissionen "
+            "weiter, lohnt sich aber erst bei viel gruenem Strom im Netz und "
+            "kostet zusaetzliches Wachstum."
+        ),
         one_time_cost=45.0,
         upkeep_cost=9.0,
         capital_cost=4.0,
@@ -243,6 +277,11 @@ SAMPLE_POLICIES = [
     Policy(
         key="arbeitsmarkt_sofortprogramm",
         name="Arbeitsmarkt-Sofortprogramm",
+        description=(
+            "Kurzfristige Lohnzuschuesse und Vermittlungsoffensiven druecken die "
+            "Arbeitslosigkeit schnell, gegenfinanziert zu Lasten der "
+            "Bildungsausgaben. Nur in einer Arbeitsmarktkrise verfuegbar."
+        ),
         one_time_cost=30.0,
         upkeep_cost=10.0,
         capital_cost=4.0,

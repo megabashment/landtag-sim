@@ -56,6 +56,14 @@
   font-size: 0.8rem;
 }
 
+/* B10 "PolicyDefinition.description mit echtem Text": kurze Wirkungs-
+   beschreibung unter jeder Policy im Katalog. */
+.policy-description {
+  margin: 0.15rem 0 0.4rem 1.5rem;
+  font-size: 0.82rem;
+  color: #555;
+}
+
 .events {
   margin-top: 1rem;
   background: #fff8e6;

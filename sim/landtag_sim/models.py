@@ -125,6 +125,11 @@ class UnlockCondition:
 class Policy:
     key: str
     name: str
+    # B10 (BACKLOG.md): kurze Wirkungsbeschreibung (ein bis zwei Saetze:
+    # Haupteffekt + Trade-off). Rein fuer die Anzeige im Frontend-Katalog --
+    # die Sim-Engine wertet das Feld nicht aus. Vorher setzte seed.py
+    # description = name (totes Feld).
+    description: str = ""
     one_time_cost: float = 0.0
     upkeep_cost: float = 0.0
     capital_cost: float = 0.0  # Political-Capital-Kosten, siehe SimState.political_capital

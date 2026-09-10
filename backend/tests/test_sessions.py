@@ -70,6 +70,11 @@ def test_list_policies_returns_full_sample_catalog(client):
     assert vermoegensteuer["income_per_turn"] > 0
     for policy in policies:
         assert policy["effects"], f"{policy['key']} hat keine Effekte"
+        # B10: description ist ein echter Wirkungstext, nicht mehr der Name.
+        assert policy["description"] != policy["name"], (
+            f"{policy['key']}: description ist nur der Name (totes Feld)"
+        )
+        assert len(policy["description"]) > 30, f"{policy['key']}: Beschreibung zu kurz"
 
 
 def test_list_policies_works_before_any_session_exists(client):

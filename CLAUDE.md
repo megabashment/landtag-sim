@@ -10,6 +10,26 @@ Siehe auch `mistakes.md` für bereits gefundene und behobene Bugs —
 **vor größeren Refactors dort nachsehen**, damit dieselben Fehler nicht
 zweimal gemacht werden.
 
+## Quick Start
+
+Die häufigsten Befehle (Docker Desktop vorausgesetzt):
+
+```bash
+# Backend-Tests
+cd backend && python -m pytest tests/ -q
+
+# Sim-Engine-Tests
+cd ../sim && python -m pytest tests/ -q
+
+# Frontend Build + Lint
+cd ../frontend && npm run build && npm run lint
+
+# Policy-Balance-Check (alle gültigen Kombinationen)
+python -m landtag_sim.tools.balance_runner --turns 30
+```
+
+Für vollständiges Setup und manuelle E2E-Tests → siehe **Verifikations-Workflow** weiter unten.
+
 ## Was ist das Projekt
 
 Ein entspanntes Management-Spiel mit starker Anlehnung an die *Democracy*-
@@ -60,6 +80,15 @@ landtag-sim/
 ```
 
 ### Kernmechaniken
+
+**Überblick** — Simulation in Schichten (detailliert unten):
+- **Inertia & Ressourcen** — Exponentielle Effekt-Glättung, Political Capital, Budget
+- **Policy-System** — Enact/repeal/decay, Voraussetzungen, dynamisches Unlock
+- **Risiko & Entscheidungen** — Wahrscheinlichkeits-Events, Dilemmas mit Optionen
+- **Wähler & Zufriedenheit** — Gewichtete Approval, Momentum, Wahlprognose mit Turnout
+- **Zyklen & Bilanz** — Legislaturperioden, Term Summary, Szenario-Ziele
+
+---
 
 - **Inertia-Modell** (`engine.py::_effect_delta`): Policy-Effekte nähern
   sich ihrem Zielwert exponentiell geglättet an (`inertia`-Parameter,
@@ -466,6 +495,15 @@ sample_data.py, `load_scenario_goals()` in sim_bridge.py (ohne DB),
 `GoalResultOut` in schemas, ✓/✗-Liste im Frontend-Bilanz-Panel.
 `advance_turn()` nimmt jetzt `scenario_goals`-Parameter. sim 107 / backend
 55 grün (4 sim + 2 backend neu), Frontend build+lint grün.
+
+M3-Backlog, B10 "PolicyDefinition.description mit echtem Text" (2026-09-10,
+BACKLOG.md): neues `Policy.description`-Feld (models.py, reine Anzeige — die
+Engine wertet es nicht aus), alle 8 Beispiel-Policies mit ein bis zwei
+Saetzen Wirkungsbeschreibung (Haupteffekt + Trade-off) in sample_data.py.
+`seed.py` setzt `description=policy.description or policy.name` (vorher fest
+`policy.name`, totes Feld). Frontend rendert die Beschreibung unter jeder
+Policy im Katalog (`.policy-description`). sim 108 / backend 55 grün,
+Frontend build+lint grün.
 
 DB-Lauf 2026-09-10 (Docker Desktop jetzt auf Christians Windows-Rechner
 installiert): erstmals die komplette Backend-Testsuite lokal ausgeführt und
