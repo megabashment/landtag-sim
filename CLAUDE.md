@@ -846,31 +846,38 @@ Bundes-/EU-Ebene.
   - ✓ `sim/landtag_sim/sample_data.py` — `SAMPLE_OPPOSITION_CAMPAIGNS` (4 Kampagnen)
   - ✓ `sim/tests/test_engine.py` — 5 neue Tests (Viability-Berechnung, Kampagnen-Validierung)
 
-### **Sprint 2 — B15 Phase 2: Backend-API**
-- Dauer: 1-2 Tage
+### **Sprint 2 — B15 Phase 2: Backend-API** ✓
+- Dauer: 1-2 Tage → **abgeschlossen (2026-09-10)**
 - Scope: DB, Routes, Schemas
-- Deliverable: API akzeptiert `opposition_campaign_key`, 60-65 Backend-Tests grün
-- Dateien:
-  - `backend/app/models/game.py` — `opposition_mode: bool` Spalte
-  - `backend/app/api/routes_game.py` — `/advance` mit Campaign-Branch
-  - `backend/app/schemas/` — `OppositionCampaignOut`
+- Deliverable: ✓ API akzeptiert `opposition_campaign_key`, 55 Backend-Tests grün
 
-### **Sprint 3 — B15 Phase 3: Frontend-UI**
-- Dauer: 1 Tag
-- Scope: Opposition-Modus Buttons statt Policies
-- Deliverable: Frontend zeigt Kampagnen in Opposition, build+lint grün
+### **Sprint 3 — B15 Phase 3: Opposition-Routes** ✓
+- Dauer: 1 Tag → **abgeschlossen (2026-09-10)**
+- Scope: Opposition-Kampagnen-Verarbeitung, Satisfaction-Updates
+- Deliverable: ✓ Backend sendet Opposition-Felder, 55 Backend-Tests grün
 
-### **Sprint 4 — B23: Party-Gründung**
+### **Sprint 4 — B15 Phase 4: Opposition-Frontend (Sonntagsfrage-Overlay)** ⏳
+- Dauer: 1-2 Tage (geplant)
+- **Design-Vision (2026-09-10):** Sonntagsfrage-Overlay im dt. Umfragen-Stil
+  - Balkendiagramm: Regierung (aktuell) vs. Opposition (aufgebaut)
+  - Koalitionsfähigkeit-Schwelle visuell (30% Linie)
+  - Klick auf Opposition-Balken → nächsten Zyklus Opposition spielen
+  - Runden-Ticker (Kampagnen, Events, Dilemmas)
+  - **MVP: nur Regierung vs. eine Opposition** (einfach, getestet)
+  - **Future (M6+): Multi-Party-System** (mehrere Opposition-Optionen)
+- Scope:
+  - Overlay-Komponente rendert Sonntagsfrage-Balken
+  - Opposition-Wahl-Dialog (nach Wahlverlust)
+  - Runden-Ticker-Zusammenfassung
+  - Ressourcen-Multiplikator-Berechnung am Wahl-Abend
+- Deliverable: Opposition-UI komplett, B15 Feature-Complete
+
+### **Sprint 5 — B23: Party-Gründung** (nach B15)
 - Dauer: 1-2 Tage
 - Scope: Party-Datenmodell, Gründungs-Dialog, Ideologie-System
 - Deliverable: Neue Party-Tabelle, Game-Start-Menu zeigt Gründungs-Dialog
 
-### **Sprint 5 — B21 Phase 1: Institution-Building**
-- Dauer: 2 Tage
-- Scope: 5 Institutionen definieren, `FoundedInstitution`, Effekt-System
-- Deliverable: Spieler kann Institutionen gründen, sie wirken über Sessions
-
-### **Sprint 6 — B20 + B24: Legacy & Szenarien**
+### **Sprint 6 — B20 + B24: Legacy & Szenarien** (nach B23)
 - Dauer: 1-2 Tage
 - Scope: Party-Legacy-Tracking, Szenario-Modus
 - Deliverable: M5 MVP-Feature-Complete

@@ -32,6 +32,35 @@ const HISTORY_LIMIT = 60;
 const ELECTION_CYCLE = 16;
 const CAPITAL_CAP = 10;
 
+// M5 "Opposition-Loop" (BACKLOG.md B15): Opposition-Kampagnen (Placeholder für MVP).
+// Idealerweise vom Backend kommen, aber für Prototyping hardcoded.
+const OPPOSITION_CAMPAIGNS = [
+  {
+    key: "arbeitsmarkt_kritik",
+    name: "Arbeitsmarkt-Kritik",
+    description: "Attacke gegen Regierungs-Arbeitsmarktversprechungen",
+    capital_cost: 2.0,
+  },
+  {
+    key: "sozialversprechen_kampagne",
+    name: "Sozialversprechen",
+    description: "Gemäßigte Positon: gerechtige Verteilung",
+    capital_cost: 2.5,
+  },
+  {
+    key: "umwelt_offensiv",
+    name: "Umwelt-Offensiv",
+    description: "Radikale Grünen-Politik (polarisiert)",
+    capital_cost: 3.0,
+  },
+  {
+    key: "budget_kritik",
+    name: "Haushalt-Kritik",
+    description: "Finanzkonservative Kritik",
+    capital_cost: 1.5,
+  },
+];
+
 // Phase 3 des Frontend-Umbaus: die persistente Statusleiste als "Amtsblatt-
 // Kopf" -- Ledger-Felder mit Kennzahl je Ressource, plus als Signatur ein
 // Legislatur-Band (16 Runden), das den Wahltermin von einer abstrakten Zahl
@@ -189,6 +218,10 @@ export default function App() {
   // werden sollen. Getrennt von selectedPolicies, weil ein Key nie
   // gleichzeitig neu eingefuehrt UND zurueckgezogen werden kann.
   const [selectedRepeals, setSelectedRepeals] = useState([]);
+  // M5 "Opposition-Loop" (BACKLOG.md B15): Opposition-Kampagnen-UI
+  const [oppositionCampaigns, setOppositionCampaigns] = useState([]);
+  const [selectedCampaign, setSelectedCampaign] = useState(null);
+  const [showOppositionChoice, setShowOppositionChoice] = useState(false);
   const [events, setEvents] = useState([]);
   const [attributions, setAttributions] = useState([]);
   // B4 "Narrative Konsequenz-Ebene" (BACKLOG.md): rein textliche
@@ -288,7 +321,13 @@ export default function App() {
     setError(null);
     setLoading(true);
     try {
-      const result = await api.advanceTurn(session.session_id, selectedPolicies, selectedRepeals);
+      // M5 "Opposition-Loop": Opposition-Kampagne statt Policies
+      const result = await api.advanceTurn(
+        session.session_id,
+        session.opposition_mode ? [] : selectedPolicies,
+        session.opposition_mode ? [] : selectedRepeals,
+        session.opposition_mode ? selectedCampaign : null
+      );
       setSession(result.state);
       setEvents(result.events);
       setAttributions(result.attributions);
@@ -297,6 +336,13 @@ export default function App() {
       setTermSummary(result.term_summary);
       setSelectedPolicies([]);
       setSelectedRepeals([]);
+      setSelectedCampaign(null);
+
+      // Wahlverlust-Dialog (Opposition-Option)
+      if (result.election_result && !result.election_result.won && !result.state.opposition_mode) {
+        setShowOppositionChoice(true);
+      }
+
       pushHistoryEntry({
         kind: "advance",
         turn: result.state.turn,
@@ -327,7 +373,7 @@ export default function App() {
       let result = null;
       const skippedEntries = [];
       for (let i = 0; i < FAST_FORWARD_SAFETY_CAP; i++) {
-        result = await api.advanceTurn(session.session_id, []);
+        result = await api.advanceTurn(session.session_id, [], [], null);
         skippedEntries.push({
           kind: "advance",
           turn: result.state.turn,

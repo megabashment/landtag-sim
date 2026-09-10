@@ -26,10 +26,16 @@ export const api = {
   // landtag_sim.engine.py::advance_turn) -- Policies, die diese Runde
   // zurueckgezogen werden sollen. Optional, damit bestehende Aufrufer ohne
   // Repeal-UI nicht angepasst werden muessen.
-  advanceTurn: (id, enactPolicyKeys, repealPolicyKeys = []) =>
+  // oppositionCampaignKey: M5 "Opposition-Loop" (BACKLOG.md B15) -- Kampagne-Key
+  // statt Policy-Enact wenn opposition_mode=true. Optional.
+  advanceTurn: (id, enactPolicyKeys, repealPolicyKeys = [], oppositionCampaignKey = null) =>
     request(`/sessions/${id}/advance`, {
       method: "POST",
-      body: JSON.stringify({ enact_policy_keys: enactPolicyKeys, repeal_policy_keys: repealPolicyKeys }),
+      body: JSON.stringify({
+        enact_policy_keys: enactPolicyKeys,
+        repeal_policy_keys: repealPolicyKeys,
+        opposition_campaign_key: oppositionCampaignKey,
+      }),
     }),
   // P0-Punkt "Effekt-Vorschau vor Entscheidung" (docs/game-design-roadmap.md):
   // simuliert die naechste Runde, persistiert aber nichts.
