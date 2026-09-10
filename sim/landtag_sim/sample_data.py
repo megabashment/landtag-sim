@@ -303,17 +303,95 @@ SAMPLE_EVENT_RULES = [
         key="hohe_arbeitslosigkeit",
         statistic_key="unemployment_rate",
         operator=">",
-        threshold=9.0,
+        # B12: 9 -> 8. Der Frueh-Warn-Event soll VOR dem gleichnamigen
+        # Krisen-Dilemma `arbeitsmarktkrise` (Schwelle 9) greifen.
+        threshold=8.0,
         template_text="Die Arbeitslosenquote erreicht {value:.1f}% - der Druck auf die Landesregierung waechst.",
         cooldown_turns=6,
     ),
+    # B12: Schwelle von 30 -> 34 angehoben. Bei Startwert 40 ist 30 organisch
+    # nicht erreichbar (Telemetrie flaggte NIE_AUSGELOEST); die staerksten
+    # Bildungs-Trade-offs (steuersenkung_mittelstand -6, arbeitsmarkt_
+    # sofortprogramm -5) druecken education_spending auf ~29-34.
     EventRule(
         key="niedrige_bildungsausgaben",
         statistic_key="education_spending",
         operator="<",
-        threshold=30.0,
+        threshold=34.0,
         template_text="Bildungsausgaben auf {value:.1f} gesunken - Elternverbaende protestieren.",
         cooldown_turns=6,
+    ),
+    # B12 "Content-Ausbau": positives Gegenstueck -- eine gut ausgestattete
+    # Bildungslandschaft (bildungsoffensive hebt education_spending 40 -> ~55)
+    # produziert auch mal eine gute Nachricht statt nur Krisenmeldungen.
+    EventRule(
+        key="bildungserfolg",
+        statistic_key="education_spending",
+        operator=">",
+        threshold=52.0,
+        template_text=(
+            "Niedersachsen klettert im laenderuebergreifenden Bildungsvergleich "
+            "nach oben - Bildungsindex bei {value:.1f}."
+        ),
+        cooldown_turns=8,
+    ),
+    # B12: CO2-Ereigniskette. Nichts in den Policies hebt co2_emissions --
+    # der Anstieg kommt aus der Situation `abwanderung` (Rezession =
+    # aufgeschobene Modernisierung, aeltere Anlagen laufen laenger). Ab ~106
+    # wird daraus eine sichtbare Meldung, ab 108 das Dilemma `klimaschutz-
+    # gesetz`, ab 110 die Situation `klimakrise` (siehe unten).
+    EventRule(
+        key="smogalarm",
+        statistic_key="co2_emissions",
+        operator=">",
+        threshold=104.0,
+        template_text=(
+            "Anhaltende Inversionswetterlage: mehrere Staedte rufen wegen "
+            "Feinstaub Smogalarm aus (Emissionsindex {value:.1f})."
+        ),
+        cooldown_turns=5,
+    ),
+    # B12: Erneuerbaren-Meilenstein. erneuerbare_foerderung hebt
+    # renewable_share 35 -> ~43; die Schwelle liegt bewusst knapp darunter,
+    # damit die Meldung fuer aktiv gruene Regierungen erreichbar ist.
+    EventRule(
+        key="energiewende_schub",
+        statistic_key="renewable_share",
+        operator=">",
+        threshold=42.0,
+        template_text=(
+            "Ein neuer Windpark geht ans Netz: der Anteil erneuerbarer Energien "
+            "steigt auf {value:.1f}%."
+        ),
+        cooldown_turns=8,
+    ),
+    # B12: Gesundheits-Engpass. Abwaertsdruck auf healthcare_quality kommt
+    # aus `abwanderung` (Fachkraefte-Abwanderung trifft auch Kliniken, neuer
+    # Effekt dort). gesundheitsreform ist der Gegen-Hebel.
+    EventRule(
+        key="pflege_engpass",
+        statistic_key="healthcare_quality",
+        operator="<",
+        threshold=54.0,
+        template_text=(
+            "Kliniken auf dem Land duennen ihr Angebot aus - der Versorgungsindex "
+            "faellt auf {value:.1f}."
+        ),
+        cooldown_turns=6,
+    ),
+    # B12: Ueberhitzungssignal statt Krise -- sehr niedrige Arbeitslosigkeit
+    # (bildungsoffensive + arbeitsmarkt_sofortprogramm koennen unemployment
+    # deutlich unter 4 druecken) erzeugt Fachkraeftemangel-Schlagzeilen.
+    EventRule(
+        key="fachkraeftemangel",
+        statistic_key="unemployment_rate",
+        operator="<",
+        threshold=3.8,
+        template_text=(
+            "Handwerk und Pflege schlagen Alarm: bei {value:.1f}% Arbeitslosigkeit "
+            "bleiben Stellen monatelang unbesetzt."
+        ),
+        cooldown_turns=8,
     ),
     # B3 "Zustandsgekoppelte Risiko-Events" (BACKLOG.md, L4/L9): die Krisen-
     # Dilemmas (rezession bei gdp_growth < 0.0, arbeitsmarktkrise bei
@@ -454,6 +532,139 @@ SAMPLE_DILEMMA_RULES = [
             ),
         ],
     ),
+    # B12 "Content-Ausbau": vier neue Dilemmas, jeweils an eine Statistik
+    # gekoppelt, die ueber die SAMPLE_POLICIES / Situations organisch
+    # erreichbar ist (Balance-Runner-Telemetrie als Nachweis, siehe
+    # test_balance_runner.py). Bewusst gemischter Ton: klimaschutzgesetz und
+    # krankenhausreform sind Krisen, bildungsgipfel ist eine Chance,
+    # strompreiskrise ein klassischer Zielkonflikt Preis vs. Umbau.
+    DilemmaRule(
+        key="klimaschutzgesetz",
+        statistic_key="co2_emissions",
+        operator=">",
+        threshold=106.0,
+        prompt_text=(
+            "Der Emissionsindex steigt auf {value:.1f}. Ein verbindliches "
+            "Landes-Klimaschutzgesetz mit harten Grenzwerten durchsetzen oder "
+            "auf freiwillige Branchenvereinbarungen setzen?"
+        ),
+        cooldown_turns=12,
+        options=[
+            DilemmaOption(
+                key="verbindliche_grenzwerte",
+                label="Verbindliche Grenzwerte per Gesetz",
+                budget_cost=15.0,
+                effects=[
+                    PolicyEffect(statistic_key="co2_emissions", magnitude=-9.0, delay_turns=0, inertia=2),
+                    # Trade-off: harte Auflagen bremsen die Industrie kurzfristig.
+                    PolicyEffect(statistic_key="gdp_growth", magnitude=-0.6, delay_turns=0, inertia=2),
+                ],
+            ),
+            DilemmaOption(
+                key="freiwillige_vereinbarung",
+                label="Freiwillige Branchenvereinbarungen",
+                budget_cost=0.0,
+                effects=[
+                    # Schwache Wirkung, dafuer kein Wachstumsknick.
+                    PolicyEffect(statistic_key="co2_emissions", magnitude=-2.5, delay_turns=0, inertia=2),
+                ],
+            ),
+        ],
+    ),
+    DilemmaRule(
+        key="krankenhausreform",
+        statistic_key="healthcare_quality",
+        operator="<",
+        threshold=50.0,
+        prompt_text=(
+            "Der Versorgungsindex faellt auf {value:.1f}. Kleine Kliniken zu "
+            "Zentren zusammenlegen (effizienter, aber Standortschliessungen) "
+            "oder die Haeuser flaechendeckend querfinanzieren?"
+        ),
+        cooldown_turns=12,
+        options=[
+            DilemmaOption(
+                key="zentralisierung",
+                label="Klinikzentren bilden",
+                budget_cost=10.0,
+                effects=[
+                    PolicyEffect(statistic_key="healthcare_quality", magnitude=7.0, delay_turns=1, inertia=3),
+                    # Trade-off: Standortschliessungen kosten regional Jobs.
+                    PolicyEffect(statistic_key="unemployment_rate", magnitude=0.6, delay_turns=0, inertia=1),
+                ],
+            ),
+            DilemmaOption(
+                key="querfinanzierung",
+                label="Haeuser flaechendeckend stuetzen",
+                budget_cost=55.0,
+                effects=[
+                    PolicyEffect(statistic_key="healthcare_quality", magnitude=5.0, delay_turns=1, inertia=3),
+                ],
+            ),
+        ],
+    ),
+    DilemmaRule(
+        key="strompreiskrise",
+        statistic_key="gdp_growth",
+        operator="<",
+        threshold=0.6,
+        prompt_text=(
+            "Hohe Energiekosten bei nur {value:.1f}% Wachstum. Einen "
+            "Industriestrompreis aus Landesmitteln subventionieren oder das "
+            "Geld in den Netzausbau fuer Erneuerbare lenken?"
+        ),
+        cooldown_turns=10,
+        options=[
+            DilemmaOption(
+                key="netzausbau",
+                label="In den Netzausbau investieren",
+                budget_cost=30.0,
+                effects=[
+                    PolicyEffect(statistic_key="renewable_share", magnitude=4.0, delay_turns=1, inertia=3),
+                    # schwaecherer Sofort-Effekt aufs Wachstum als die Subvention
+                    PolicyEffect(statistic_key="gdp_growth", magnitude=0.3, delay_turns=1, inertia=2),
+                ],
+            ),
+            DilemmaOption(
+                key="industriestrompreis",
+                label="Industriestrompreis subventionieren",
+                budget_cost=50.0,
+                effects=[PolicyEffect(statistic_key="gdp_growth", magnitude=0.8, delay_turns=0, inertia=2)],
+            ),
+        ],
+    ),
+    DilemmaRule(
+        key="bildungsgipfel",
+        statistic_key="education_spending",
+        operator=">",
+        threshold=55.0,
+        prompt_text=(
+            "Bildungsindex bei {value:.1f} -- ein Momentum, das man nutzen "
+            "koennte. Einen Bildungsgipfel mit Ausbauprogramm einberufen oder "
+            "die guten Zahlen fuer Haushaltskonsolidierung nutzen?"
+        ),
+        cooldown_turns=14,
+        options=[
+            DilemmaOption(
+                key="ausbauprogramm",
+                label="Ausbauprogramm beschliessen",
+                budget_cost=40.0,
+                effects=[
+                    PolicyEffect(statistic_key="education_spending", magnitude=5.0, delay_turns=1, inertia=3),
+                    PolicyEffect(statistic_key="unemployment_rate", magnitude=-0.4, delay_turns=3, inertia=4),
+                ],
+            ),
+            DilemmaOption(
+                key="konsolidieren",
+                label="Zahlen fuer Konsolidierung nutzen",
+                budget_cost=-25.0,  # entlastet den Haushalt
+                effects=[
+                    # Trade-off: das Signal "wir sparen jetzt hier" bremst den Schwung.
+                    PolicyEffect(statistic_key="education_spending", magnitude=-3.0, delay_turns=1, inertia=2),
+                ],
+            ),
+        ],
+    ),
 ]
 
 
@@ -469,31 +680,110 @@ SAMPLE_SITUATION_RULES = [
         key="abwanderung",
         statistic_key="gdp_growth",
         activate_op="<",
-        activate_threshold=-0.5,
+        # B12: Aktivierung -0.5 -> -0.2 vorgezogen. `abwanderung` ist jetzt die
+        # zentrale Reichbarkeits-Achse fuer die co2-/healthcare-Ketten
+        # (Effekte unten); bei -0.5 feuerte sie so selten, dass die
+        # nachgelagerten Regeln nie erreicht wurden (Telemetrie). Die
+        # Hysterese-Luecke zu deactivate (+0.5) bleibt breit.
+        activate_threshold=-0.2,
         deactivate_op=">",
-        deactivate_threshold=0.5,
+        # B12: Hysterese-Fenster verbreitert (0.5 -> 0.9). Einmal in der
+        # Abwanderung, endet sie erst bei solider Erholung -- dadurch dauern
+        # die Episoden laenger und die nachgelagerten co2-/healthcare-/
+        # unemployment-Schwellen werden ueberhaupt erreichbar (Telemetrie).
+        deactivate_threshold=0.9,
         template_text="Wirtschaftsflaute: Fachkraefte verlassen das Land.",
         effects=[
             # Spirale: wenn gdp_growth faellt, steigt unemployment als Nebeneffekt
             # (abwanderung von hochqualifizierten Arbeitsplaetzen). Das drueckt
             # gdp_growth weiter nach unten -> Zirkellauf, bis Gegen-Hebel
             # (bildungsoffensive/gesundheitsreform) gdp_growth wieder hebt.
-            PolicyEffect(statistic_key="unemployment_rate", magnitude=0.5, delay_turns=0, inertia=1),
+            PolicyEffect(statistic_key="unemployment_rate", magnitude=0.6, delay_turns=0, inertia=1),
+            # B12: die Rezession ist die zentrale "Reichbarkeits-Achse" fuer
+            # alle sonst unerreichbaren Statistik-Bereiche -- jedes Krisen-
+            # Event/-Dilemma/-Situation haengt an ihr. Bewusst MILDE Einzel-
+            # Effekte (L3-Warnung "keine death spiral"), aber breit gestreut:
+            # aufgeschobene Modernisierung -> aeltere Anlagen laufen laenger
+            # (+co2); Fachkraefte-Abwanderung trifft Kliniken (-healthcare);
+            # klamme Haushalte kuerzen zuerst bei Schulen (-education). Jede
+            # Achse hat einen klaren Gegen-Hebel (erneuerbare_foerderung /
+            # gesundheitsreform / bildungsoffensive), Spirale bleibt brechbar.
+            PolicyEffect(statistic_key="co2_emissions", magnitude=1.8, delay_turns=0, inertia=1),
+            PolicyEffect(statistic_key="healthcare_quality", magnitude=-1.5, delay_turns=0, inertia=1),
+            PolicyEffect(statistic_key="education_spending", magnitude=-1.2, delay_turns=0, inertia=1),
         ],
     ),
     SituationRule(
         key="gruenes_wachstum",
         statistic_key="renewable_share",
         activate_op=">",
-        activate_threshold=65.0,
+        # B12: Schwelle 65 -> 42 gesenkt. Nur erneuerbare_foerderung hebt
+        # renewable_share ueberhaupt (+8, Startwert 35), Maximum liegt bei
+        # ~43 -- 65 war nie erreichbar (Telemetrie: NIE_AUSGELOEST). 42 macht
+        # die positive Spirale fuer aktiv gruene Regierungen zugaenglich, die
+        # Hysterese-Luecke (Deaktivierung erst bei 37) bleibt erhalten.
+        activate_threshold=42.0,
         deactivate_op="<",
-        deactivate_threshold=55.0,
+        deactivate_threshold=37.0,
         template_text="Energiewende wirkt: Gruendungen boomen.",
         effects=[
             # Positive Spirale: hohe renewable_share foerdert GDP-Wachstum
             # und sauberer Betrieb senkt Emissionen weiter.
             PolicyEffect(statistic_key="gdp_growth", magnitude=0.4, delay_turns=0, inertia=1),
             PolicyEffect(statistic_key="co2_emissions", magnitude=-2.0, delay_turns=0, inertia=1),
+        ],
+    ),
+    # B12: negative CO2-Spirale. Aktiviert erst deutlich ueber dem Startwert
+    # (100) -- nur erreichbar, wenn `abwanderung` co2 laenger nach oben
+    # gedrueckt hat. Verstaerkt sich selbst (+co2) und bremst zusaetzlich das
+    # Wachstum (Investitionsunsicherheit / Klage-Risiko). Gegen-Hebel:
+    # erneuerbare_foerderung, gruener_wasserstoff, Dilemma-Option
+    # `verbindliche_grenzwerte`.
+    SituationRule(
+        key="klimakrise",
+        statistic_key="co2_emissions",
+        activate_op=">",
+        activate_threshold=107.0,
+        deactivate_op="<",
+        deactivate_threshold=100.0,
+        template_text="Klimakrise: Hitzeschaeden und Klagen belasten den Standort.",
+        effects=[
+            PolicyEffect(statistic_key="co2_emissions", magnitude=1.4, delay_turns=0, inertia=1),
+            PolicyEffect(statistic_key="gdp_growth", magnitude=-0.3, delay_turns=0, inertia=1),
+        ],
+    ),
+    # B12: positive Bildungs-Spirale als Gegenstueck zu `abwanderung`.
+    # bildungsoffensive hebt education_spending 40 -> ~55; ab 58 traegt sich
+    # der Effekt selbst (bessere Qualifikation -> weniger Arbeitslosigkeit ->
+    # mehr Steuerkraft fuer Bildung). Hysterese: faellt erst bei < 50 wieder aus.
+    SituationRule(
+        key="bildungsaufstieg",
+        statistic_key="education_spending",
+        activate_op=">",
+        activate_threshold=58.0,
+        deactivate_op="<",
+        deactivate_threshold=50.0,
+        template_text="Bildungsaufstieg: Fachkraefte bleiben, Betriebe siedeln sich an.",
+        effects=[
+            PolicyEffect(statistic_key="unemployment_rate", magnitude=-0.35, delay_turns=0, inertia=1),
+            PolicyEffect(statistic_key="gdp_growth", magnitude=0.2, delay_turns=0, inertia=1),
+        ],
+    ),
+    # B12: negative Gesundheits-Spirale. Erreichbar, wenn `abwanderung`
+    # healthcare_quality laenger gedrueckt hat (Startwert 60). Personalflucht
+    # verstaerkt sich selbst; Gegen-Hebel: gesundheitsreform, Dilemma
+    # `krankenhausreform`.
+    SituationRule(
+        key="pflegenotstand",
+        statistic_key="healthcare_quality",
+        activate_op="<",
+        activate_threshold=48.0,
+        deactivate_op=">",
+        deactivate_threshold=55.0,
+        template_text="Pflegenotstand: unbesetzte Stellen, Stationen bleiben geschlossen.",
+        effects=[
+            PolicyEffect(statistic_key="healthcare_quality", magnitude=-1.0, delay_turns=0, inertia=1),
+            PolicyEffect(statistic_key="unemployment_rate", magnitude=0.2, delay_turns=0, inertia=1),
         ],
     ),
 ]

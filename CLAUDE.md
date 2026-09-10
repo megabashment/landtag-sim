@@ -523,6 +523,25 @@ requirements.txt` scheiterte an `-e ../sim` (Pfad fehlt im Build-Kontext) —
 Zeile wird jetzt vor der Installation rausgefiltert, Sim-Engine kommt
 weiterhin separat aus `/sim`. M3 damit vollstaendig (B7–B11 alle erledigt).
 
+M4-Backlog, B12 "Dilemma-/Event-/Situations-Content-Ausbau" (2026-09-10,
+BACKLOG.md, L4): Events 3→8, Dilemmas 3→7, Situations 2→5. Zentraler
+Design-Kniff: die Rezession-Situation `abwanderung` ist jetzt die
+**Reichbarkeits-Achse** — sie wirkt breit (milde Einzeleffekte, L3-Warnung)
+auf co2_emissions (+), healthcare_quality (−), education_spending (−) und
+unemployment_rate (+), wodurch die vorher organisch unerreichbaren
+co2-/healthcare-Krisenschwellen (`smogalarm`, `klimaschutzgesetz`,
+`klimakrise`, `pflege_engpass`, `krankenhausreform`, `pflegenotstand`) ueber
+laengere Rezessionen erreicht werden. `abwanderung`-Hysterese verbreitert
+(activate gdp_growth < −0.2, deactivate > 0.9). Zwei tote Regeln repariert:
+`niedrige_bildungsausgaben` (Schwelle 30→34), `gruenes_wachstum` (activate
+65→42). Neuer Regressionstest `test_every_sample_rule_is_organically_
+reachable` in `sim/tests/test_balance_runner.py` (Telemetrie-Sweep,
+ersetzt den alten „bleibt bei 0"-Test) faellt, sobald neuer Content nicht
+mehr triggert. `strompreiskrise` (gdp_growth < 0.6) ueberdeckt im vollen
+Roster `rezession` (< 0.0) bei Schweregrad + Optionen — die konjunkturdelle-
+Vorstufen-Test isoliert deshalb bewusst nur die `rezession`-Regel.
+Balance-Runner weiter „keine dominante Policy". sim 108 / backend 55 grün.
+
 DB-Lauf 2026-09-10 (Docker Desktop jetzt auf Christians Windows-Rechner
 installiert): erstmals die komplette Backend-Testsuite lokal ausgeführt und
 damit den über B1/B3/B4/B5/B7 aufgelaufenen "beim nächsten DB-Lauf

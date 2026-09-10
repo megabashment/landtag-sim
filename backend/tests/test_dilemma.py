@@ -13,7 +13,12 @@ gejitterte gdp_growth-Startwert zufaellig schon niedrig genug ist), ist
 daher NICHT deterministisch vorhersagbar. Diese Tests pruefen deshalb den
 Mechanismus (blockiert/entsperrt), nicht welches konkrete Dilemma feuert."""
 
-_KNOWN_DILEMMA_KEYS = {"arbeitsmarktkrise", "rezession", "pflegeausbau"}
+# B12: aus dem Regelsatz abgeleitet statt hart codiert -- der Content-Ausbau
+# fuegt laufend Dilemmas hinzu, und welches bei gejittertem Start zuerst
+# feuert ist ohnehin nicht deterministisch (siehe Modul-Docstring).
+from landtag_sim.sample_data import SAMPLE_DILEMMA_RULES
+
+_KNOWN_DILEMMA_KEYS = {r.key for r in SAMPLE_DILEMMA_RULES}
 
 
 def _advance_until_dilemma(client, session_id, enact_first_turn, max_turns=40):

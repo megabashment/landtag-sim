@@ -214,11 +214,20 @@ def test_unlock_gated_policies_are_excluded_from_combinations():
     assert not (keys_in_combos & locked)
 
 
-def test_collect_trigger_counts_known_unreachable_sample_rules_stay_at_zero():
-    """Regression/Doku (mistakes.md, CLAUDE.md 'Bekannte Vereinfachungen'):
-    diese beiden Regeln sind mit den aktuellen SAMPLE_POLICIES organisch
-    nicht erreichbar. Schlaegt der Test fehl, weil eine davon doch triggert,
-    ist das ein GUTES Signal -- dann bitte die Doku aktualisieren."""
-    counts = collect_trigger_counts(turns=30, seeds=5)
-    assert counts["event"]["niedrige_bildungsausgaben"] == 0
-    assert counts["situation"]["gruenes_wachstum"] == 0
+def test_every_sample_rule_is_organically_reachable():
+    """B12 "Content-Ausbau" (BACKLOG.md, L4): nach dem Ausbau soll KEINE
+    Event-/Dilemma-/Situations-Regel mehr toter Inhalt sein. Frueher waren
+    `niedrige_bildungsausgaben` und `gruenes_wachstum` dauerhaft bei 0
+    (siehe Git-Historie) -- jetzt triggert ueber die Rezession-Achse
+    (`abwanderung` wirkt breit auf co2/healthcare/education/unemployment)
+    jede Regel mindestens einmal im Szenarien-x-Seeds-Sweep. Schlaegt der
+    Test fehl, ist neuer Content nicht erreichbar -> Schwellen/Effekte
+    nachziehen, nicht den Test aufweichen."""
+    counts = collect_trigger_counts(turns=32, seeds=5)
+    never = {
+        f"{kind}:{key}"
+        for kind in ("event", "dilemma", "situation")
+        for key, n in counts[kind].items()
+        if n == 0
+    }
+    assert not never, f"nicht erreichbare Regeln (toter Content): {sorted(never)}"

@@ -540,12 +540,25 @@ vorherigen auf).
 
 ## Milestone M4 — Content & Daten (nach stabilem Systemgeruest)
 
-- [ ] **B12 — Dilemma-/Event-/Situations-Content-Ausbau** · Impact 3 × Aufwand 4 → M4
+- [x] **B12 — Dilemma-/Event-/Situations-Content-Ausbau** · Impact 3 × Aufwand 4 → M4
   - *Voraussetzung:* B6 (Telemetrie) muss stehen — sonst schreiben wir
-    blind Content, der nie triggert (L4). Zielgroesse zunaechst ~15
-    Dilemmas, ~20 Events, ~6 Situations, jeweils an unterschiedliche
-    Statistiken/Policy-Kombis gekoppelt, mit Balance-Runner-Nachweis der
-    Erreichbarkeit.
+    blind Content, der nie triggert (L4).
+  - *Umsetzung 2026-09-10:* Events 3→8, Dilemmas 3→7, Situations 2→5.
+    Bewusst **nicht** die urspruengliche 20/15/6-Zielgroesse angepeilt —
+    L4 sagt Erreichbarkeit vor Menge; ein solider, komplett
+    verifizierter Satz jetzt, mehr Content entlang derselben Achsen ist
+    billiger Fast-Follow. Kern-Kniff: die Rezession (`abwanderung`) ist
+    jetzt die zentrale Reichbarkeits-Achse — sie wirkt breit auf
+    co2/healthcare/education/unemployment (milde Einzeleffekte, L3), womit
+    die vorher toten co2-/healthcare-Krisenschwellen organisch erreichbar
+    werden. `abwanderung`-Hysterese verbreitert (activate -0.2, deactivate
+    0.9). Zwei bisher tote Regeln (`niedrige_bildungsausgaben`,
+    `gruenes_wachstum`) repariert. Jede Statistik hat jetzt Krisen- UND
+    Chancen-Content. Neuer Regressionstest
+    `test_every_sample_rule_is_organically_reachable` (ersetzt den alten
+    „diese Regeln bleiben bei 0"-Test) — Telemetrie-Sweep, faellt wenn
+    neuer Content nicht triggert. Balance-Runner unveraendert „keine
+    dominante Policy". sim 108 / backend 55 grün.
 - [ ] **B13 — Echte Niedersachsen-Statistik-Importe** · Impact 2 × Aufwand 3 → M4
   - *Warum (`architecture.md`):* `data/` enthaelt nur Platzhalter-Module.
     LSN/Regionalstatistik.de-Startwerte fuer `STARTING_STATISTICS`

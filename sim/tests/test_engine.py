@@ -514,13 +514,23 @@ def test_rezession_dilemma_is_reachable_via_sample_policies():
         state, SAMPLE_POLICIES, [], newly_enacted_keys=["bildungsoffensive"], dilemma_rules=SAMPLE_DILEMMA_RULES
     )
     state = result.state
-    for _ in range(20):
+    # B12: seit dem Content-Ausbau koennen unterwegs andere Dilemmas feuern
+    # (z.B. strompreiskrise bei gdp_growth < 0.6, bevor gdp < 0.0 erreicht
+    # ist). Sie werden mit der wachstums-neutralsten Option aufgeloest; der
+    # Test prueft weiterhin, dass `rezession` ORGANISCH erreichbar bleibt.
+    reached = False
+    for _ in range(25):
         if result.pending_dilemma is not None:
-            break
+            if result.pending_dilemma.rule_key == "rezession":
+                reached = True
+                break
+            other = next(r for r in SAMPLE_DILEMMA_RULES if r.key == result.pending_dilemma.rule_key)
+            result = resolve_dilemma(state, SAMPLE_DILEMMA_RULES, other.options[0].key)
+            state = result.state
+            continue
         result = advance_turn(state, SAMPLE_POLICIES, [], dilemma_rules=SAMPLE_DILEMMA_RULES)
         state = result.state
-    assert result.pending_dilemma is not None
-    assert result.pending_dilemma.rule_key == "rezession"
+    assert reached, "rezession sollte ueber bildungsoffensives Wachstums-Trade-off erreichbar sein"
 
 
 def test_pflegeausbau_dilemma_is_reachable_via_sample_policies():
@@ -534,13 +544,23 @@ def test_pflegeausbau_dilemma_is_reachable_via_sample_policies():
         state, SAMPLE_POLICIES, [], newly_enacted_keys=["gesundheitsreform"], dilemma_rules=SAMPLE_DILEMMA_RULES
     )
     state = result.state
-    for _ in range(20):
+    # B12: analog zu test_rezession... -- gesundheitsreform druckt gdp_growth
+    # Richtung 0, weshalb strompreiskrise/rezession unterwegs feuern koennen.
+    # Zwischendilemmas wegraeumen, Erreichbarkeit von `pflegeausbau` bleibt
+    # der eigentliche Pruefpunkt.
+    reached = False
+    for _ in range(25):
         if result.pending_dilemma is not None:
-            break
+            if result.pending_dilemma.rule_key == "pflegeausbau":
+                reached = True
+                break
+            other = next(r for r in SAMPLE_DILEMMA_RULES if r.key == result.pending_dilemma.rule_key)
+            result = resolve_dilemma(state, SAMPLE_DILEMMA_RULES, other.options[0].key)
+            state = result.state
+            continue
         result = advance_turn(state, SAMPLE_POLICIES, [], dilemma_rules=SAMPLE_DILEMMA_RULES)
         state = result.state
-    assert result.pending_dilemma is not None
-    assert result.pending_dilemma.rule_key == "pflegeausbau"
+    assert reached, "pflegeausbau sollte ueber gesundheitsreform erreichbar sein"
 
 
 def test_voter_group_shares_deliberately_overlap():
@@ -849,7 +869,9 @@ def test_situation_remains_active_within_hysteresis_band():
 
 
 def test_situation_deactivates_when_upper_threshold_crossed():
-    """Situation deaktiviert sich erst bei der OBEREN Schwelle (gdp_growth > 0.5)."""
+    """Situation deaktiviert sich erst bei der OBEREN Schwelle. B12: das
+    Hysterese-Fenster von `abwanderung` wurde verbreitert (deactivate bei
+    gdp_growth > 0.9 statt > 0.5)."""
     state = build_initial_state()
     state.statistics["gdp_growth"] = -1.0
     result = advance_turn(
@@ -858,10 +880,15 @@ def test_situation_deactivates_when_upper_threshold_crossed():
     state = result.state
     assert len(state.active_situations) == 1
 
-    # gdp_growth > 0.5 -> deaktivieren
+    # knapp positiv (0.6) reicht NICHT mehr -- Situation bleibt aktiv
     state.statistics["gdp_growth"] = 0.6
     result = advance_turn(state, [], [], situation_rules=SAMPLE_SITUATION_RULES)
-    # Situation sollte jetzt weg sein
+    assert len(result.state.active_situations) == 1
+
+    # gdp_growth > 0.9 -> deaktivieren
+    state = result.state
+    state.statistics["gdp_growth"] = 1.0
+    result = advance_turn(state, [], [], situation_rules=SAMPLE_SITUATION_RULES)
     assert len(result.state.active_situations) == 0
 
 
@@ -881,8 +908,9 @@ def test_situation_effects_are_applied_and_attributed():
 
 
 def test_positive_situation_gruenes_wachstum():
-    """Positive Situation: bei renewable_share > 65 aktiviert sich
-    `gruenes_wachstum` und verbessert gdp_growth + co2_emissions."""
+    """Positive Situation: bei renewable_share ueber der Aktivierungsschwelle
+    (B12: 42) aktiviert sich `gruenes_wachstum` und verbessert gdp_growth +
+    co2_emissions."""
     state = build_initial_state()
     state.statistics["renewable_share"] = 70.0
     result = advance_turn(
@@ -998,7 +1026,15 @@ def test_konjunkturdelle_vorstufe_makes_rezession_organically_reachable():
     """E2E (BACKLOG.md B3): eine Policy bringt gdp_growth in eine nur LEICHT
     negative Lage knapp ueber der rezession-Schwelle (0.0), aber nicht
     darunter. OHNE die Vorstufe `konjunkturdelle` triggert `rezession` in
-    40 Runden nicht; MIT ihr wird die Schwelle organisch erreicht."""
+    40 Runden nicht; MIT ihr wird die Schwelle organisch erreicht.
+
+    B12: bewusst isoliert auf die `rezession`-Regel -- seit dem Content-
+    Ausbau ueberdeckt `strompreiskrise` (gdp_growth < 0.6) `rezession`
+    (gdp_growth < 0.0) im vollen Regelsatz sowohl beim Schweregrad als auch,
+    weil ihre beiden Optionen die Konjunktur wieder anheben. Dieser Test
+    prueft die B3-Vorstufen-Mechanik selbst, nicht die Dilemma-Priorisierung
+    im Gesamtroster (das deckt test_every_sample_rule_is_organically_
+    reachable ab)."""
     mild = Policy(
         key="wachstumsbremse",
         name="Wachstumsbremse (Testfixture)",
@@ -1006,23 +1042,19 @@ def test_konjunkturdelle_vorstufe_makes_rezession_organically_reachable():
     )
     konjunkturdelle = [r for r in SAMPLE_EVENT_RULES if r.key == "konjunkturdelle"]
     assert konjunkturdelle, "Vorstufe 'konjunkturdelle' fehlt in SAMPLE_EVENT_RULES"
+    rezession_only = [r for r in SAMPLE_DILEMMA_RULES if r.key == "rezession"]
 
     def _rezession_reached(event_rules: list) -> bool:
         state = build_initial_state()
         result = advance_turn(
             state, [mild], event_rules, newly_enacted_keys=["wachstumsbremse"],
-            dilemma_rules=SAMPLE_DILEMMA_RULES,
+            dilemma_rules=rezession_only,
         )
         state = result.state
         for _ in range(40):
-            if result.pending_dilemma is not None:
-                if result.pending_dilemma.rule_key == "rezession":
-                    return True
-                # anderes Dilemma aus dem Weg raeumen und weiterlaufen
-                other = next(r for r in SAMPLE_DILEMMA_RULES if r.key == result.pending_dilemma.rule_key)
-                result = resolve_dilemma(state, SAMPLE_DILEMMA_RULES, other.options[0].key)
-                state = result.state
-            result = advance_turn(state, [mild], event_rules, dilemma_rules=SAMPLE_DILEMMA_RULES)
+            if result.pending_dilemma is not None and result.pending_dilemma.rule_key == "rezession":
+                return True
+            result = advance_turn(state, [mild], event_rules, dilemma_rules=rezession_only)
             state = result.state
         return result.pending_dilemma is not None and result.pending_dilemma.rule_key == "rezession"
 

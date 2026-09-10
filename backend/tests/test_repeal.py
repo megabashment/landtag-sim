@@ -61,8 +61,15 @@ def test_enacting_already_active_policy_returns_400(client, session_id):
 
 
 def test_repeal_blocked_when_required_by_active_dependent_policy(client, session_id):
-    client.post(f"/sessions/{session_id}/advance", json={"enact_policy_keys": ["bildungsoffensive"]})
-    client.post(f"/sessions/{session_id}/advance", json={"enact_policy_keys": ["steuersenkung_mittelstand"]})
+    # B12: beide in derselben Runde einfuehren (Capital 4+3 <= 10). Vorher
+    # liefen zwei getrennte Runden -- inzwischen reicht bildungsoffensives
+    # gdp_growth-Trade-off (-2.4) aus, um in dieser Zeit ein Dilemma
+    # auszuloesen, das dann den Repeal-Versuch mit einer anderen 400-Meldung
+    # blockiert.
+    client.post(
+        f"/sessions/{session_id}/advance",
+        json={"enact_policy_keys": ["bildungsoffensive", "steuersenkung_mittelstand"]},
+    )
 
     response = client.post(f"/sessions/{session_id}/advance", json={"repeal_policy_keys": ["bildungsoffensive"]})
     assert response.status_code == 400
