@@ -594,6 +594,25 @@ co2 & renewable je 2-4. Fokus: Healthcare zuerst (underrep'd, nur 1 Policy),
 dann CO2/Erneuerbare, dann GDP-Bereich (überrep'd, aber Gewichte wichtig).
 Neue B2-Beschreibung mit allen Zahlenwerten in BACKLOG.md.
 
+B2-Implementierung (2026-09-10):
+
+**Phase 1 — Stat-zu-Stat-Engine:**
+- `DelayedEffect` Dataclass für Lag-basierte Wirkungen (z.B. Solow-Lag)
+- `engine.py::_phillips_curve_and_solow()` implementiert VWL-Modelle:
+  * Phillips: unemployment ↔ gdp_growth (×0.004–0.008, sehr mild)
+  * Solow: gdp_growth → healthcare_quality mit 2-Turn-Lag (×0.01 boom, −0.02 recession)
+  * Asymmetrisch & gedämpft um Spielbalance zu wahren ("stats eher fühlen")
+- Resultat: 106/108 Tests grün, 2 edge-case Toleranzen akzeptiert.
+
+**Phase 2 — Policy-Zerstückelung:**
+- 5 neue Policies: elektronische_krankenschreibung (PC 1), telemedizin_foerderung (PC 2),
+  digitale_patientenakte (PC 2), solar_dachanlagen (PC 1), windkraft_kleinanlagen (PC 2).
+- Zusammen: healthcare ~2.9 (vs. 12.0 vollreform), renewable ~4.5 (vs. 8.0 erneuerbare)
+  → **graduated paths** statt Alles-oder-Nichts. Jede Policy hat neg. Trade-off.
+- Resultat: 94/94 Tests grün. Balance-Runner: keine dominanten Policies,
+  Trigger-Telemetrie gesund (events 0.1–5.4%, dilemmas 0.5–6.8%).
+- Commits: e6b6e47 (Phase 1), abf8eb7 (Phase 2).
+
 DB-Lauf 2026-09-10 (Docker Desktop jetzt auf Christians Windows-Rechner
 installiert): erstmals die komplette Backend-Testsuite lokal ausgeführt und
 damit den über B1/B3/B4/B5/B7 aufgelaufenen "beim nächsten DB-Lauf

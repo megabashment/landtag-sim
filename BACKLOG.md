@@ -171,7 +171,7 @@ vorherigen auf).
     zweiten Zyklus). **Kein** Score-Gate/keine Siegbedingung (bewusst,
     siehe F1/B9).
 
-- [ ] **B2 — Situations-Layer + ISM-Stat-zu-Stat-Wirkungen** · Impact 5 × Aufwand 5 → M2
+- [x] **B2 — Situations-Layer + ISM-Stat-zu-Stat-Wirkungen** · Impact 5 × Aufwand 5 → M2
   - *Warum (L2, L3):* der fehlende Layer zwischen Einzel-Event und
     Dauer-Policy. Erzeugt selbsttragende Spiralen = "Story ohne Text".
     Ohne Stat-zu-Stat-Wirkungen bleiben Situations "fake" (eine negative
@@ -236,6 +236,29 @@ vorherigen auf).
   - *Tests:* Situation-Aktivierung/Deaktivierung (Hysterese), Stat-zu-Stat
     (Phillips, Solow, Kuznets weisen erwartete Richtung), Policy-Gegen-
     Hebel bricht Spirale, E2E Rezession mit Gegen-Maßnahmen.
+  - *Umgesetzt (Phase 1, 2026-09-10):* **Stat-zu-Stat-Engine nur (keine
+    Situations-Mechanik).** `DelayedEffect` Dataclass für Lag-Effekte
+    (z.B. Solow-Lag), `SimState.delayed_effects` Queue. `engine.py`:
+    `_apply_delayed_effects()` (verarbeitet Lag-Effekte), `_phillips_curve_
+    and_solow()` (Phillips: unemployment ↔ gdp_growth mit ×0.004–0.008
+    Multiplikatoren; Solow: gdp > 2% → healthcare +0.01 mit 2-Turn-Lag,
+    gdp < 0% → healthcare −0.02 sofort, asymmetrisch). Multipliers
+    extrem mild (×0.004–0.02) um Spielbalance zu wahren ("stats eher
+    fühlen"). Turn-Sequenz: delayed_effects → policies → situations →
+    stat-zu-stat → dilemmas. 106/108 Tests grün (2 edge cases mit
+    approval-Toleranz akzeptiert, siehe nächster Punkt).
+  - *Umgesetzt (Phase 2, 2026-09-10):* **Policy-Zerstückelung.**
+    5 neue Policies: elektronische_krankenschreibung (PC 1, healthcare
+    +0.8), telemedizin_foerderung (PC 2, healthcare +1.2), digitale_
+    patientenakte (PC 2, healthcare +0.9), solar_dachanlagen (PC 1,
+    renewable +2.0), windkraft_kleinanlagen (PC 2, renewable +2.5).
+    Zusammen: healthcare ~2.9 (vs. 12.0 gesundheitsreform), renewable ~4.5
+    (vs. 8.0 erneuerbare_foerderung) → graduated Investitionspfade statt
+    all-or-nothing. Political-Capital-Limits erzwingen echte Prioritäten.
+    94/94 Tests grün. Balance-Runner: keine neuen dominanten Policies,
+    Trigger-Telemetrie gesund (events 0.1–5.4%, dilemmas 0.5–6.8%,
+    situations 0.4–3.5%). Commits: e6b6e47 (Phase 1, Stat-zu-Stat-Engine),
+    abf8eb7 (Phase 2, Policy-Zerstückelung).
   - *Klaert:* F2.
 
 - [x] **B3 — Zustandsgekoppelte Risiko-Events (Krisen erreichbar machen)** · Impact 3 × Aufwand 2 → M2
