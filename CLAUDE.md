@@ -857,7 +857,7 @@ Bundes-/EU-Ebene.
 - Deliverable: ✓ Backend sendet Opposition-Felder, 55 Backend-Tests grün
 
 ### **Sprint 4 — B15 Phase 4: Opposition-Frontend (Sonntagsfrage-Overlay)** ⏳
-- Dauer: 1-2 Tage (geplant)
+- Dauer: 1-2 Tage (geplant 2026-09-11+)
 - **Design-Vision (2026-09-10):** Sonntagsfrage-Overlay im dt. Umfragen-Stil
   - Balkendiagramm: Regierung (aktuell) vs. Opposition (aufgebaut)
   - Koalitionsfähigkeit-Schwelle visuell (30% Linie)
@@ -865,12 +865,14 @@ Bundes-/EU-Ebene.
   - Runden-Ticker (Kampagnen, Events, Dilemmas)
   - **MVP: nur Regierung vs. eine Opposition** (einfach, getestet)
   - **Future (M6+): Multi-Party-System** (mehrere Opposition-Optionen)
-- Scope:
-  - Overlay-Komponente rendert Sonntagsfrage-Balken
+- Scope (Phase 4a + 4b):
+  - `SonntagsfragOverlay` Komponente (Balken-Rendering, CSS)
   - Opposition-Wahl-Dialog (nach Wahlverlust)
   - Runden-Ticker-Zusammenfassung
   - Ressourcen-Multiplikator-Berechnung am Wahl-Abend
+  - Frontend Tests: npm run build + npm run lint grün
 - Deliverable: Opposition-UI komplett, B15 Feature-Complete
+- **Anker:** `frontend/src/App.jsx` (hauptsächlich; Opposition-States schon prepared)
 
 ### **Sprint 5 — B23: Party-Gründung** (nach B15)
 - Dauer: 1-2 Tage
