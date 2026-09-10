@@ -171,41 +171,71 @@ vorherigen auf).
     zweiten Zyklus). **Kein** Score-Gate/keine Siegbedingung (bewusst,
     siehe F1/B9).
 
-- [ ] **B2 — Situations-Layer (mittlerer Zeithorizont, mit Hysterese)** · Impact 5 × Aufwand 4 → M2
+- [ ] **B2 — Situations-Layer + ISM-Stat-zu-Stat-Wirkungen** · Impact 5 × Aufwand 5 → M2
   - *Warum (L2, L3):* der fehlende Layer zwischen Einzel-Event und
     Dauer-Policy. Erzeugt selbsttragende Spiralen = "Story ohne Text".
-  - *Scope:*
+    Ohne Stat-zu-Stat-Wirkungen bleiben Situations "fake" (eine negative
+    Situation erhöht unemployment, aber das hat keine Folge auf gdp).
+  - *Design-Entscheidung (2026-09-10):* **VWL-Standard-Ketten statt
+    Ideologie.** Drei etablierte ökonomische Modelle bilden die Backbone:
+    1. **Phillips-Kurve/Okun's Law**: gdp_growth ↔ unemployment_rate
+       (niedrig gdp → Jobabbau; hohe Arbeitslosigkeit → niedriges gdp).
+       NAIRU-Baseline: 5% unemployment ist natürlich.
+    2. **Solow-Modell (Humankapital)**: gdp_growth → healthcare_quality
+       (gutes Wachstum → höhere Budgets; Rezession → sofort Sparmaßnahmen,
+       asymmetrisch). Mit Lag (2-3 Runden Budgetplanungszyklus).
+    3. **Umwelt-Kuznets-Kurve**: co2_emissions = f(gdp_growth, renewable_share)
+       (niedrig gdp + niedrig renewable = hohe Emissionen; hohe gdp + hohe
+       renewable = saubere Industrie).
+  - *Scope — Situations-Mechanik:*
     - Neue Dataclasses `SituationRule` (`key`, `statistic_key`,
       `activate_op`/`activate_threshold`, `deactivate_op`/
       `deactivate_threshold` → **Hysterese-Pflicht**, `effects:
       list[PolicyEffect]`, `template_text`) und `ActiveSituation`
       (`rule_key`, `since_turn`) in `models.py`.
     - Neues Modul `sim/landtag_sim/situations.py` (analog `events.py`):
-      `evaluate_situations(state, rules)` → aktiviert/deaktiviert
-      Eintraege in `SimState.active_situations` anhand der beiden
-      Schwellen.
-    - `engine.py::advance_turn`: nach Policy-Effekten, vor Events, die
-      Effekte aktiver Situations anwenden (weich via `_effect_delta` mit
-      `since_turn`), attribuiert als `situation:<key>`. Zufriedenheits-
-      reaktion fliesst ueber `_apply_reaction` wie gehabt.
-    - Startdatensatz: 2-3 Situations in `sample_data.py`, je mit einem
-      klaren regelbasierten Gegen-Hebel (L3): z.B. `abwanderung`
-      (an: `gdp_growth < -0.5`, aus: `> 0.5`, Effekt: druckt
-      `unemployment_rate` weiter hoch → Spirale; Gegen-Hebel:
-      `gesundheitsreform`/`bildungsoffensive` heben `gdp_growth`);
-      eine *positive* Situation `gruenes_wachstum` (an: `renewable_share
-      > 65`, Effekt: `gdp_growth +`, `co2_emissions -`).
-    - `balance_runner.py`: meldet, welche Situations in einem Lauf
-      je aktiviert wurden und ob eine nie wieder deaktiviert
-      ("Death-Spiral-Verdacht", L3).
-  - *Anker:* `engine.py::advance_turn`, `sim/landtag_sim/models.py`,
-    `sim/landtag_sim/sample_data.py`, `backend/app/sim_bridge.py`
-    (Persistenz von `active_situations`), neues DB-Modell
-    `backend/app/models/situation.py` + `game_session`-Spalte.
-  - *Tests:* Aktivierung bei X, KEINE Deaktivierung zwischen den beiden
-    Schwellen (Hysterese), Deaktivierung erst unter der zweiten Schwelle;
-    Effekt wird attribuiert; Gegen-Hebel-Policy holt eine negative
-    Situation nachweislich wieder raus.
+      `evaluate_situations(state, rules)` → aktiviert/deaktiviert Eintraege
+      in `SimState.active_situations` anhand der beiden Schwellen.
+    - `engine.py::advance_turn`: nach Policy-Effekten, VOR Events, VOR
+      Stat-zu-Stat-Wirkungen: die Effekte aktiver Situations anwenden,
+      attribuiert als `situation:<key>`. Zufriedenheitsreaktion via
+      `_apply_reaction`.
+  - *Scope — Stat-zu-Stat-Wirkungen (minimal für B2):*
+    - **Phillips**: gdp_growth → unemployment_rate (wenn unemployment > 5%
+      NAIRU: −0.15 pro Punkt über 5%; wenn gdp < 0%: +0.2 pro Punkt mit
+      Beschleunigung ab −0.5%).
+    - **Solow**: gdp_growth → healthcare_quality (mit 2-Runden-Lag;
+      Boom +0.2/Turn nach Lag, Rezession −0.3/Turn sofort, asymmetrisch).
+    - **Kuznets**: f(gdp_growth, renewable_share) → co2_emissions
+      (wird implizit durch Situations + Policies modelliert, keine separate
+      Stat-zu-Stat-Engine nötig).
+  - *Scope — Policy-Architektur:* **Graduell aufbaubar statt
+    all-or-nothing.** Die 8 existierenden Mega-Policies werden
+    "zerstückelt" in 2-3 kleinere, aufbauende Policies je Bereich.
+    Gewichte bleiben ähnlich, Spielability steigt (Spieler kann gegen
+    kleine Krisen mit 1-2 kleinen Policies gegenwirken). Fokus: Healthcare
+    (aktuell nur 1 Policy, unterrepräsentiert), CO2/Erneuerbare (schwach),
+    dann GDP-Bereich (überrepräsentiert, aber Gewichte wichtig).
+    Beispiel "Bildungsoffensive" (alt: 1 Policy PC 4) → neu: 3-4 Policies
+    (je PC 1-2, zusammen ähnlicher Gesamteffekt, aber graduell aufbaubar).
+  - *Startdatensatz: 2-3 Situations mit klarem Gegen-Hebel (L3):*
+    - `abwanderung` (an: gdp < -0.2, aus: gdp > 0.9, Hysterese-Fenster
+      breit): +unemployment +0.6, +co2 +1.8, -healthcare -1.5 (Kaskade).
+      Gegen-Hebel: neue kleine Healthcare-Policies + bildungsoffensive +
+      steuersenkung (alle drücken gdp hoch).
+    - `gruenes_wachstum` (an: renewable > 42, aus: renewable < 37):
+      +gdp +0.5, -co2 -2.0 (positive Spirale, begrenzt durch renewable-
+      Kosten bei Boom).
+  - *`balance_runner.py`:* meldet Situations-Aktivierungen und Death-
+    Spiral-Verdacht (eine Situation aktiviert sich und deaktiviert sich
+    nie).
+  - *Anker:* `engine.py::advance_turn` (Abschnitt "Stat-zu-Stat vor Events"),
+    `sim/landtag_sim/models.py`, `sim/landtag_sim/situations.py`,
+    `sim/landtag_sim/sample_data.py`, `backend/app/sim_bridge.py`,
+    neues DB-Modell `backend/app/models/situation.py`.
+  - *Tests:* Situation-Aktivierung/Deaktivierung (Hysterese), Stat-zu-Stat
+    (Phillips, Solow, Kuznets weisen erwartete Richtung), Policy-Gegen-
+    Hebel bricht Spirale, E2E Rezession mit Gegen-Maßnahmen.
   - *Klaert:* F2.
 
 - [x] **B3 — Zustandsgekoppelte Risiko-Events (Krisen erreichbar machen)** · Impact 3 × Aufwand 2 → M2

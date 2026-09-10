@@ -567,6 +567,33 @@ in App.jsx rendert sie im „Statistiken"-Panel. `CREDITS.md`-Tabelle mit
 Lizenzzeile pro Icon (Pflicht, architecture.md Punkt 9). Visuell
 verifiziert. M4 damit vollstaendig (B12–B14).
 
+B2-Design-Klärung (vor Implementierung, 2026-09-10): **Stat-zu-Stat-
+Wirkungsketten** nach VWL-Standards statt Ideologie. Grundprinzip: ohne
+gegenseitige Abhängigkeiten zwischen den 6 Statistiken sind Situations
+"fake" (scenario: `abwanderung` erhöht unemployment, aber das hat keine
+Folge auf gdp). Drei ökonomische Modelle bilden Backbone:
+(1) **Phillips-Kurve/Okun's Law**: gdp_growth ↔ unemployment_rate
+    (niedrig gdp → Jobabbau; hohe unemployment → niedriges gdp; NAIRU-
+    Baseline 5%)
+(2) **Solow-Modell (Humankapital)**: gdp_growth → healthcare_quality
+    (gutes Wachstum → höhere Budgets; Rezession → sofort Sparmaßnahmen,
+    asymmetrisch, 2-3-Runden-Lag)
+(3) **Umwelt-Kuznets-Kurve**: co2_emissions = f(gdp_growth, renewable_share)
+    (niedrig gdp + niedrig renewable = hohe Emissionen; hohe gdp + hohe
+    renewable = saubere Industrie)
+
+Gleichzeitig: **Policy-Architektur umstrukturieren.** Aktuell: 8 Mega-
+Policies (z.B. "Gesundheitsreform" PC 4, healthcare +12, gdp -1.2).
+Neu: zerstückelt in 2-4 kleinere, graduell aufbaubare Policies je Bereich
+(z.B. "Elektronische Krankenschreibung" PC 1 +0.8, "Telemedizin" PC 2 +1.2,
+"Krankenhausfusion" PC 3 +2.0, "Vollreform" PC 4 +12.0). Gewichte bleiben
+ähnlich, aber Spielability steigt (Spieler kann gegen kleine Krisen
+gegenwirken ohne Mega-Budget). Policy-Telemetrie zeigt: gdp_growth 12 Hebel,
+education & unemployment je 8, **healthcare nur 4 (kritisch schwach!)**,
+co2 & renewable je 2-4. Fokus: Healthcare zuerst (underrep'd, nur 1 Policy),
+dann CO2/Erneuerbare, dann GDP-Bereich (überrep'd, aber Gewichte wichtig).
+Neue B2-Beschreibung mit allen Zahlenwerten in BACKLOG.md.
+
 DB-Lauf 2026-09-10 (Docker Desktop jetzt auf Christians Windows-Rechner
 installiert): erstmals die komplette Backend-Testsuite lokal ausgeführt und
 damit den über B1/B3/B4/B5/B7 aufgelaufenen "beim nächsten DB-Lauf
