@@ -519,10 +519,22 @@ vorherigen auf).
     sample_catalog` (backend). sim 108 / backend 55 grün, Frontend
     build+lint grün.
 
-- [ ] **B11 — `docker-compose.yml` Frontend-Service** · Impact 1 × Aufwand 1 → M3
+- [x] **B11 — `docker-compose.yml` Frontend-Service** · Impact 1 × Aufwand 1 → M3
   - *Warum (`architecture.md` offene Punkte):* `docker compose up`
-    startet nur `db`+`backend`, README verspricht mehr. Kleiner
-    Vite-Service ergaenzen oder README praezisieren.
+    startete nur `db`+`backend`, README versprach mehr.
+  - *Umsetzung 2026-09-10:* neuer `frontend`-Service (`frontend/Dockerfile`,
+    node:22-alpine, `npm run build` + `vite preview --host` auf Port 5173).
+    `VITE_API_BASE` als Build-ARG (ins Bundle eingebacken), `FRONTEND_ORIGIN`
+    des `backend`-Service jetzt per `${FRONTEND_ORIGIN:-…}` ueberschreibbar
+    — beide aus einer optionalen `.env` im Repo-Root (`.env.example` neu),
+    noetig fuers Testen vom Handy im LAN (LAN-IP statt localhost). Dabei
+    einen vorbestehenden Bug im `backend/Dockerfile` mitbehoben: `pip install
+    -r requirements.txt` scheiterte an der Zeile `-e ../sim` (Pfad existiert
+    im Build-Kontext nicht) — wird jetzt vor der Installation rausgefiltert,
+    die Sim-Engine kommt weiterhin separat aus `/sim`. `docker compose up
+    --build` startet nun alle drei Services, end-to-end verifiziert
+    (Session-Anlage, CORS-Preflight). README-Abschnitt "Alles mit Docker" +
+    "Vom Handy im lokalen Netz testen" ergaenzt.
 
 ---
 

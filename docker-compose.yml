@@ -29,9 +29,28 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql+psycopg2://landtag:landtag@db:5432/landtag_sim
-      FRONTEND_ORIGIN: http://localhost:5173
+      # Muss exakt der URL entsprechen, unter der das Frontend im Browser
+      # laeuft (CORS, backend/app/main.py). Fuer Zugriff vom Handy im LAN in
+      # der .env im Repo-Root auf die Host-LAN-IP setzen (siehe .env.example).
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:5173}
     ports:
       - "8000:8000"
+
+  # B11 (BACKLOG.md): Frontend-Service fuer einen "docker compose up"-
+  # Rundumschlag und fuers Testen vom Handy im lokalen Netz. Fuer taegliche
+  # Entwicklung bleibt `npm run dev` auf dem Host schneller (HMR) -- dieser
+  # Service serviert den statischen Vite-Build per `vite preview`.
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # BUILD-Zeit: wird ins Bundle eingebacken. Default fuer Zugriff vom
+        # selben Rechner; fuers Handy die Host-LAN-IP via .env uebergeben.
+        VITE_API_BASE: ${VITE_API_BASE:-http://localhost:8000}
+    depends_on:
+      - backend
+    ports:
+      - "5173:5173"
 
 volumes:
   postgres-data:

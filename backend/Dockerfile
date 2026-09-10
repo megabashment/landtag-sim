@@ -6,7 +6,11 @@ FROM python:3.12-slim
 WORKDIR /srv
 
 COPY backend/requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+# requirements.txt enthaelt `-e ../sim` fuer die Host-Entwicklung -- dieser
+# Pfad existiert im Build-Kontext (Repo-Root) nicht. Zeile rausfiltern, die
+# Sim-Engine wird gleich separat aus /sim installiert.
+RUN grep -v '^-e ' requirements.txt > requirements.docker.txt \
+    && pip install --no-cache-dir -r requirements.docker.txt
 
 # Sim-Engine als editable Package mitbauen
 COPY sim /sim

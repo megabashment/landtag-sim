@@ -26,9 +26,13 @@ cd ../frontend && npm run build && npm run lint
 
 # Policy-Balance-Check (alle gültigen Kombinationen)
 python -m landtag_sim.tools.balance_runner --turns 30
+
+# Kompletter Stack (db + backend + frontend) für manuelles / Handy-Testen
+docker compose up --build   # Frontend :5173, Backend :8000
 ```
 
-Für vollständiges Setup und manuelle E2E-Tests → siehe **Verifikations-Workflow** weiter unten.
+Für vollständiges Setup, Handy-Testing im LAN und manuelle E2E-Tests → siehe
+**Verifikations-Workflow** und `README.md` ("Vom Handy im lokalen Netz testen").
 
 ## Was ist das Projekt
 
@@ -504,6 +508,20 @@ Saetzen Wirkungsbeschreibung (Haupteffekt + Trade-off) in sample_data.py.
 `policy.name`, totes Feld). Frontend rendert die Beschreibung unter jeder
 Policy im Katalog (`.policy-description`). sim 108 / backend 55 grün,
 Frontend build+lint grün.
+
+M3-Backlog, B11 "docker-compose.yml Frontend-Service" (2026-09-10,
+BACKLOG.md): neuer `frontend`-Service (`frontend/Dockerfile`, node:22-alpine,
+`vite preview --host` auf Port 5173) — `docker compose up --build` startet
+jetzt alle drei Services (db + backend + frontend), end-to-end verifiziert.
+`VITE_API_BASE` ist ein Build-ARG (wird ins Bundle eingebacken, NICHT
+Laufzeit), `backend`-Service `FRONTEND_ORIGIN` per `${FRONTEND_ORIGIN:-…}`
+ueberschreibbar — beide aus optionaler `.env` im Repo-Root
+(`.env.example` neu), noetig fuers Handy-Testen im LAN (LAN-IP statt
+localhost, danach `docker compose up --build frontend`). Nebenbei einen
+vorbestehenden `backend/Dockerfile`-Bug behoben: `pip install -r
+requirements.txt` scheiterte an `-e ../sim` (Pfad fehlt im Build-Kontext) —
+Zeile wird jetzt vor der Installation rausgefiltert, Sim-Engine kommt
+weiterhin separat aus `/sim`. M3 damit vollstaendig (B7–B11 alle erledigt).
 
 DB-Lauf 2026-09-10 (Docker Desktop jetzt auf Christians Windows-Rechner
 installiert): erstmals die komplette Backend-Testsuite lokal ausgeführt und

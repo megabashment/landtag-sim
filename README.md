@@ -109,15 +109,35 @@ cp .env.example .env
 npm run dev
 ```
 
-### Backend + Datenbank mit Docker
+### Alles mit Docker (db + backend + frontend)
 
 ```bash
 docker compose up --build
 ```
 
-Startet nur `db` und `backend` (kein Frontend-Service in
-`docker-compose.yml`) -- das Frontend weiterhin separat per `npm run dev`
-starten.
+Startet `db`, `backend` (`http://localhost:8000`) und `frontend`
+(`http://localhost:5173`, statischer Vite-Build per `vite preview`). Fuer
+taegliche Entwicklung ist `npm run dev` auf dem Host trotzdem schneller
+(Hot Module Reload) -- der `frontend`-Service ist fuer den Rundumschlag
+ohne lokale Node-Installation und fuers Testen vom Handy gedacht.
+
+### Vom Handy im lokalen Netz testen
+
+Das Frontend backt `VITE_API_BASE` zur Build-Zeit ins Bundle ein, und das
+Backend erlaubt per CORS nur die exakte Frontend-URL. Beide muessen daher
+auf die LAN-IP des Host-Rechners zeigen (nicht `localhost`):
+
+```bash
+cp .env.example .env
+# in .env die IP eintragen, z.B. 192.168.1.42 (ipconfig / ip addr):
+#   VITE_API_BASE=http://192.168.1.42:8000
+#   FRONTEND_ORIGIN=http://192.168.1.42:5173
+docker compose up --build
+```
+
+Dann im Handy-Browser (gleiches WLAN) `http://192.168.1.42:5173` oeffnen.
+Nach einer IP-Aenderung `docker compose up --build frontend`, da die
+Basis-URL im Bundle steckt.
 
 ### Schnellstart per Skript (Windows/PowerShell)
 
