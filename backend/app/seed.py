@@ -59,6 +59,7 @@ def ensure_policy_catalog(db: Session) -> None:
                 income_per_turn=policy.income_per_turn,
                 effects=[vars(e) for e in policy.effects],
                 requires=list(policy.requires),
+                unlock_conditions=[vars(c) for c in policy.unlock_conditions],  # B7
             )
         )
     db.commit()
@@ -75,6 +76,11 @@ def ensure_event_catalog(db: Session) -> None:
                     "statistic_key": rule.statistic_key,
                     "operator": rule.operator,
                     "value": rule.threshold,
+                    # B3 (BACKLOG.md): Wahrscheinlichkeit pro Runde bei erfuellter
+                    # Schwelle. Im trigger_condition-JSON abgelegt statt als eigene
+                    # Spalte -- keine Schema-Migration noetig, sim_bridge liest sie
+                    # mit cond.get("probability", 1.0).
+                    "probability": rule.probability,
                 },
                 template_text=rule.template_text,
                 effects=[vars(e) for e in rule.effects],
@@ -95,6 +101,7 @@ def ensure_dilemma_catalog(db: Session) -> None:
                     "statistic_key": rule.statistic_key,
                     "operator": rule.operator,
                     "value": rule.threshold,
+                    "probability": rule.probability,  # B3, siehe ensure_event_catalog
                 },
                 prompt_text=rule.prompt_text,
                 options=[asdict(option) for option in rule.options],

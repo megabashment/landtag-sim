@@ -98,30 +98,36 @@ mindestens einen Backlog-Punkt weiter unten.
 
 ## Offene Design-Fragen (vor Implementierung zu klaeren)
 
-- **F1:** Soll es ein Ziel *ueber* Wiederwahl hinaus geben (Legislatur-
-  Ziele / "Amtszeit-Score" / Szenario-Siegbedingungen wie "CO2 unter X
-  bis Legislaturende"), oder bleibt Landtag-Sim bewusst offener Sandbox
-  mit Wiederwahl als einzigem Fixpunkt? → betrifft B1, B9.
+- ~~**F1:** Soll es ein Ziel *ueber* Wiederwahl hinaus geben?~~ **Geklaert
+  mit B9 (2026-09-10): optionale, unverbindliche Ziele.** `ScenarioGoal`-
+  Liste wird am Wahl-Turn in `TermSummary.goals` als ✓/✗ ausgewiesen,
+  beeinflusst aber weder Sieg/Niederlage noch das Spielende — die Sandbox
+  bleibt ohne Ziele spielbar, und verfehlte Ziele sind rein informativ.
 - **F2:** Wieviel Simulations-Verkopplung wollen wir? Situations (B2)
   brauchen Statistik-→-Statistik-Effekte. Aktuell wirken nur Policies/
   Events/Dilemmas auf Statistiken, Statistiken nie aufeinander. Das ist
   ein bewusst gezogener Scope-Strich (README "kein echtes GDP-System").
   Situations weichen ihn auf — gewollt?
-- **F3:** Zufalls-Schocks ja/nein? `mistakes.md` sagt, ohne sie bleiben
-  Krisen-Dilemmas totes Gewicht. L9 sagt, wenn dann zustandsgekoppelt.
-  Entscheidung: gar nicht / zustandsgekoppelte "Risiko-Events" / freie
-  Zufalls-Events mit Seed.
-- **F4:** Turnout/Apathie-Modell (L6) — eigener Wert pro Waehlergruppe
-  (`turnout`), oder aus `satisfaction` + `satisfaction_momentum`
-  abgeleitet (niedrige, sinkende Zufriedenheit → niedriger Turnout bei
-  Anhaengern)? Letzteres ist billiger und braucht kein neues Feld.
-- **F5:** Media Reports (B4) — eigenes Modul `reports.py` analog
-  `events.py`, oder ein Flag an `EventRule` (`silent: bool`, kein Effekt,
-  nur Text)? Eigenes Modul ist sauberer, aber mehr Code.
-- **F6:** Wie messen wir Dilemma-Balance (L4) ohne echte Telemetrie?
-  Vorschlag: Balance-Runner zaehlt Trigger je Rule ueber alle Szenarien
-  × N Seeds und meldet Ueber/Unter-Repraesentation — reicht das als
-  Proxy?
+- **F3:** ~~Zufalls-Schocks ja/nein?~~ **Geklaert mit B3
+  (2026-09-09): zustandsgekoppelte "Risiko-Events".** Eine Regel feuert
+  nur bei erfuellter Statistik-Schwelle UND deterministischem
+  Wuerfel-Durchgang pro Runde (`probability`, `zlib.crc32`-Seed) — nie
+  rein zufaellig, nie ohne Sim-Bezug (L9). Umsetzung: siehe B3 unten.
+- **F4:** ~~Turnout/Apathie-Modell (L6) — eigener Wert oder abgeleitet?~~
+  **Geklaert mit B5 (2026-09-09): abgeleitet** aus `satisfaction` +
+  `satisfaction_momentum` (`engine.py::_estimated_turnout`), kein neues
+  persistiertes Feld. Nur die Prognose nutzt es; die echte Wahl bleibt
+  ungewichtet.
+- **F5:** ~~Media Reports (B4) — eigenes Modul oder Flag an `EventRule`?~~
+  **Geklaert mit B4 (2026-09-09): eigenes Modul `reports.py` +
+  `ReportRule`.** Andere Felder (`conditions`-Liste,
+  `requires_policy`/`forbids_policy`), keine Effekte/Severity, eigene
+  Frequenz-Regel — ein `silent`-Flag haette `EventRule` ueberladen.
+- **F6:** ~~Wie messen wir Dilemma-Balance (L4) ohne echte Telemetrie?~~
+  **Geklaert mit B6 (2026-09-09): ja, Balance-Runner-Zaehlung ueber
+  Szenarien × N Seeds reicht als Proxy** (`collect_trigger_counts` /
+  `classify_triggers`, `--seeds N`). Meldet "nie ausgeloest" und
+  ">5× Erwartungswert".
 
 ---
 
@@ -202,7 +208,7 @@ vorherigen auf).
     Situation nachweislich wieder raus.
   - *Klaert:* F2.
 
-- [ ] **B3 — Zustandsgekoppelte Risiko-Events (Krisen erreichbar machen)** · Impact 3 × Aufwand 2 → M2
+- [x] **B3 — Zustandsgekoppelte Risiko-Events (Krisen erreichbar machen)** · Impact 3 × Aufwand 2 → M2
   - *Warum (L4, L9, `mistakes.md`):* die vorhandenen Krisen-Dilemmas
     (`arbeitsmarktkrise` etc.) triggern organisch nie. Reine Zufalls-
     Schocks waeren die faule Loesung und nerven (L9).
@@ -222,9 +228,36 @@ vorherigen auf).
     `probability=0.0` feuert nie; gleicher Seed → gleiche Entscheidung;
     E2E: `rezession` wird ueber die Vorstufe in einem 40-Runden-Lauf
     tatsaechlich erreicht.
-  - *Klaert:* F3.
+  - *Klaert:* F3 → **Entscheidung: zustandsgekoppelte "Risiko-Events"**
+    (nicht "gar nicht", nicht "freie Zufalls-Events"). Eine Regel feuert
+    nur, wenn ihre Statistik-Schwelle erfuellt ist UND ein
+    deterministischer Wuerfel pro Runde durchgeht — nie rein zufaellig.
+  - *Umgesetzt (2026-09-09):* `EventRule.probability` /
+    `DilemmaRule.probability` (Default `1.0` = Verhalten wie vor B3).
+    Gate-Funktion `events.py::passes_probability_gate(rule_key, turn,
+    probability)` — `zlib.crc32(f"{rule_key}:{turn}")` normiert auf
+    `[0,1)`, kein `random`; `dilemmas.py` importiert dieselbe Funktion
+    (statt Copy-Paste wie bei `_severity`). Gate greift in
+    `evaluate_events` / `evaluate_dilemmas` NACH dem Schwellenvergleich,
+    VOR der Severity-Sortierung. Eine Vorstufe in `sample_data.py`:
+    `konjunkturdelle` (EventRule, `gdp_growth < 0.5`, `probability=0.4`,
+    `cooldown_turns=2`, Effekt `gdp_growth -0.35/Runde`) — greift nur bei
+    ohnehin schwaechelndem Wachstum und macht `rezession` aus einer nur
+    leicht negativen Lage heraus erreichbar (und via Situation
+    `abwanderung` mittelbar auch `arbeitsmarktkrise`). Backend-
+    Persistenz OHNE Schema-Migration: `probability` liegt im
+    `trigger_condition`-JSON (`seed.py`), `sim_bridge.py` liest
+    `cond.get("probability", 1.0)`. Tests: 6 sim-Engine-Tests
+    (`sim/tests/test_engine.py`, Abschnitt "B3": `probability=1.0` wie
+    vorher, `=0.0` feuert nie, Zwischenwert gated teilweise,
+    Determinismus bei gleichem Seed, Dilemma-Gate, E2E `konjunkturdelle`
+    → `rezession`) und `backend/tests/test_risk_events.py` (3, DB-Round-
+    Trip des `probability`-Felds — beim naechsten lokalen Postgres-Lauf
+    mit auszufuehren, hier mangels DB nicht gelaufen). Balance-Runner
+    unveraendert bei "Keine vermutlich dominante Policy" / 12 von 24
+    Szenarien mit Auffaelligkeiten (identisch zum Stand vor B3).
 
-- [ ] **B4 — Narrative Konsequenz-Ebene ("Presseschau")** · Impact 4 × Aufwand 2 → M2
+- [x] **B4 — Narrative Konsequenz-Ebene ("Presseschau")** · Impact 4 × Aufwand 2 → M2
   - *Warum (L5):* Konsequenzen sind aktuell nur Zahlen. Text-Feedback,
     das die Kausalkette benennt, ohne die Sim zu veraendern, ist Democracys
     wirkungsvollster Griff gegen "meine Entscheidungen sind folgenlos".
@@ -243,9 +276,37 @@ vorherigen auf).
   - *Tests:* Report feuert nur bei erfuellter UND-Bedingung; nicht in
     derselben Runde wie ein Event/Dilemma; Cooldown greift; Template-
     Platzhalter werden ersetzt.
-  - *Klaert:* F5.
+  - *Klaert:* F5 → **Entscheidung: eigenes Modul `reports.py` mit
+    `ReportRule`** (nicht ein `silent`-Flag an `EventRule`). Sauberere
+    Trennung: Reports haben andere Felder (`conditions`-Liste,
+    `requires_policy`/`forbids_policy`), keine Effekte, keine Severity,
+    und eine eigene Frequenz-Regel (nur in ereignislosen Runden).
+  - *Umgesetzt (2026-09-09):* `ReportCondition` / `ReportRule` +
+    `TurnResult.reports` + `SimState.report_cooldowns` in `models.py`;
+    neues Modul `sim/landtag_sim/reports.py::evaluate_reports(state, rules,
+    active_policy_keys)` (UND-Bedingungen, Cooldown, requires/forbids-
+    Policy-Gate, deterministische Sortierung nach `rule.key`). `engine.py::
+    advance_turn` Abschnitt "2c": wertet Reports NUR aus, wenn diese Runde
+    weder ein Event noch ein Dilemma hatte, haengt hoechstens EINEN Text an
+    (mit Namens-Vignette passend zur Kategorie der ersten Bedingung), ohne
+    jede Statistik-/Zufriedenheitswirkung. 7 Startregeln in `sample_data.py`
+    (`SAMPLE_REPORT_RULES`), 4 davon policy-gekoppelt (`bildungsoffensive_
+    wirkt`, `vermoegensteuer_debatte`, `klimaklage` (forbids), `mittelstand_
+    lob`). Backend: `AdvanceTurnResponse.reports`; `sim_bridge.load_report_
+    rules()` liefert die Regeln bewusst OHNE DB (reiner statischer Content,
+    kein Session-Zustand — anders als Policies/Events/Dilemmas, siehe
+    Docstring), `routes_game` reicht sie an `advance_turn` weiter. Frontend:
+    eigenes "Presseschau"-Panel (zurueckhaltender Stil als das Ereignis-
+    Panel) + Report-Zeilen in den Verlaufseintraegen; Fast-Forward stoppt
+    auch bei einem Report. Tests: 11 sim-Engine-Tests (`sim/tests/test_
+    engine.py`, Abschnitt "B4": UND-Bedingungen, Event-/Dilemma-
+    Unterdrueckung, Cooldown `[1,4,7]`, Platzhalter, requires/forbids-Gate,
+    "kein Sim-Effekt", Vignette, Well-formed-Check, E2E `bildungsoffensive_
+    wirkt`) und `backend/tests/test_reports.py` (3, API-Transport — beim
+    naechsten lokalen Postgres-Lauf mit auszufuehren). sim-Suite 80 gruen;
+    Balance-Runner unveraendert (Reports haben keine Sim-Wirkung).
 
-- [ ] **B5 — Wahlprognose mit sichtbarem Turnout/Apathie** · Impact 3 × Aufwand 3 → M2
+- [x] **B5 — Wahlprognose mit sichtbarem Turnout/Apathie** · Impact 3 × Aufwand 3 → M2
   - *Warum (L6):* Wahl-Ausgang ist aktuell eine Blackbox bis Turn 16.
     Eine Prognose macht die letzten Runden vor der Wahl spannend statt
     ueberraschend-frustrierend — vorausgesetzt, sie zeigt auch, WER
@@ -268,9 +329,40 @@ vorherigen auf).
   - *Tests:* Projection == tatsaechliches `ElectionResult`, wenn Turnout-
     Gewicht neutral ist; niedrige+fallende Zufriedenheit einer grossen
     Gruppe senkt die projizierte Zustimmung staerker als niedrige+stabile.
-  - *Klaert:* F4, L6.
+  - *Klaert:* F4 → **Entscheidung: Turnout aus `satisfaction` +
+    `satisfaction_momentum` ABGELEITET, kein neues persistiertes Feld.**
+    L6 → die Prognose nennt exakt die entscheidungsrelevante Zahl
+    (`approval` == echte Wahl), zusaetzlich eine turnout-gewichtete Zahl
+    als Fruehwarnung.
+  - *Umgesetzt (2026-09-09):* Abweichung vom Anker: `_weighted_approval`
+    bleibt UNveraendert (die echte Wahl in `advance_turn` rechnet weiter
+    ohne Turnout — kein Rebalancing von B1–B4/Balance-Runner noetig). Neu
+    in `engine.py`: `_estimated_turnout(group)` (1.0, ausser fuer
+    "lauwarm UND abkuehlend": `satisfaction` im Band [30, 55] UND
+    `satisfaction_momentum < 0` → linear bis `TURNOUT_MIN = 0.6`, je
+    steiler der Abfall; wuetende Gegner < 30 und zufriedene > 55 stimmen
+    voll ab), `_turnout_weighted_approval`, `project_election(state) ->
+    ElectionProjection`. `ElectionProjection` / `ElectionProjectionGroup`
+    in `models.py`: `approval` (= echte Wahl, ohne Turnout),
+    `turnout_adjusted_approval` (nur Anzeige), `threshold`, `would_win`,
+    `groups[]` (Anteil, Zufriedenheit, Momentum, `estimated_turnout`,
+    `trend` ∈ steigend/stabil/fallend). Backend: `SessionStateResponse.
+    election_projection` (`ElectionProjectionOut`), nur gesetzt wenn
+    `status == ACTIVE` und `turns_until_election <= ELECTION_PROJECTION_
+    WINDOW = 5` (in `_build_state_response`, also auch in jeder
+    `AdvanceTurnResponse.state`). Frontend: "Wenn heute Wahl waere"-Panel
+    (`App.jsx`, `TrendArrow`) mit gewichteter + turnout-gewichteter Zahl
+    und einer Zeile pro Gruppe (Zufriedenheit, Trendpfeil, Beteiligung%);
+    CSS `.election-projection`. Tests: 8 sim-Engine-Tests (`sim/tests/
+    test_engine.py`, Abschnitt "B5": `approval` == echtes `ElectionResult`,
+    Turnout neutral ohne lauwarm-abkuehlende Gruppe, voller Turnout fuer
+    stabil/steigend/wuetend/zufrieden, proportionaler Abfall, "abkuehlende
+    Basis senkt `turnout_adjusted_approval`", Trend-Labels, `would_win` an
+    der Schwelle) und `backend/tests/test_election_projection.py` (2,
+    Fenster + Payload-Shape — beim naechsten lokalen Postgres-Lauf mit
+    auszufuehren). sim-Suite 88 gruen; Balance-Runner unveraendert.
 
-- [ ] **B6 — Dilemma-/Event-Trigger-Telemetrie im Balance-Runner** · Impact 3 × Aufwand 1 → M2
+- [x] **B6 — Dilemma-/Event-Trigger-Telemetrie im Balance-Runner** · Impact 3 × Aufwand 1 → M2
   - *Warum (L4, F6):* bevor mehr Dilemma-Content geschrieben wird, muss
     messbar sein, was ueberhaupt organisch triggert. Positechs Ansatz im
     Kleinen.
@@ -284,12 +376,42 @@ vorherigen auf).
   - *Tests:* synthetischer Lauf mit einer nie-erreichbaren Regel →
     erscheint in "nie ausgeloest"; eine Dauer-Trigger-Regel → in
     "ueberrepraesentiert".
+  - *Klaert:* F6 → **Ja, Balance-Runner-Zaehlung ueber Szenarien × Seeds
+    reicht als Proxy.** Erwartungswert = Gleichverteilung (Gesamt-
+    Ausloesungen der Kategorie / Anzahl Regeln, Democracy-4-Heuristik
+    "~1% je Regel"), Overrep-Schwelle 5×.
+  - *Umgesetzt (2026-09-09):* Kleiner, allgemein nuetzlicher Engine-
+    Zusatz: `TurnResult.triggered_event_keys` (maschinenlesbarer Regel-Key
+    des in der Runde gefeuerten Events — vorher nur der freie Text; Dilemmas
+    via `pending_dilemma.rule_key`, Situations via `active_situations` waren
+    schon strukturell auslesbar). Damit zaehlt der Runner EXAKT, ohne
+    Cooldown-Heuristik. Neu in `balance_runner.py`:
+    `collect_trigger_counts(turns, seeds, *, policies/…rules/combos)` spielt
+    alle voraussetzungs-gueltigen Kombinationen × `seeds` gejitterte
+    Startbedingungen (`_seeded_initial_state`, `jittered_starting_
+    statistics(Random(seed))`) durch und zaehlt Event-/Dilemma-/Situation-
+    Ausloesungen; `classify_triggers(counts, turns_simulated,
+    overrep_multiplier=5.0)` (reine, isoliert getestete Klassifikation:
+    `NIE_AUSGELOEST` / `UEBERREPRAESENTIERT` + Trigger-Anteil). CLI:
+    `--seeds N` (Default 5). Anders als `run_scenario` (bleibt bewusst OHNE
+    Situations, um den Dominante-Strategie-Check nicht zu verschieben)
+    uebergibt die Telemetrie den VOLLEN Regelsatz inkl. Situations.
+    Erste Erkenntnis aus dem Lauf: `niedrige_bildungsausgaben` (Event) und
+    `gruenes_wachstum` (Situation) triggern organisch NIE; `arbeitsmarktkrise`
+    ist dank B3 (`konjunkturdelle`→`abwanderung`) jetzt erreichbar (~1.5% der
+    Runden) statt totes Gewicht. Tests: 6 neue in `sim/tests/test_balance_
+    runner.py` (classify: NIE/UEBERREPRAESENTIERT/Anteil/Sortierung; collect:
+    synthetisch nie- vs. dauer-erreichbar, Dilemma-/Situation-Zaehlung, plus
+    ein Regressionstest, dass die zwei bekannt-unerreichbaren SAMPLE-Regeln
+    bei 0 bleiben). sim-Suite 94 gruen. Hinweis: der B3-crc32-Wuerfel ist
+    seed-unabhaengig (siehe `_seeded_initial_state`-Docstring) — Seeds
+    streuen die Startwerte, nicht den Wuerfel.
 
 ---
 
 ## Milestone M3 — Systeme rund um den Loop
 
-- [ ] **B7 — Dynamische Policy-Freischaltung durch Sim-Zustand** · Impact 3 × Aufwand 3 → M3
+- [x] **B7 — Dynamische Policy-Freischaltung durch Sim-Zustand** · Impact 3 × Aufwand 3 → M3
   - *Warum (L7):* `Policy.requires` ist eine statische Kette. Spieler
     wollen, dass eine gesellschaftliche Verschiebung *neue* Optionen
     oeffnet ("Automatisierung hoch → neue Steuer-/Sozial-Policies
@@ -303,8 +425,39 @@ vorherigen auf).
   - *Anker:* `models.py`, `engine.py::_validate_prerequisites` (neue
     Schwester-Funktion `_validate_unlocks`), `routes_game.py::
     list_policies`, `App.jsx`.
+  - *Umgesetzt (2026-09-10):* neuer Dataclass `UnlockCondition`
+    (`statistic_key`/`operator`/`threshold`, bewusst eigener Typ statt
+    Wiederverwendung von `ReportCondition` — Policy soll nicht vom
+    Report-Konzept abhaengen) + `Policy.unlock_conditions`. Engine:
+    `policy_is_unlocked(policy, statistics)` (oeffentlich, damit
+    Backend/Frontend/Tests dieselbe Logik teilen), `_first_unmet_unlock`
+    (lesbarer Hinweis), `_validate_unlocks` (in `advance_turn` VOR jeder
+    Mutation, gegen den Statistik-Zustand VOR der Runde), neue Exception
+    `PolicyLockedError`. Drei gesperrte Beispiel-Policies in
+    `sample_data.py`: `digitalpakt_schulen` (`education_spending > 50`, via
+    bildungsoffensive), `gruener_wasserstoff` (`renewable_share > 42`, via
+    erneuerbare_foerderung), `arbeitsmarkt_sofortprogramm`
+    (`unemployment_rate > 7`, via Krise/Situation `abwanderung` — Synergie
+    B2). Abweichung von "filtern raus": Policies werden NICHT aus
+    `GET /policies` entfernt (session-los, kennt keine Statistiken),
+    sondern mit `unlock_conditions` ausgeliefert; das Frontend graut sie
+    aus ("Wird verfuegbar, wenn …") und die Engine erzwingt hart
+    (PolicyLockedError → 400 in `/advance`, `feasible=False` in `/preview`).
+    Balance-Runner: `all_policy_combinations` laesst unlock-gated Policies
+    weg (nur turn-0-enactbare Policies werden kombiniert — sonst nur
+    gesperrt-Rauschen), NICHT_MACHBAR(gesperrt)-Zweig als Sicherheitsnetz
+    fuer Direktaufrufe. Persistenz: neue JSON-Spalte
+    `policy_definition.unlock_conditions` (Schema-Reset noetig, siehe
+    Verifikations-Workflow) + `seed.py`/`sim_bridge.py`; API:
+    `PolicyOut.unlock_conditions` (`UnlockConditionOut`). Tests: 6 neue
+    sim-Engine-Tests (Abschnitt B7: `policy_is_unlocked` UND-Logik,
+    Locked-raises-und-mutiert-nicht, unlocked-succeeds, Sample-Policies zu
+    Start gesperrt, E2E digitalpakt via bildungsoffensive) + 2 im
+    Balance-Runner (Combos schliessen gesperrte aus; Direkt-run_scenario
+    meldet NICHT_MACHBAR(gesperrt)) + `backend/tests/test_unlock.py` (4,
+    beim naechsten DB-Lauf). sim-Suite 102 gruen; Frontend build+lint gruen.
 
-- [ ] **B8 — Fraktions-/Sitz-Datenmodell (Grundstein Opposition/Parlament)** · Impact 2 × Aufwand 3 → M3
+- [x] **B8 — Fraktions-/Sitz-Datenmodell (Grundstein Opposition/Parlament)** · Impact 2 × Aufwand 3 → M3
   - *Warum (L8):* der am haeufigsten gewuenschte fehlende Layer. Voll
     ausbauen ist Post-MVP, aber das Datenmodell jetzt richtig anlegen
     spart einen spaeteren Bruch (vgl. `architecture.md` Punkt 5, "nicht
@@ -320,14 +473,37 @@ vorherigen auf).
   - *Explizit offen gelassen:* Koalitionsverhandlungen mit Kollapsrisiko,
     Parlaments-Abstimmung je Policy, Opposition-Gameplay-Loop — eigener
     Backlog-Punkt, wenn M3 steht.
+  - *Umgesetzt (2026-09-10):* `Faction`-Dataclass (`sim/landtag_sim/
+    models.py`) + `SAMPLE_FACTIONS` (5 generische Fraktionen, 135 Sitze) in
+    `sample_data.py`; DB-Modell `backend/app/models/faction.py` (per Session,
+    analog VoterGroup) + `SessionRole`-Enum + `GameSession.role`-Spalte.
+    Seeding pro Session in `create_session` (wie VoterGroups). Anzeige:
+    `SessionStateResponse.role` + `factions` (`FactionOut`, nach Sitzen
+    sortiert); Frontend zeigt "Sitzverteilung im Landtag"-Panel + Rolle in
+    der Status-Leiste. Wahlniederlage-Zweig hinter
+    `routes_game.DEMOTE_TO_OPPOSITION_ON_LOSS` (Default False → weiterhin
+    `LOST`; True → `role=OPPOSITION`, Session bleibt `ACTIVE`). **Bewusste
+    Abweichung vom Anker:** Factions gehen NICHT durch `sim_bridge`/`SimState`
+    — sie haben keine Sim-Wirkung, würden aber sonst jeden `clone()` pro Runde
+    belasten; Backend liest sie direkt aus der `faction`-Tabelle. Tests: 1
+    sim-Test (SAMPLE_FACTIONS well-formed) + `backend/tests/test_factions.py`
+    (3: Struktur/Sortierung/Default-Rolle, LOST-Default, Opposition-Flag via
+    monkeypatch). **Schema-Änderung**: neue Tabelle `faction` +
+    `game_session.role`-Spalte (DB-Reset nötig; conftest baut Test-DB neu).
+    sim 103 / backend 53 grün, Frontend build+lint grün.
 
-- [ ] **B9 — Szenario-/Legislatur-Ziele (optional, hinter F1)** · Impact 3 × Aufwand 2 → M3
-  - *Warum (L1, L10):* falls F1 "ja, es soll Ziele geben" ergibt: eine
-    `ScenarioGoal`-Liste je Session ("`co2_emissions` unter X bis
-    Legislaturende", "kein Budget-Defizit ueber 3 Runden"), im
-    `TermSummary` (B1) als erfuellt/verfehlt ausgewiesen. Optionaler
-    Layer, Sandbox bleibt ohne Ziele spielbar.
-  - *Abhaengig von:* B1, F1.
+- [x] **B9 — Szenario-/Legislatur-Ziele (optional, unverbindlich)** · Impact 3 × Aufwand 2 → M3
+  - *Warum (L1, L10):* F1 geklaert: optionale, unverbindliche Ziele.
+  - *Scope:* `ScenarioGoal` (models.py), `GoalResult` (key, description,
+    met), `_goal_metric_value()` + `_evaluate_goals()` (engine.py,
+    nutzt `_UNLOCK_OPERATORS` aus B7), `TermSummary.goals`. Vier
+    Beispielziele in `SAMPLE_SCENARIO_GOALS` (klimaziel, arbeitsmarkt,
+    solide_finanzen, rueckhalt). Backend: `load_scenario_goals()` in
+    sim_bridge (ohne DB, statischer Content), `GoalResultOut` in
+    TermSummaryOut. Frontend: ✓/✗-Liste in der Amtszeit-Bilanz.
+    Verfehlte Ziele haben **keinen** Einfluss auf Sieg/Niederlage.
+  - *Umsetzung 2026-09-10:* sim 107 / backend 55 grün, Frontend
+    build+lint grün.
 
 - [ ] **B10 — `PolicyDefinition.description` mit echtem Text fuellen** · Impact 2 × Aufwand 1 → M3
   - *Warum (`architecture.md` offene Punkte):* totes Feld

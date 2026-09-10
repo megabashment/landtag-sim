@@ -33,6 +33,14 @@ function DeltaArrow({ delta }) {
   );
 }
 
+// B5 "Wahlprognose mit sichtbarem Turnout/Apathie": Trendpfeil je Waehler-
+// gruppe (Backend liefert "steigend" | "stabil" | "fallend").
+function TrendArrow({ trend }) {
+  const glyph = trend === "steigend" ? "↑" : trend === "fallend" ? "↓" : "→";
+  const cls = trend === "steigend" ? "delta-up" : trend === "fallend" ? "delta-down" : "";
+  return <span className={`delta ${cls}`} title={trend}>{glyph}</span>;
+}
+
 export default function App() {
   const [session, setSession] = useState(null);
   // Dynamischer Policy-Katalog (GET /policies) statt der frueheren hart
@@ -48,6 +56,10 @@ export default function App() {
   const [selectedRepeals, setSelectedRepeals] = useState([]);
   const [events, setEvents] = useState([]);
   const [attributions, setAttributions] = useState([]);
+  // B4 "Narrative Konsequenz-Ebene" (BACKLOG.md): rein textliche
+  // Presseschau-Meldungen (kein Sim-Effekt), hoechstens eine pro Runde und
+  // nur in Runden ohne Ereignis/Dilemma.
+  const [reports, setReports] = useState([]);
   const [electionResult, setElectionResult] = useState(null);
   // B1 "Legislatur-Bogen & Amtszeit-Debrief" (BACKLOG.md): Bilanz der gerade
   // abgelaufenen Legislaturperiode, kommt nur am Wahl-Turn im
@@ -123,6 +135,7 @@ export default function App() {
       setSession(state);
       setEvents([]);
       setAttributions([]);
+      setReports([]);
       setElectionResult(null);
       setTermSummary(null);
       setSelectedPolicies([]);
@@ -144,6 +157,7 @@ export default function App() {
       setSession(result.state);
       setEvents(result.events);
       setAttributions(result.attributions);
+      setReports(result.reports ?? []);
       setElectionResult(result.election_result);
       setTermSummary(result.term_summary);
       setSelectedPolicies([]);
@@ -152,6 +166,7 @@ export default function App() {
         kind: "advance",
         turn: result.state.turn,
         events: result.events,
+        reports: result.reports ?? [],
         attributions: result.attributions,
         election: result.election_result,
         dilemmaTriggered: result.pending_dilemma !== null,
@@ -182,12 +197,14 @@ export default function App() {
           kind: "advance",
           turn: result.state.turn,
           events: result.events,
+          reports: result.reports ?? [],
           attributions: result.attributions,
           election: result.election_result,
           dilemmaTriggered: result.pending_dilemma !== null,
         });
         const shouldStop =
           result.events.length > 0 ||
+          (result.reports?.length ?? 0) > 0 ||
           result.election_result !== null ||
           result.pending_dilemma !== null ||
           result.state.status !== "active";
@@ -196,6 +213,7 @@ export default function App() {
       setSession(result.state);
       setEvents(result.events);
       setAttributions(result.attributions);
+      setReports(result.reports ?? []);
       setElectionResult(result.election_result);
       setTermSummary(result.term_summary);
       setSelectedPolicies([]);
@@ -221,6 +239,7 @@ export default function App() {
       setSession(result.state);
       setAttributions(result.attributions);
       setEvents([]);
+      setReports([]);
       setElectionResult(null);
       setTermSummary(null);
       pushHistoryEntry({
@@ -228,6 +247,7 @@ export default function App() {
         turn: result.state.turn,
         optionKey,
         events: [],
+        reports: [],
         attributions: result.attributions,
       });
     } catch (e) {
@@ -269,6 +289,32 @@ export default function App() {
     );
   }
 
+  // B7 "Dynamische Policy-Freischaltung durch Sim-Zustand": Freischalt-
+  // Bedingungen (Statistik-Schwellen) gegen die aktuellen Session-Statistiken
+  // pruefen. Gibt die noch NICHT erfuellten Bedingungen als lesbare Strings
+  // zurueck (leer = freigeschaltet). Dieselbe Logik wie engine.py::
+  // policy_is_unlocked -- die UI graut die Policy aus, statt einen 400er beim
+  // Einfuehren zu riskieren.
+  const UNLOCK_OPS = {
+    ">": (a, b) => a > b,
+    "<": (a, b) => a < b,
+    ">=": (a, b) => a >= b,
+    "<=": (a, b) => a <= b,
+    "==": (a, b) => a === b,
+    "!=": (a, b) => a !== b,
+  };
+
+  function unmetUnlocks(policy) {
+    if (!session || !policy.unlock_conditions) return [];
+    return policy.unlock_conditions
+      .filter((c) => {
+        const value = session.statistics[c.statistic_key];
+        const op = UNLOCK_OPS[c.operator];
+        return value === undefined || !op || !op(value, c.threshold);
+      })
+      .map((c) => `${c.statistic_key} ${c.operator} ${c.threshold}`);
+  }
+
   // Political Capital wird fuer Enact UND Repeal faellig (siehe
   // landtag_sim.engine.py::advance_turn, capital_cost).
   const selectedCapitalCost = [...selectedPolicies, ...selectedRepeals].reduce((sum, key) => {
@@ -307,6 +353,8 @@ export default function App() {
             <span>Political Capital: {session.political_capital.toFixed(1)}</span>
             <span>Naechste Wahl in {session.turns_until_election} Runden</span>
             <span>Status: {session.status}</span>
+            {/* B8: Rolle der Spielerpartei (im MVP immer "Regierung"). */}
+            <span>Rolle: {session.role === "opposition" ? "Opposition" : "Regierung"}</span>
           </section>
 
           {dilemmaPending && (
@@ -385,6 +433,53 @@ export default function App() {
                   ))}
                 </ul>
               )}
+              {/* B9: optionale Legislatur-Ziele, erfuellt/verfehlt (unverbindlich). */}
+              {termSummary.goals && termSummary.goals.length > 0 && (
+                <>
+                  <h3>Legislatur-Ziele</h3>
+                  <ul className="term-goals">
+                    {termSummary.goals.map((g) => (
+                      <li key={g.key} className={g.met ? "goal-met" : "goal-missed"}>
+                        {g.met ? "✓" : "✗"} {g.description}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </section>
+          )}
+
+          {session.election_projection && (
+            <section
+              className={`panel election-projection ${
+                session.election_projection.would_win ? "won" : "lost"
+              }`}
+            >
+              <h2>Wenn heute Wahl waere</h2>
+              <p>
+                Gewichtete Zufriedenheit:{" "}
+                <strong>{session.election_projection.approval.toFixed(1)}</strong> / Schwellenwert{" "}
+                {session.election_projection.threshold.toFixed(1)} &mdash;{" "}
+                {session.election_projection.would_win ? "Mehrheit" : "keine Mehrheit"}
+              </p>
+              <p className="hint">
+                Mit modellierter Wahlbeteiligung (Apathie):{" "}
+                {session.election_projection.turnout_adjusted_approval.toFixed(1)} &mdash; entscheidet
+                die Wahl nicht, zeigt aber, wo die Zustimmung wackelt.
+              </p>
+              <ul className="projection-groups">
+                {session.election_projection.groups.map((g) => (
+                  <li key={g.name}>
+                    <span className="projection-name">{g.name}</span>
+                    <span>
+                      Zufriedenheit {g.satisfaction.toFixed(0)} <TrendArrow trend={g.trend} />
+                    </span>
+                    <span className="projection-turnout">
+                      Beteiligung {Math.round(g.estimated_turnout * 100)}%
+                    </span>
+                  </li>
+                ))}
+              </ul>
             </section>
           )}
 
@@ -422,13 +517,31 @@ export default function App() {
               </ul>
             </div>
 
+            {session.factions && session.factions.length > 0 && (
+              <div className="panel">
+                <h2>Sitzverteilung im Landtag</h2>
+                <ul className="faction-list">
+                  {session.factions.map((f) => (
+                    <li key={f.name}>
+                      <span>{f.name}</span>
+                      <span className="faction-seats">{f.seats} Sitze</span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="hint">
+                  Anzeige &mdash; noch ohne Koalitions-/Mehrheitsmechanik.
+                </p>
+              </div>
+            )}
+
             <div className="panel">
               <h2>Policies fuer naechste Runde</h2>
               <ul className="policy-list">
                 {policies.map((p) => {
                   const active = session.active_policy_keys.includes(p.key);
                   const missing = unmetRequirements(p);
-                  const locked = !active && missing.length > 0;
+                  const missingUnlocks = active ? [] : unmetUnlocks(p);  // B7
+                  const locked = !active && (missing.length > 0 || missingUnlocks.length > 0);
                   // Democracy-4-Vorbild "Woher kommen positive Budget-Werte":
                   // eine echte Einnahmen-Policy (income_per_turn) wird sichtbar
                   // ausgewiesen statt als unsichtbarer Pauschal-Zuschuss zu wirken.
@@ -458,9 +571,14 @@ export default function App() {
                           {p.name} ({p.capital_cost} Political Capital{incomeHint})
                         </label>
                       )}
-                      {locked && (
+                      {locked && missing.length > 0 && (
                         <p className="hint requirement-hint">
                           Braucht zuerst: {missing.map(policyLabel).join(", ")}
+                        </p>
+                      )}
+                      {locked && missingUnlocks.length > 0 && (
+                        <p className="hint requirement-hint">
+                          Wird verfuegbar, wenn: {missingUnlocks.join(", ")}
                         </p>
                       )}
                       {repealBlocked && (
@@ -513,6 +631,17 @@ export default function App() {
             </section>
           )}
 
+          {reports.length > 0 && (
+            <section className="panel reports">
+              <h2>Presseschau</h2>
+              <ul>
+                {reports.map((text, i) => (
+                  <li key={i}>{text}</li>
+                ))}
+              </ul>
+            </section>
+          )}
+
           {attributions.length > 0 && (
             <section className="panel attributions">
               <h2>Ursachen der letzten Aenderungen</h2>
@@ -551,6 +680,13 @@ export default function App() {
                       <ul className="history-sub">
                         {entry.events.map((text, j) => (
                           <li key={j}>{text}</li>
+                        ))}
+                      </ul>
+                    )}
+                    {entry.reports?.length > 0 && (
+                      <ul className="history-sub history-reports">
+                        {entry.reports.map((text, j) => (
+                          <li key={j}>Presseschau: {text}</li>
                         ))}
                       </ul>
                     )}

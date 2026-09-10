@@ -8,6 +8,8 @@ from landtag_sim.engine import (
     CAPITAL_PER_TURN,
     ELECTION_CYCLE_LENGTH,
     advance_turn,
+    policy_is_unlocked,
+    project_election,
     resolve_dilemma,
 )
 from landtag_sim.models import (
@@ -19,20 +21,29 @@ from landtag_sim.models import (
     Policy,
     PolicyAlreadyActiveError,
     PolicyEffect,
+    PolicyLockedError,
     PolicyNotActiveError,
     PolicyRequiredByActivePolicyError,
+    ReportCondition,
+    ReportRule,
+    ScenarioGoal,
+    UnlockCondition,
     UnmetPrerequisiteError,
+    VoterGroup,
 )
 from landtag_sim.sample_data import (
     SAMPLE_DILEMMA_RULES,
     SAMPLE_EVENT_RULES,
+    SAMPLE_FACTIONS,
     SAMPLE_POLICIES,
+    SAMPLE_REPORT_RULES,
     SAMPLE_SITUATION_RULES,
     SAMPLE_VOTER_GROUPS,
     STARTING_STATISTICS,
     build_initial_state,
     jittered_starting_statistics,
 )
+from landtag_sim.events import passes_probability_gate
 from landtag_sim.vignettes import VIGNETTE_POOL, pick_vignette, with_vignette
 
 
@@ -866,3 +877,564 @@ def test_positive_situation_gruenes_wachstum():
     assert any(s.rule_key == "gruenes_wachstum" for s in result.state.active_situations)
     assert result.state.statistics["gdp_growth"] > state.statistics["gdp_growth"]
     assert result.state.statistics["co2_emissions"] < state.statistics["co2_emissions"]
+
+
+# --- B3: Zustandsgekoppelte Risiko-Events (probability-Gate) --------------
+
+
+def _crisis_event(key: str, probability: float, cooldown_turns: int = 0) -> EventRule:
+    """Ein Event, dessen Schwelle im Ausgangszustand (unemployment_rate 6.0)
+    immer erfuellt ist -- so isoliert der Test allein das probability-Gate."""
+    return EventRule(
+        key=key,
+        statistic_key="unemployment_rate",
+        operator=">",
+        threshold=0.0,
+        template_text="Testmeldung {value:.1f}",
+        cooldown_turns=cooldown_turns,
+        probability=probability,
+    )
+
+
+def test_probability_one_point_zero_behaves_exactly_like_before_b3():
+    """probability=1.0 (Default) darf das bisherige Verhalten nicht aendern:
+    bei erfuellter Schwelle feuert die Regel jede nicht-Cooldown-Runde."""
+    state = build_initial_state()
+    rule = _crisis_event("immer", probability=1.0, cooldown_turns=0)
+    fired = 0
+    for _ in range(10):
+        result = advance_turn(state, [], [rule])
+        state = result.state
+        fired += len(result.events)
+    assert fired == 10
+
+
+def test_probability_zero_never_fires_even_when_threshold_met():
+    state = build_initial_state()
+    rule = _crisis_event("nie", probability=0.0, cooldown_turns=0)
+    fired = 0
+    for _ in range(50):
+        result = advance_turn(state, [], [rule])
+        state = result.state
+        fired += len(result.events)
+    assert fired == 0
+
+
+def test_probability_between_zero_and_one_gates_some_but_not_all_turns():
+    state = build_initial_state()
+    rule = _crisis_event("manchmal", probability=0.5, cooldown_turns=0)
+    fired = 0
+    for _ in range(40):
+        result = advance_turn(state, [], [rule])
+        state = result.state
+        fired += len(result.events)
+    assert 0 < fired < 40
+
+
+def test_probability_gate_is_deterministic_for_same_seed():
+    """Gleicher Regel-Key + gleiche Runde -> gleiche Entscheidung, ueber
+    Prozesslaeufe hinweg (crc32 statt hash()/random)."""
+    for turn in range(1, 30):
+        assert passes_probability_gate("konjunkturdelle", turn, 0.4) is (
+            passes_probability_gate("konjunkturdelle", turn, 0.4)
+        )
+    # Verschiedene Regel-Keys wuerfeln unabhaengig (nicht alle Regeln feuern
+    # in derselben Runde gemeinsam).
+    assert any(
+        passes_probability_gate("regel_a", t, 0.5) != passes_probability_gate("regel_b", t, 0.5)
+        for t in range(1, 40)
+    )
+
+    def _fire_pattern():
+        state = build_initial_state()
+        rule = _crisis_event("wuerfel", probability=0.35, cooldown_turns=0)
+        pattern = []
+        for _ in range(25):
+            result = advance_turn(state, [], [rule])
+            state = result.state
+            pattern.append(bool(result.events))
+        return tuple(pattern)
+
+    assert _fire_pattern() == _fire_pattern()
+
+
+def test_dilemma_probability_gate_zero_never_fires():
+    state = build_initial_state()
+    state.statistics["unemployment_rate"] = 20.0  # weit ueber Schwelle
+    rule = DilemmaRule(
+        key="gedaempft",
+        statistic_key="unemployment_rate",
+        operator=">",
+        threshold=9.0,
+        prompt_text="Test?",
+        options=[
+            DilemmaOption(key="a", label="A"),
+            DilemmaOption(key="b", label="B"),
+        ],
+        cooldown_turns=0,
+        probability=0.0,
+    )
+    for _ in range(30):
+        result = advance_turn(state, [], [], dilemma_rules=[rule])
+        state = result.state
+        assert result.pending_dilemma is None
+
+
+def test_konjunkturdelle_vorstufe_makes_rezession_organically_reachable():
+    """E2E (BACKLOG.md B3): eine Policy bringt gdp_growth in eine nur LEICHT
+    negative Lage knapp ueber der rezession-Schwelle (0.0), aber nicht
+    darunter. OHNE die Vorstufe `konjunkturdelle` triggert `rezession` in
+    40 Runden nicht; MIT ihr wird die Schwelle organisch erreicht."""
+    mild = Policy(
+        key="wachstumsbremse",
+        name="Wachstumsbremse (Testfixture)",
+        effects=[PolicyEffect(statistic_key="gdp_growth", magnitude=-1.0, delay_turns=0, inertia=2)],
+    )
+    konjunkturdelle = [r for r in SAMPLE_EVENT_RULES if r.key == "konjunkturdelle"]
+    assert konjunkturdelle, "Vorstufe 'konjunkturdelle' fehlt in SAMPLE_EVENT_RULES"
+
+    def _rezession_reached(event_rules: list) -> bool:
+        state = build_initial_state()
+        result = advance_turn(
+            state, [mild], event_rules, newly_enacted_keys=["wachstumsbremse"],
+            dilemma_rules=SAMPLE_DILEMMA_RULES,
+        )
+        state = result.state
+        for _ in range(40):
+            if result.pending_dilemma is not None:
+                if result.pending_dilemma.rule_key == "rezession":
+                    return True
+                # anderes Dilemma aus dem Weg raeumen und weiterlaufen
+                other = next(r for r in SAMPLE_DILEMMA_RULES if r.key == result.pending_dilemma.rule_key)
+                result = resolve_dilemma(state, SAMPLE_DILEMMA_RULES, other.options[0].key)
+                state = result.state
+            result = advance_turn(state, [mild], event_rules, dilemma_rules=SAMPLE_DILEMMA_RULES)
+            state = result.state
+        return result.pending_dilemma is not None and result.pending_dilemma.rule_key == "rezession"
+
+    assert not _rezession_reached([]), "rezession sollte ohne die Vorstufe unerreichbar bleiben"
+    assert _rezession_reached(konjunkturdelle), "rezession sollte ueber die Vorstufe erreichbar sein"
+
+
+# --- B4: Narrative Konsequenz-Ebene ("Presseschau") ----------------------
+
+
+def _report(key, conditions, **kw):
+    kw.setdefault("template_text", "Meldung: Arbeitslosigkeit bei {unemployment_rate:.1f}%.")
+    return ReportRule(key=key, conditions=conditions, **kw)
+
+
+def test_report_fires_only_when_all_and_conditions_are_met():
+    state = build_initial_state()  # unemployment_rate 6.0, gdp_growth 1.2
+
+    partial = _report(
+        "partial",
+        [
+            ReportCondition("unemployment_rate", "<", 7.0),
+            ReportCondition("gdp_growth", ">", 5.0),  # nicht erfuellt
+        ],
+    )
+    assert advance_turn(state, [], [], report_rules=[partial]).reports == []
+
+    full = _report(
+        "full",
+        [
+            ReportCondition("unemployment_rate", "<", 7.0),
+            ReportCondition("gdp_growth", ">", 1.0),
+        ],
+    )
+    result = advance_turn(state, [], [], report_rules=[full])
+    assert len(result.reports) == 1
+    assert "6.0" in result.reports[0]
+
+
+def test_report_is_suppressed_in_a_turn_with_an_event():
+    state = build_initial_state()
+    state.statistics["unemployment_rate"] = 20.0
+    event = EventRule(
+        key="hohe_arbeitslosigkeit", statistic_key="unemployment_rate", operator=">", threshold=9.0,
+        template_text="Arbeitslosigkeit bei {value:.1f}%", cooldown_turns=3,
+    )
+    report = _report("immer", [ReportCondition("unemployment_rate", ">", 1.0)])
+    result = advance_turn(state, [], [event], report_rules=[report])
+    assert len(result.events) == 1
+    assert result.reports == []
+
+
+def test_report_is_suppressed_in_a_turn_with_a_dilemma():
+    state = build_initial_state()
+    state.statistics["unemployment_rate"] = 20.0
+    report = _report("immer", [ReportCondition("unemployment_rate", ">", 1.0)])
+    result = advance_turn(
+        state, [], [], dilemma_rules=SAMPLE_DILEMMA_RULES, report_rules=[report]
+    )
+    assert result.pending_dilemma is not None
+    assert result.reports == []
+
+
+def test_report_respects_its_cooldown():
+    state = build_initial_state()
+    rule = _report("mit_cooldown", [ReportCondition("unemployment_rate", ">", 0.0)], cooldown_turns=3)
+    fired_turns = []
+    for _ in range(8):
+        result = advance_turn(state, [], [], report_rules=[rule])
+        state = result.state
+        if result.reports:
+            fired_turns.append(state.turn)
+    # Feuert in Runde 1, danach zwei Runden Pause (Cooldown 3), dann wieder.
+    assert fired_turns == [1, 4, 7]
+
+
+def test_report_template_placeholders_are_filled_not_left_raw():
+    state = build_initial_state()
+    rule = _report(
+        "platzhalter",
+        [ReportCondition("unemployment_rate", ">", 0.0)],
+        template_text="Arbeitslosigkeit bei {unemployment_rate:.1f}, CO2 bei {co2_emissions:.0f}.",
+    )
+    text = advance_turn(state, [], [], report_rules=[rule]).reports[0]
+    assert "6.0" in text and "100" in text
+    assert "[FEHLT:" not in text
+
+
+def test_report_requires_policy_gate():
+    rule = _report(
+        "braucht_policy",
+        [ReportCondition("unemployment_rate", "<", 7.0)],
+        requires_policy="bildungsoffensive",
+    )
+    state = build_initial_state()
+    assert advance_turn(state, SAMPLE_POLICIES, [], report_rules=[rule]).reports == []
+
+    state = build_initial_state()
+    result = advance_turn(
+        state, SAMPLE_POLICIES, [], newly_enacted_keys=["bildungsoffensive"], report_rules=[rule]
+    )
+    assert len(result.reports) == 1
+
+
+def test_report_forbids_policy_gate():
+    rule = _report(
+        "verbietet_policy",
+        [ReportCondition("co2_emissions", ">", 50.0)],
+        forbids_policy="erneuerbare_foerderung",
+        template_text="Emissionen bei {co2_emissions:.0f}.",
+    )
+    state = build_initial_state()
+    assert len(advance_turn(state, SAMPLE_POLICIES, [], report_rules=[rule]).reports) == 1
+
+    state = build_initial_state()
+    result = advance_turn(
+        state, SAMPLE_POLICIES, [], newly_enacted_keys=["erneuerbare_foerderung"], report_rules=[rule]
+    )
+    assert result.reports == []
+
+
+def test_reports_never_change_statistics_or_satisfaction():
+    base = build_initial_state()
+    firing_rule = _report("immer", [ReportCondition("unemployment_rate", ">", 0.0)])
+
+    without = advance_turn(base, [], [])
+    with_report = advance_turn(base, [], [], report_rules=[firing_rule])
+
+    assert with_report.reports  # der Report ist tatsaechlich gefeuert
+    assert with_report.state.statistics == without.state.statistics
+    assert [g.satisfaction for g in with_report.state.voter_groups] == [
+        g.satisfaction for g in without.state.voter_groups
+    ]
+    assert with_report.attributions == without.attributions
+
+
+def test_report_gets_a_vignette_appended():
+    state = build_initial_state()
+    # conditions[0].statistic_key steuert die Vignetten-Kategorie (economy).
+    rule = _report("mit_vignette", [ReportCondition("unemployment_rate", ">", 0.0)])
+    text = advance_turn(state, [], [], report_rules=[rule]).reports[0]
+    assert any(vignette in text for vignette in VIGNETTE_POOL["economy"])
+
+
+def test_sample_report_rules_are_well_formed():
+    valid_ops = {">", "<", ">=", "<=", "==", "!="}
+    assert 5 <= len(SAMPLE_REPORT_RULES) <= 8
+    keys = [r.key for r in SAMPLE_REPORT_RULES]
+    assert len(keys) == len(set(keys)), "Report-Keys muessen eindeutig sein"
+    for rule in SAMPLE_REPORT_RULES:
+        assert rule.conditions, f"Report '{rule.key}' braucht mindestens eine Bedingung"
+        assert rule.template_text.strip()
+        for condition in rule.conditions:
+            assert condition.operator in valid_ops
+
+
+def test_sample_report_bildungsoffensive_wirkt_is_reachable_without_noise():
+    """E2E (BACKLOG.md B4): der policy-gekoppelte Report `bildungsoffensive_
+    wirkt` (education_spending > 50 UND unemployment_rate < 5.5, requires
+    bildungsoffensive) wird in einem ruhigen Lauf (ohne Events/Dilemmas)
+    tatsaechlich erreicht."""
+    state = build_initial_state()
+    result = advance_turn(
+        state, SAMPLE_POLICIES, [], newly_enacted_keys=["bildungsoffensive"],
+        report_rules=SAMPLE_REPORT_RULES,
+    )
+    state = result.state
+    seen = list(result.reports)
+    for _ in range(18):
+        result = advance_turn(state, SAMPLE_POLICIES, [], report_rules=SAMPLE_REPORT_RULES)
+        state = result.state
+        seen.extend(result.reports)
+    assert any("Berufsschulen" in text for text in seen), seen
+
+
+# --- B5: Wahlprognose mit sichtbarem Turnout/Apathie --------------------
+
+
+def _two_group_state(share_a, sat_a, momentum_a, share_b, sat_b, momentum_b):
+    state = build_initial_state()
+    state.voter_groups = [
+        VoterGroup(name="A", population_share=share_a, satisfaction=sat_a, satisfaction_momentum=momentum_a),
+        VoterGroup(name="B", population_share=share_b, satisfaction=sat_b, satisfaction_momentum=momentum_b),
+    ]
+    return state
+
+
+def test_projection_approval_equals_the_actual_election_result():
+    """BACKLOG.md B5 Test 1: die Prognose nennt exakt die Zahl, an der die
+    echte Wahl haengt (ungewichtet, ohne Turnout) -- keine Blackbox (L6)."""
+    state = build_initial_state()  # alle Gruppen satisfaction 50, momentum 0
+    projection = project_election(state)
+
+    state.turns_until_election = 1
+    result = advance_turn(state, [], [])
+    assert result.election_result is not None
+    assert projection.approval == pytest.approx(result.election_result.approval)
+    assert projection.would_win == result.election_result.won
+
+
+def test_projection_turnout_is_neutral_without_lukewarm_cooling_groups():
+    """Ohne "lauwarm UND abkuehlend"-Gruppe ist die turnout-gewichtete
+    Zustimmung identisch zur ungewichteten."""
+    state = _two_group_state(0.6, 62.0, 0.0, 0.4, 44.0, +0.5)  # stabil / steigend
+    projection = project_election(state)
+    assert projection.turnout_adjusted_approval == pytest.approx(projection.approval)
+    assert all(g.estimated_turnout == 1.0 for g in projection.groups)
+
+
+def test_full_turnout_for_stable_rising_angry_or_happy_groups():
+    # stabil (momentum 0), steigend, wuetend (unter Floor), zufrieden (ueber Ceiling)
+    state = build_initial_state()
+    state.voter_groups = [
+        VoterGroup(name="stabil", population_share=0.25, satisfaction=45.0, satisfaction_momentum=0.0),
+        VoterGroup(name="steigend", population_share=0.25, satisfaction=45.0, satisfaction_momentum=0.8),
+        VoterGroup(name="wuetend", population_share=0.25, satisfaction=20.0, satisfaction_momentum=-4.0),
+        VoterGroup(name="zufrieden", population_share=0.25, satisfaction=70.0, satisfaction_momentum=-4.0),
+    ]
+    turnout = {g.name: g.estimated_turnout for g in project_election(state).groups}
+    assert turnout == {"stabil": 1.0, "steigend": 1.0, "wuetend": 1.0, "zufrieden": 1.0}
+
+
+def test_turnout_drops_for_a_lukewarm_and_cooling_group_proportional_to_the_drop():
+    state = _two_group_state(0.5, 45.0, -3.0, 0.5, 45.0, -1.5)
+    by_name = {g.name: g for g in project_election(state).groups}
+    # A: volle Apathie (momentum <= -3) -> TURNOUT_MIN
+    assert by_name["A"].estimated_turnout == pytest.approx(0.6)
+    # B: halbe Apathie (momentum -1.5 = -TURNOUT_MOMENTUM_FULL/2)
+    assert by_name["B"].estimated_turnout == pytest.approx(0.8)
+
+
+def test_turnout_adjusted_approval_drops_when_a_large_supportive_group_cools():
+    """BACKLOG.md B5 Test 2: eine grosse, ueberdurchschnittlich zufriedene
+    Gruppe, deren Zufriedenheit FAELLT, senkt die turnout-gewichtete
+    Prognose staerker als dieselbe Gruppe mit STABILER Zufriedenheit --
+    lauwarme Anhaenger bleiben zu Hause (L6). Die ungewichtete Zahl bleibt
+    gleich; nur der Turnout bewegt sie."""
+    stable = _two_group_state(0.7, 52.0, 0.0, 0.3, 20.0, 0.0)
+    cooling = _two_group_state(0.7, 52.0, -3.0, 0.3, 20.0, 0.0)
+
+    p_stable = project_election(stable)
+    p_cooling = project_election(cooling)
+
+    # ungewichtet unveraendert (die Zufriedenheitswerte sind dieselben)
+    assert p_cooling.approval == pytest.approx(p_stable.approval)
+    # turnout-gewichtet: abkuehlende Basis -> niedrigere Prognose
+    assert p_cooling.turnout_adjusted_approval < p_stable.turnout_adjusted_approval
+    assert p_stable.turnout_adjusted_approval == pytest.approx(p_stable.approval)
+
+
+def test_projection_group_trend_labels():
+    state = _two_group_state(0.34, 50.0, 0.2, 0.33, 50.0, -0.2)
+    state.voter_groups.append(
+        VoterGroup(name="C", population_share=0.33, satisfaction=50.0, satisfaction_momentum=0.0)
+    )
+    trend = {g.name: g.trend for g in project_election(state).groups}
+    assert trend == {"A": "steigend", "B": "fallend", "C": "stabil"}
+
+
+def test_projection_would_win_follows_the_threshold():
+    losing = _two_group_state(0.5, 30.0, 0.0, 0.5, 30.0, 0.0)
+    assert project_election(losing).would_win is False
+    winning = _two_group_state(0.5, 70.0, 0.0, 0.5, 70.0, 0.0)
+    assert project_election(winning).would_win is True
+
+
+def test_projection_group_count_and_shares_match_the_state():
+    state = build_initial_state()
+    projection = project_election(state)
+    assert len(projection.groups) == len(state.voter_groups)
+    assert [g.name for g in projection.groups] == [g.name for g in state.voter_groups]
+
+
+# --- B7: Dynamische Policy-Freischaltung durch Sim-Zustand ---------------
+
+
+def test_policy_without_unlock_conditions_is_always_unlocked():
+    assert policy_is_unlocked(Policy(key="x", name="X"), {}) is True
+    assert policy_is_unlocked(Policy(key="x", name="X"), {"a": 1.0}) is True
+
+
+def test_policy_is_unlocked_requires_all_and_conditions():
+    p = Policy(
+        key="x",
+        name="X",
+        unlock_conditions=[
+            UnlockCondition("a", ">", 10.0),
+            UnlockCondition("b", "<", 5.0),
+        ],
+    )
+    assert policy_is_unlocked(p, {"a": 11.0, "b": 4.0}) is True
+    assert policy_is_unlocked(p, {"a": 11.0, "b": 6.0}) is False  # zweite verletzt
+    assert policy_is_unlocked(p, {"a": 9.0, "b": 4.0}) is False  # erste verletzt
+    assert policy_is_unlocked(p, {"a": 11.0}) is False  # Statistik fehlt
+
+
+def test_enacting_a_locked_policy_raises_and_does_not_mutate_state():
+    locked = Policy(
+        key="gesperrt",
+        name="Gesperrt",
+        unlock_conditions=[UnlockCondition("renewable_share", ">", 60.0)],
+    )
+    state = build_initial_state()  # renewable_share startet 35 -> gesperrt
+    budget_before, turn_before = state.budget, state.turn
+    with pytest.raises(PolicyLockedError) as exc:
+        advance_turn(state, [locked], [], newly_enacted_keys=["gesperrt"])
+    assert exc.value.policy_key == "gesperrt"
+    assert "renewable_share" in exc.value.unmet_condition
+    # State darf durch den abgelehnten Zug nicht veraendert worden sein.
+    assert state.turn == turn_before
+    assert state.budget == budget_before
+    assert state.active_policies == []
+
+
+def test_enacting_a_policy_once_its_unlock_condition_is_met_succeeds():
+    unlockable = Policy(
+        key="frei",
+        name="Frei",
+        unlock_conditions=[UnlockCondition("renewable_share", ">", 30.0)],
+    )
+    state = build_initial_state()  # renewable_share 35 > 30 -> frei
+    result = advance_turn(state, [unlockable], [], newly_enacted_keys=["frei"])
+    assert any(ep.policy_key == "frei" for ep in result.state.active_policies)
+
+
+def test_sample_unlock_policies_are_locked_at_start():
+    by_key = {p.key: p for p in SAMPLE_POLICIES}
+    for key in ("digitalpakt_schulen", "gruener_wasserstoff", "arbeitsmarkt_sofortprogramm"):
+        assert by_key[key].unlock_conditions, f"{key} sollte unlock_conditions haben"
+        assert not policy_is_unlocked(by_key[key], STARTING_STATISTICS), (
+            f"{key} sollte zu Spielbeginn gesperrt sein"
+        )
+
+
+def test_digitalpakt_becomes_enactable_after_bildungsoffensive_raises_education():
+    """E2E (BACKLOG.md B7): digitalpakt_schulen ist zu Beginn gesperrt
+    (education_spending > 50), wird aber ueber bildungsoffensive (hebt
+    education_spending 40 -> ~55) organisch freigeschaltet. Ohne Event-/
+    Dilemma-Regeln, damit reine Policy-Effekte laufen (kein Dilemma-Block)."""
+    state = build_initial_state()
+    state = advance_turn(state, SAMPLE_POLICIES, [], newly_enacted_keys=["bildungsoffensive"]).state
+
+    with pytest.raises(PolicyLockedError):  # noch gesperrt
+        advance_turn(state, SAMPLE_POLICIES, [], newly_enacted_keys=["digitalpakt_schulen"])
+
+    for _ in range(20):
+        if state.statistics["education_spending"] > 50.0:
+            break
+        state = advance_turn(state, SAMPLE_POLICIES, []).state
+    assert state.statistics["education_spending"] > 50.0
+
+    result = advance_turn(state, SAMPLE_POLICIES, [], newly_enacted_keys=["digitalpakt_schulen"])
+    assert any(ep.policy_key == "digitalpakt_schulen" for ep in result.state.active_policies)
+
+
+# --- B8: Fraktions-/Sitz-Datenmodell -------------------------------------
+
+
+def _advance_to_election(state, scenario_goals):
+    """Faehrt ohne Events/Dilemmas bis zum Wahl-Turn und gibt dessen
+    TurnResult zurueck (das die TermSummary inkl. Zielauswertung traegt)."""
+    result = None
+    for _ in range(ELECTION_CYCLE_LENGTH):
+        result = advance_turn(state, [], [], scenario_goals=scenario_goals)
+        state = result.state
+    return result
+
+
+def test_scenario_goals_evaluated_against_end_state_at_election():
+    """B9: Ziele werden am Legislaturende gegen den Endzustand geprueft und
+    landen in TermSummary.goals -- ein erfuelltes und ein verfehltes."""
+    goals = [
+        ScenarioGoal(key="leicht", description="Arbeitslosigkeit unter 10", metric="unemployment_rate", operator="<", threshold=10.0),
+        ScenarioGoal(key="unmoeglich", description="CO2 unter 0", metric="co2_emissions", operator="<", threshold=0.0),
+    ]
+    result = _advance_to_election(build_initial_state(), goals)
+    assert result.term_summary is not None
+    by_key = {g.key: g for g in result.term_summary.goals}
+    assert by_key["leicht"].met is True  # unemployment startet 6, ohne Policy unveraendert
+    assert by_key["unmoeglich"].met is False
+    assert by_key["leicht"].description == "Arbeitslosigkeit unter 10"
+
+
+def test_scenario_goal_special_metrics_budget_and_approval():
+    """B9: Sonderwerte "budget" und "approval" werden korrekt aufgeloest."""
+    goals = [
+        ScenarioGoal(key="haushalt", description="Budget positiv", metric="budget", operator=">", threshold=0.0),
+        ScenarioGoal(key="zustimmung", description="Zustimmung ueber 40", metric="approval", operator=">", threshold=40.0),
+    ]
+    result = _advance_to_election(build_initial_state(), goals)
+    by_key = {g.key: g for g in result.term_summary.goals}
+    # Budget startet 1000 und bleibt ohne Policy klar positiv; Zustimmung 50 > 40.
+    assert by_key["haushalt"].met is True
+    assert by_key["zustimmung"].met is True
+
+
+def test_scenario_goals_are_non_binding_and_default_empty():
+    """B9: verfehlte Ziele beenden die Partie NICHT (Sandbox bleibt spielbar),
+    und ohne uebergebene Ziele ist TermSummary.goals leer."""
+    result = _advance_to_election(build_initial_state(), [])
+    assert result.election_result is not None
+    assert result.election_result.won is True  # 50 >= 50, unabhaengig von Zielen
+    assert result.term_summary.goals == []
+
+
+def test_sample_scenario_goals_are_well_formed():
+    from landtag_sim.sample_data import SAMPLE_SCENARIO_GOALS
+
+    valid_ops = {">", "<", ">=", "<=", "==", "!="}
+    valid_metrics = set(STARTING_STATISTICS) | {"budget", "approval"}
+    assert len(SAMPLE_SCENARIO_GOALS) >= 2
+    keys = [g.key for g in SAMPLE_SCENARIO_GOALS]
+    assert len(keys) == len(set(keys))
+    for g in SAMPLE_SCENARIO_GOALS:
+        assert g.operator in valid_ops
+        assert g.metric in valid_metrics, g.metric
+        assert g.description.strip()
+
+
+def test_sample_factions_are_well_formed():
+    """B8: reine Datenpruefung (noch keine Mechanik) -- eindeutige Namen,
+    positive Sitze, Haltungen grob in [-1, 1]."""
+    assert len(SAMPLE_FACTIONS) >= 3
+    names = [f.name for f in SAMPLE_FACTIONS]
+    assert len(names) == len(set(names)), "Fraktionsnamen muessen eindeutig sein"
+    for f in SAMPLE_FACTIONS:
+        assert f.seats > 0
+        for stance in (f.stance_economy, f.stance_social, f.stance_environment):
+            assert -1.0 <= stance <= 1.0

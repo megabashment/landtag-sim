@@ -71,6 +71,23 @@ class PolicyRequiredByActivePolicyError(Exception):
         )
 
 
+class PolicyLockedError(Exception):
+    """B7 "Dynamische Policy-Freischaltung durch Sim-Zustand" (BACKLOG.md, L7):
+    eine Policy hat `unlock_conditions`, die im aktuellen Statistik-Zustand
+    (noch) nicht erfuellt sind -- sie ist gesperrt und kann nicht eingefuehrt
+    werden. Anders als requires (verlangt eine andere AKTIVE Policy) haengt
+    das Unlock an einem gesellschaftlichen Zustand (z.B. "renewable_share >
+    60"), den der Spieler ueber die Zeit herbeifuehrt -- eine Verschiebung
+    oeffnet neue Optionen."""
+
+    def __init__(self, policy_key: str, unmet_condition: str):
+        self.policy_key = policy_key
+        self.unmet_condition = unmet_condition
+        super().__init__(
+            f"Policy '{policy_key}' ist noch gesperrt -- Freischalt-Bedingung nicht erfuellt: {unmet_condition}"
+        )
+
+
 @dataclass
 class PolicyEffect:
     """Wirkung mit weichem Ein- statt hartem Ausblenden (Democracy-4-Vorbild:
@@ -87,6 +104,21 @@ class PolicyEffect:
     magnitude: float       # Zielwert, dem sich die Wirkung annaehert
     delay_turns: int = 0   # Runden bis die Wirkung ueberhaupt einsetzt
     inertia: int = 3       # Traegheit: groesser = langsamere Annaeherung
+
+
+@dataclass
+class UnlockCondition:
+    """B7 "Dynamische Policy-Freischaltung durch Sim-Zustand" (BACKLOG.md, L7):
+    eine Statistik-Schwelle, die erfuellt sein muss, damit eine Policy
+    ueberhaupt einfuehrbar wird. Gleiche Struktur wie ReportCondition, aber
+    bewusst ein eigener Typ -- semantisch etwas anderes (Freischaltung einer
+    Option statt Ausloesung einer Meldung), und Policy soll nicht vom
+    Report-Konzept abhaengen. Mehrere Conditions einer Policy sind
+    UND-verknuepft."""
+
+    statistic_key: str
+    operator: str  # einer von >, <, >=, <=, ==, !=
+    threshold: float
 
 
 @dataclass
@@ -112,6 +144,14 @@ class Policy:
     # Ministerien-Fortschritt) -- bewusst ohne grosse Tech-Baum-UI im MVP.
     requires: list[str] = field(default_factory=list)
 
+    # B7 "Dynamische Policy-Freischaltung durch Sim-Zustand" (BACKLOG.md, L7):
+    # Statistik-Schwellen (UND-verknuepft), die erfuellt sein muessen, damit
+    # diese Policy einfuehrbar wird. Ergaenzt `requires` (das eine andere
+    # aktive Policy verlangt) um eine ZUSTANDS-abhaengige Freischaltung: eine
+    # gesellschaftliche Verschiebung oeffnet neue Optionen, statt dass alles
+    # von Anfang an waehlbar ist. Leer = jederzeit verfuegbar (wie bisher).
+    unlock_conditions: list[UnlockCondition] = field(default_factory=list)
+
 
 @dataclass
 class VoterGroup:
@@ -132,6 +172,29 @@ class VoterGroup:
 
 
 @dataclass
+class Faction:
+    """B8 "Fraktions-/Sitz-Datenmodell (Grundstein Opposition/Parlament)"
+    (BACKLOG.md, L8): eine Fraktion im Landtag mit Sitzanzahl und grober
+    Haltung auf den drei Themenachsen. **Nur Struktur, noch keine Mechanik**:
+    im MVP rein zur Anzeige ("Sitzverteilung im Landtag"), es gibt KEINE
+    Koalitionslogik und KEINEN Mehrheitszwang fuer Policies. Das Datenmodell
+    wird bewusst jetzt schon richtig angelegt, damit ein spaeterer
+    Opposition/Parlament-Ausbau nicht rueckwirkend brechen muss (vgl.
+    architecture.md "nicht rueckwirkend aendern").
+
+    `stance_*` liegt grob in [-1, 1]: negativ = die Fraktion draengt auf
+    WENIGER staatliche Aktivitaet/Ausgaben auf dieser Achse, positiv = auf
+    mehr. Reiner Anzeigewert im MVP (keine Sim-Wirkung).
+    """
+
+    name: str
+    seats: int
+    stance_economy: float = 0.0
+    stance_social: float = 0.0
+    stance_environment: float = 0.0
+
+
+@dataclass
 class EventRule:
     key: str
     statistic_key: str
@@ -140,6 +203,17 @@ class EventRule:
     template_text: str
     cooldown_turns: int = 5
     effects: list[PolicyEffect] = field(default_factory=list)
+
+    # B3 "Zustandsgekoppelte Risiko-Events" (BACKLOG.md, L4/L9): bei erfuellter
+    # Schwelle feuert die Regel nur mit dieser Wahrscheinlichkeit pro Runde.
+    # 1.0 = immer (Verhalten wie vor B3), 0.0 = nie. Der "Wuerfel" ist
+    # deterministisch aus Regel-Key + Runde abgeleitet (zlib.crc32, siehe
+    # events.py::_passes_probability_gate) -- KEIN random, damit Balance-Runner
+    # und Tests reproduzierbar bleiben. Zweck: "Vorstufen"-Regeln mit
+    # erreichbarer Schwelle, die die Statistiken graduell Richtung einer sonst
+    # unerreichbaren Krisenschwelle druecken (z.B. konjunkturdelle ->
+    # rezession), ohne zu einem reinen Zufalls-Schock aus dem Nichts zu werden.
+    probability: float = 1.0
 
 
 @dataclass
@@ -173,6 +247,11 @@ class DilemmaRule:
     prompt_text: str
     options: list[DilemmaOption]
     cooldown_turns: int = 8
+
+    # B3 (BACKLOG.md): analog zu EventRule.probability -- bei erfuellter
+    # Schwelle feuert das Dilemma nur mit dieser Wahrscheinlichkeit pro Runde
+    # (deterministischer crc32-Wuerfel, siehe dilemmas.py).
+    probability: float = 1.0
 
 
 @dataclass
@@ -227,6 +306,45 @@ class ElectionResult:
 
 
 @dataclass
+class ElectionProjectionGroup:
+    """B5 "Wahlprognose mit sichtbarem Turnout/Apathie" (BACKLOG.md, F4/L6):
+    die pro Waehlergruppe angezeigte Zeile der Vorausschau -- macht sichtbar,
+    WER wackelt und warum (Zufriedenheit + Trend + geschaetzte Beteiligung).
+    """
+
+    name: str
+    population_share: float
+    satisfaction: float
+    satisfaction_momentum: float
+    estimated_turnout: float  # [0..1], 1.0 = volle Beteiligung
+    trend: str  # "steigend" | "stabil" | "fallend"
+
+
+@dataclass
+class ElectionProjection:
+    """B5 (BACKLOG.md, F4/L6): Vorausschau auf den Wahlausgang, damit die
+    letzten Runden vor der Wahl nicht als Blackbox enden.
+
+    `approval` ist die ENTSCHEIDUNGSRELEVANTE Zahl -- identisch zu dem, was
+    die echte Wahl in engine.advance_turn prueft (nach population_share
+    gewichtete Durchschnittszufriedenheit, OHNE Turnout). `would_win`
+    vergleicht sie mit `threshold`. Es gibt hier also KEINE
+    "90%-Prognose-dann-15%-Ergebnis"-Ueberraschung (L6): die Prognose nennt
+    exakt die Zahl, an der die Wahl haengt.
+
+    `turnout_adjusted_approval` ist dieselbe Groesse, aber mit modelliertem
+    Apathie-Effekt (lauwarme, abkuehlende Anhaenger bleiben zu Hause) --
+    reine Zusatzinformation/Fruehwarnung, sie entscheidet die Wahl NICHT.
+    """
+
+    approval: float
+    turnout_adjusted_approval: float
+    threshold: float
+    would_win: bool
+    groups: list[ElectionProjectionGroup]
+
+
+@dataclass
 class ActiveSituation:
     """B2 "Situations-Layer (mittlerer Zeithorizont, mit Hysterese)"
     (BACKLOG.md): eine momentan aktive Situation (ausgeloest, weil die
@@ -263,14 +381,81 @@ class SituationRule:
 
 
 @dataclass
+class ReportCondition:
+    """B4 "Narrative Konsequenz-Ebene" (BACKLOG.md): eine Teilbedingung einer
+    ReportRule. Mehrere Conditions einer Regel sind UND-verknuepft."""
+
+    statistic_key: str
+    operator: str  # einer von >, <, >=, <=, ==, !=
+    threshold: float
+
+
+@dataclass
+class ReportRule:
+    """B4 "Narrative Konsequenz-Ebene ('Presseschau')" (BACKLOG.md, L5): ein
+    rein TEXTLICHES Feedback, das die Kausalkette einer Entwicklung benennt
+    ("Firma X schliesst wegen deiner Arbeitsmarkt-Politik"), OHNE
+    Sim-Statistiken zu veraendern. Democracy 4s "Media Reports" -- laut
+    Community der wirkungsvollste Griff gegen "meine Entscheidungen sind
+    folgenlos".
+
+    Feuert nur, wenn ALLE `conditions` erfuellt sind (UND), optionale
+    `requires_policy`/`forbids_policy` zusaetzlich passen, und die Regel nicht
+    im Cooldown ist. Frequenz-Management (L5): advance_turn wertet Reports
+    NACH Events/Dilemmas aus und haengt hoechstens EINEN Report-Text an --
+    und auch nur, wenn dieselbe Runde weder ein Event noch ein Dilemma hatte.
+    """
+
+    key: str
+    conditions: list[ReportCondition]
+    template_text: str
+    cooldown_turns: int = 12
+    requires_policy: str | None = None
+    forbids_policy: str | None = None
+
+
+@dataclass
+class ScenarioGoal:
+    """B9 "Szenario-/Legislatur-Ziele" (BACKLOG.md, L1/L10; F1 = optionale,
+    unverbindliche Ziele): ein optionales Legislatur-Ziel, das am Ende einer
+    Amtszeit gegen den Endzustand geprueft wird.
+
+    Bewusst deklarativ (kein Lambda), damit es serialisierbar bleibt und wie
+    andere Szenario-Daten behandelt werden kann. `metric` ist entweder ein
+    Statistik-Key, oder die Sonderwerte "budget" bzw. "approval" (gewichtete
+    Zustimmung wie bei der Wahl). MVP: nur End-Zustands-Pruefung (kein
+    "ueber N Runden gehalten"), unverbindlich -- verfehlte Ziele beenden die
+    Partie NICHT (die Sandbox bleibt ohne Ziele spielbar, F1).
+    """
+
+    key: str
+    description: str
+    metric: str  # Statistik-Key, "budget" oder "approval"
+    operator: str  # einer von >, <, >=, <=, ==, !=
+    threshold: float
+
+
+@dataclass
+class GoalResult:
+    """B9: Auswertung eines ScenarioGoal am Legislaturende (Teil der
+    TermSummary). Reiner Lesewert -- `met` treibt keine Sim-Logik."""
+
+    key: str
+    description: str
+    met: bool
+
+
+@dataclass
 class TermSummary:
     """B1 "Legislatur-Bogen & Amtszeit-Debrief" (BACKLOG.md): Rueckblick auf
     eine gerade abgeschlossene Legislaturperiode, von advance_turn() genau am
     Wahl-Turn zusammen mit dem ElectionResult zurueckgegeben.
 
-    Reiner Lesewert -- keine Sim-Wirkung, kein Score-Gate. Harte Szenario-
-    Siegbedingungen ("CO2 unter X bis Legislaturende") sind bewusst NICHT
-    Teil von B1, sondern eine offene Design-Frage (BACKLOG.md F1/B9).
+    Reiner Lesewert -- keine Sim-Wirkung, kein Score-Gate. Optionale
+    Legislatur-Ziele (B9, `goals`) werden hier als erfuellt/verfehlt
+    ausgewiesen, sind aber ebenfalls UNVERBINDLICH: ein verfehltes Ziel
+    beendet die Partie nicht (F1-Entscheidung). Harte Siegbedingungen bleiben
+    bewusst ausserhalb des Scopes.
     """
 
     term_start_turn: int
@@ -299,6 +484,11 @@ class TermSummary:
     biggest_improvement: str | None
     biggest_decline: str | None
 
+    # B9 "Szenario-/Legislatur-Ziele" (BACKLOG.md): erfuellt/verfehlt je
+    # optionalem Ziel, am Legislaturende gegen den Endzustand geprueft.
+    # Leer, wenn keine Ziele definiert sind (reine Sandbox).
+    goals: list[GoalResult] = field(default_factory=list)
+
 
 @dataclass
 class TurnResult:
@@ -317,9 +507,25 @@ class TurnResult:
     # resolve_dilemma() aufrufen -- advance_turn() lehnt sonst ab.
     pending_dilemma: PendingDilemma | None = None
 
+    # B6 "Dilemma-/Event-Trigger-Telemetrie" (BACKLOG.md, L4): Schluessel der
+    # in dieser Runde tatsaechlich gefeuerten EventRule(s) -- parallel zu
+    # `events` (den gerenderten Texten). Aktuell feuert hoechstens ein Event
+    # pro Runde, daher hoechstens ein Eintrag. Dilemmas sind ohnehin ueber
+    # `pending_dilemma.rule_key` und Situations ueber
+    # `state.active_situations` strukturell auslesbar -- fuer Events fehlte
+    # bislang jede maschinenlesbare Quelle des Regel-Keys (nur der freie Text
+    # war da), was den Balance-Runner sonst zu einer Cooldown-Heuristik
+    # gezwungen haette. Reiner Lesewert, keine Sim-Wirkung.
+    triggered_event_keys: list[str] = field(default_factory=list)
+
     # B1 (BACKLOG.md): nur am Wahl-Turn gesetzt (gleichzeitig mit
     # election_result), sonst None.
     term_summary: TermSummary | None = None
+
+    # B4 "Narrative Konsequenz-Ebene" (BACKLOG.md): hoechstens ein narrativer
+    # Presseschau-Text pro Runde, und nur in Runden ohne Event/Dilemma
+    # (Frequenz-Management, L5). Reine Anzeige -- keine Sim-Wirkung.
+    reports: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -347,6 +553,11 @@ class SimState:
     # ein aktuell offenes, noch nicht aufgeloestes Dilemma (falls vorhanden).
     dilemma_cooldowns: dict[str, int] = field(default_factory=dict)
     pending_dilemma: PendingDilemma | None = None
+
+    # B4 "Narrative Konsequenz-Ebene" (BACKLOG.md): Cooldowns je ReportRule,
+    # analog zu event_cooldowns -- verhindert, dass derselbe Presseschau-Text
+    # in aufeinanderfolgenden Runden mehrfach erscheint.
+    report_cooldowns: dict[str, int] = field(default_factory=dict)
 
     # B2 "Situations-Layer (mittlerer Zeithorizont, mit Hysterese)" (BACKLOG.md):
     # liste von momentan aktiven Situations (ausgeloeste Zustaende mit Hysterese,
@@ -381,6 +592,7 @@ class SimState:
             turns_until_election=self.turns_until_election,
             dilemma_cooldowns=dict(self.dilemma_cooldowns),
             pending_dilemma=self.pending_dilemma,
+            report_cooldowns=dict(self.report_cooldowns),
             active_situations=list(self.active_situations),
             term_start_turn=self.term_start_turn,
             term_start_budget=self.term_start_budget,

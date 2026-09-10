@@ -40,18 +40,20 @@ Projektstruktur:
 ```
 landtag-sim/
 ├── backend/app/
-│   ├── models/        # AdminUnit, StatisticDefinition/-Value, VoterGroup, PolicyDefinition, EventDefinition, DilemmaDefinition, GameSession
+│   ├── models/        # AdminUnit, StatisticDefinition/-Value, VoterGroup, Faction, PolicyDefinition, EventDefinition, DilemmaDefinition, ActiveSituation, GameSession (Status/Role)
 │   ├── api/routes_game.py   # /health, /sessions, /sessions/{id}/preview, /sessions/{id}/advance, /sessions/{id}/resolve-dilemma
 │   └── sim_bridge.py   # Übersetzt DB <-> reine Sim-Engine (einziger Ort für diese Übersetzung)
 ├── sim/landtag_sim/
 │   ├── engine.py        # Kern: advance_turn() / resolve_dilemma() — reine Funktionen
-│   ├── models.py         # Dataclasses: Policy, PolicyEffect, VoterGroup, EventRule, DilemmaRule, DilemmaOption, PendingDilemma, SimState, TurnResult, EffectAttribution, ElectionResult
-│   ├── events.py         # Regelbasierte Trigger-Auswertung (passiv, fester Effekt)
+│   ├── models.py         # Dataclasses: Policy, PolicyEffect, UnlockCondition, VoterGroup, Faction, EventRule, DilemmaRule, DilemmaOption, PendingDilemma, SituationRule, ActiveSituation, ReportRule, ReportCondition, ScenarioGoal, GoalResult, SimState, TurnResult, EffectAttribution, ElectionResult, ElectionProjection, ElectionProjectionGroup, TermSummary
+│   ├── events.py         # Regelbasierte Trigger-Auswertung (passiv, fester Effekt); B3: passes_probability_gate()
 │   ├── dilemmas.py        # Regelbasierte Trigger-Auswertung mit echten Entscheidungsoptionen
+│   ├── situations.py      # B2: Situations-Layer mit Hysterese (Aktivierungs- != Deaktivierungs-Schwelle)
+│   ├── reports.py         # B4: narrative Presseschau-Meldungen (UND-Bedingungen, kein Sim-Effekt)
 │   ├── templates.py      # Regex-basiertes Text-Rendering (kein LLM)
 │   ├── vignettes.py       # P2: deterministische Namens-Vignetten (Text-Pool, zlib.crc32-Auswahl)
-│   ├── sample_data.py    # SAMPLE_POLICIES, SAMPLE_EVENT_RULES, SAMPLE_DILEMMA_RULES, SAMPLE_VOTER_GROUPS, STARTING_STATISTICS, jittered_starting_statistics()
-│   └── tools/balance_runner.py  # Headless Szenario-Tester über alle (voraussetzungs-gültigen) Policy-Kombinationen + Dominante-Strategie-Check
+│   ├── sample_data.py    # SAMPLE_POLICIES, SAMPLE_EVENT_RULES, SAMPLE_DILEMMA_RULES, SAMPLE_SITUATION_RULES, SAMPLE_REPORT_RULES, SAMPLE_SCENARIO_GOALS, SAMPLE_VOTER_GROUPS, STARTING_STATISTICS, jittered_starting_statistics()
+│   └── tools/balance_runner.py  # Headless Szenario-Tester über alle (voraussetzungs-gültigen) Policy-Kombinationen + Dominante-Strategie-Check + B6-Trigger-Telemetrie (--seeds)
 ├── frontend/src/App.jsx  # Einzelnes Dashboard, Policy-Katalog per GET /policies (api.listPolicies)
 ├── data/                 # Datenquellen-Doku (Landesamt für Statistik Niedersachsen statt Weltbank/V-Dem, siehe data/README.md)
 └── docs/                 # architecture.md (Game-Director-Review), game-design-roadmap.md (Senior-Game-Designer-Review, 10 gewichtete Vorschläge)
@@ -113,6 +115,38 @@ landtag-sim/
 - **Event-System**: regelbasierte Trigger (`EventRule`), bei mehreren
   gleichzeitig eligible Events feuert nur das mit der höchsten Severity pro
   Runde (kein Event-Spam).
+- **Zustandsgekoppelte Risiko-Events** (B3, `EventRule.probability` /
+  `DilemmaRule.probability`, Default `1.0`): eine Regel mit erfüllter
+  Schwelle feuert zusätzlich nur mit dieser Wahrscheinlichkeit pro Runde.
+  Der "Würfel" ist deterministisch (`events.py::passes_probability_gate`,
+  `zlib.crc32(f"{rule_key}:{turn}")` normiert auf `[0,1)` — **kein
+  `random`**, damit Balance-Runner/Tests reproduzierbar bleiben; `dilemmas.py`
+  importiert dieselbe Funktion). Zweck: "Vorstufen"-Regeln mit erreichbarer
+  Schwelle, die die Statistiken graduell Richtung einer sonst unerreichbaren
+  Krisenschwelle drücken, ohne zu einem reinen Zufalls-Schock zu werden (L9).
+  Startdatensatz: `konjunkturdelle` (`gdp_growth < 0.5`, `probability=0.4`)
+  drückt `gdp_growth` weiter — macht `rezession` aus leicht negativer Lage
+  und (via Situation `abwanderung`) `arbeitsmarktkrise` organisch erreichbar.
+  Persistenz ohne Schema-Migration: `probability` steckt im
+  `trigger_condition`-JSON (`seed.py`), `sim_bridge.py` liest
+  `cond.get("probability", 1.0)`.
+- **Narrative Konsequenz-Ebene / "Presseschau"** (B4, `sim/landtag_sim/
+  reports.py`, `ReportRule`/`ReportCondition`): rein textliche
+  Konsequenz-Meldungen ("Werksschliessung wegen deiner Wirtschaftspolitik"),
+  die **keine** Sim-Statistik verändern (kein Effekt, keine Attribution,
+  keine Zufriedenheitsreaktion). Eine Regel feuert, wenn **alle**
+  `conditions` (UND) erfüllt sind, optionales `requires_policy`/
+  `forbids_policy` passt und kein Cooldown läuft. `advance_turn` wertet sie
+  in Abschnitt "2c" aus — **nur in Runden ohne Event und ohne Dilemma**
+  (Frequenz-Management, L5) — und hängt höchstens **einen** Text an
+  `TurnResult.reports` (mit Namens-Vignette, Kategorie aus `conditions[0].
+  statistic_key`). Auswahl bei mehreren eligiblen Regeln: deterministisch
+  nach `rule.key`. Startdatensatz: `SAMPLE_REPORT_RULES` (7 Regeln, 4
+  policy-gekoppelt). Backend: `AdvanceTurnResponse.reports`;
+  `sim_bridge.load_report_rules()` liefert die Regeln **ohne DB** (reiner
+  statischer Content — bewusste Asymmetrie zu Policies/Events/Dilemmas).
+  Frontend: eigenes "Presseschau"-Panel + Verlaufs-Zeilen; Fast-Forward
+  stoppt auch bei einem Report.
 - **Effekt-Attribution** (`EffectAttribution`): jeder Statistik-Delta trägt
   seine Quelle (Policy-Key oder `event:<key>`) — Backend/Frontend können so
   erklären, WARUM sich eine Zahl geändert hat.
@@ -122,6 +156,21 @@ landtag-sim/
   geprüft. Verloren → `SessionStatus.LOST`, Partie endet (`/advance` liefert
   danach HTTP 400). Gewonnen → Session bleibt `ACTIVE`, nächster Zyklus
   beginnt (Wiederwahl = Weiterspielen, kein Spielende).
+- **Wahlprognose / Turnout-Apathie** (B5, `engine.py::project_election`):
+  Vorausschau auf den Wahlausgang. `ElectionProjection.approval` ist
+  **exakt** `_weighted_approval` — die Zahl, an der die echte Wahl hängt
+  (keine Blackbox, L6). Zusätzlich `turnout_adjusted_approval`: legt ein
+  Apathie-Modell an (`_estimated_turnout`, aus `satisfaction` +
+  `satisfaction_momentum` **abgeleitet**, kein neues Feld — F4). Reduziert
+  wird nur für "lauwarm UND abkühlend" (`satisfaction` in [30, 55] und
+  `momentum < 0` → runter bis `TURNOUT_MIN = 0.6`); wütende Gegner (< 30)
+  und Zufriedene (> 55) stimmen voll ab. **Die echte Wahl in `advance_turn`
+  nutzt Turnout NICHT** (bewusst — kein Rebalancing nötig); die
+  turnout-Zahl ist reine Frühwarnung. Backend liefert
+  `SessionStateResponse.election_projection` nur bei `status == ACTIVE` und
+  `turns_until_election <= 5` (`ELECTION_PROJECTION_WINDOW`). Frontend:
+  "Wenn heute Wahl wäre"-Panel mit Zeile pro Gruppe (Zufriedenheit,
+  Trendpfeil, Beteiligung%).
 - **Effekt-Vorschau**: `POST /sessions/{id}/preview` simuliert `advance_turn`
   mit gewählten Policies, verwirft das Ergebnis (kein Persistieren). Liefert
   grobe Richtungs-/Größenklassen (schwach/mittel/stark) statt exakter
@@ -130,6 +179,23 @@ landtag-sim/
   eingeführt werden, wenn ihre Voraussetzungen bereits aktiv sind (oder in
   derselben Runde mitgewählt werden) — sonst `UnmetPrerequisiteError`.
   Beispiel: `steuersenkung_mittelstand` braucht `bildungsoffensive`.
+- **Dynamische Policy-Freischaltung** (B7, `Policy.unlock_conditions:
+  list[UnlockCondition]`): eine Policy wird erst einführbar, wenn **alle**
+  ihre Statistik-Schwellen (UND) im aktuellen Zustand erfüllt sind — anders
+  als `requires` (das eine andere aktive **Policy** verlangt) hängt das an
+  einem **gesellschaftlichen Zustand**, den der Spieler über die Zeit
+  herbeiführt. Engine erzwingt via `engine.py::_validate_unlocks` →
+  `PolicyLockedError` (gegen die Statistiken **vor** der Runde, vor jeder
+  Mutation). Geteilte Logik: `engine.py::policy_is_unlocked(policy,
+  statistics)` (auch Backend/Frontend/Tests nutzen sie). Beispiele:
+  `digitalpakt_schulen` (`education_spending > 50`), `gruener_wasserstoff`
+  (`renewable_share > 42`), `arbeitsmarkt_sofortprogramm`
+  (`unemployment_rate > 7`). Backend: `PolicyLockedError` → HTTP 400
+  (`/advance`) bzw. `feasible=False` (`/preview`); `PolicyOut.
+  unlock_conditions` wird ausgeliefert (nicht rausgefiltert), das Frontend
+  graut gesperrte Policies aus ("Wird verfügbar, wenn …"). Balance-Runner:
+  `all_policy_combinations` lässt unlock-gated Policies weg (nur
+  turn-0-enactbare werden kombiniert).
 - **Dilemma-Events**: wie Events regelbasiert ausgelöst (`dilemmas.py`,
   gleicher Trigger-/Cooldown-/Schweregrad-Mechanismus), aber mit echten
   Entscheidungsoptionen statt festem Effekt. Ein ausgelöstes Dilemma ist der
@@ -160,6 +226,46 @@ landtag-sim/
   Fand ursprünglich `bildungsoffensive` bei 100% (siehe "Nach-P2-
   Nachschärfung" unten) — mit dem aktuellen 4-Policy-Katalog liefert der
   Runner "Keine vermutlich dominante Policy gefunden."
+- **Trigger-Telemetrie** (B6, `balance_runner.py::collect_trigger_counts` /
+  `classify_triggers`, CLI `--seeds N`): zählt über alle
+  voraussetzungs-gültigen Policy-Kombinationen × N gejitterte
+  Startbedingungen, wie oft jede Event-/Dilemma-/Situation-Regel **organisch**
+  triggert, und markiert `NIE_AUSGELOEST` bzw. `UEBERREPRAESENTIERT`
+  (>5× Erwartungswert bei Gleichverteilung, Democracy-4-Heuristik). Zählt
+  **exakt** über `TurnResult.triggered_event_keys` (B6-Feld),
+  `pending_dilemma.rule_key` und den Zuwachs von `active_situations` — keine
+  Cooldown-Heuristik. Nutzt den **vollen** Regelsatz inkl. Situations (anders
+  als `run_scenario`, das bewusst ohne Situations läuft). Der
+  B3-`probability`-Würfel ist seed-unabhängig — Seeds streuen die Startwerte,
+  nicht den Würfel. Aktueller Befund: `niedrige_bildungsausgaben` (Event) und
+  `gruenes_wachstum` (Situation) triggern nie; `arbeitsmarktkrise` ist dank
+  B3 jetzt erreichbar.
+
+- **Fraktions-/Sitz-Datenmodell** (B8, `Faction` + `GameSession.role`/
+  `SessionRole`): **nur Struktur, keine Mechanik** — eine Sitzverteilung im
+  Landtag (`SAMPLE_FACTIONS`, 5 generische Fraktionen) pro Session, rein zur
+  Anzeige ("Sitzverteilung im Landtag"). KEINE Koalitionslogik, KEIN
+  Mehrheitszwang. Der Spieler ist immer `GOVERNMENT`; `OPPOSITION` existiert
+  als Datenwert für eine spätere "nach Wahlniederlage in die Opposition statt
+  Game Over"-Mechanik, erreichbar nur hinter `routes_game.
+  DEMOTE_TO_OPPOSITION_ON_LOSS` (Default False). **Factions umgehen bewusst
+  `sim_bridge`/`SimState`** (keine Sim-Wirkung, würden sonst jeden `clone()`
+  belasten) — das Backend liest sie direkt aus der `faction`-Tabelle;
+  API: `SessionStateResponse.role` + `factions` (`FactionOut`).
+- **Szenario-/Legislatur-Ziele** (B9, `ScenarioGoal` + `GoalResult`,
+  BACKLOG.md F1): **optionale, unverbindliche** End-of-Term-Prädikate.
+  `ScenarioGoal` definiert key, description, metric (Statistik-Key oder
+  "budget"/"approval"), operator, target_value. Am Wahl-Turn wertet
+  `engine.py::_evaluate_goals()` jedes Ziel gegen den aktuellen Zustand
+  aus (nutzt `_UNLOCK_OPERATORS` aus B7); Ergebnisse landen als
+  `GoalResult` (key, description, met: bool) in `TermSummary.goals`.
+  Verfehlte Ziele beenden die Partie **nicht** — Sieg/Niederlage hängt
+  ausschließlich an der Wahl. `SAMPLE_SCENARIO_GOALS`: 4 Beispielziele
+  (klimaziel, arbeitsmarkt, solide_finanzen, rueckhalt). Backend:
+  `sim_bridge.load_scenario_goals()` (ohne DB, statischer Content),
+  `GoalResultOut` in `TermSummaryOut`, `advance_turn()` nimmt
+  `scenario_goals`-Parameter. Frontend: ✓/✗-Liste im
+  Amtszeit-Bilanz-Panel.
 
 - **Amtszeit-Bilanz / Legislatur-Bogen** (`TermSummary`, BACKLOG.md B1):
   `SimState` führt pro Legislaturperiode einen Schnappschuss mit
@@ -176,8 +282,8 @@ landtag-sim/
   term_summary` (`TermSummaryOut`). Frontend: "Amtszeit-Bilanz"-Panel.
 
 `advance_turn()` gibt ein `TurnResult`-Dataclass zurück (`state`, `events`,
-`attributions`, `election_result`, `pending_dilemma`, `term_summary`),
-**kein Tuple** — bei
+`attributions`, `election_result`, `pending_dilemma`, `term_summary`,
+`reports`, `triggered_event_keys`), **kein Tuple** — bei
 Änderungen an der Rückgabe immer alle Aufrufer prüfen:
 `sim/tests/test_engine.py`, `backend/app/api/routes_game.py`,
 `sim/landtag_sim/tools/balance_runner.py`.
@@ -285,6 +391,108 @@ curl-E2E-Check konnten in der Umsetzungs-Session mangels laufendem lokalen
 Postgres nicht ausgeführt werden — beim nächsten DB-Lauf nachholen (der
 Verifikations-Workflow deckt sie ab).
 
+M2-Backlog, B3 "Zustandsgekoppelte Risiko-Events" (2026-09-09, BACKLOG.md):
+klärt Design-Frage F3 (Entscheidung: zustandsgekoppelte Risiko-Events, nicht
+freie Zufalls-Schocks). `EventRule.probability` / `DilemmaRule.probability`
+(Default `1.0`) plus deterministisches Gate
+`events.py::passes_probability_gate` und die Vorstufe `konjunkturdelle` in
+`sample_data.py` — Details im Kernmechaniken-Abschnitt "Zustandsgekoppelte
+Risiko-Events" und in BACKLOG.md B3. sim-Tests laufen (69 grün, davon 6
+neu); `backend/tests/test_risk_events.py` (3 neu, DB-Round-Trip des
+`probability`-Felds) konnte mangels lokalem Postgres nicht ausgeführt werden
+— beim nächsten DB-Lauf nachholen. Balance-Runner unverändert ("Keine
+vermutlich dominante Policy", 12/24 Szenarien auffällig — identisch zum
+Stand vor B3).
+
+M2-Backlog, B4 "Narrative Konsequenz-Ebene ('Presseschau')" (2026-09-09,
+BACKLOG.md): klärt Design-Frage F5 (Entscheidung: eigenes Modul `reports.py`
+mit `ReportRule`, kein `silent`-Flag an `EventRule`). Rein textliche
+Konsequenz-Meldungen ohne Sim-Wirkung, max. eine pro Runde und nur in
+Runden ohne Event/Dilemma — Details im Kernmechaniken-Abschnitt "Narrative
+Konsequenz-Ebene / 'Presseschau'" und in BACKLOG.md B4. Sim (`reports.py`,
+`engine.py` Abschnitt 2c, `SAMPLE_REPORT_RULES` mit 7 Regeln), Backend
+(`AdvanceTurnResponse.reports`, `sim_bridge.load_report_rules()` bewusst
+ohne DB) und Frontend ("Presseschau"-Panel + Verlaufs-Zeilen, Fast-Forward
+stoppt auch bei Reports) sind alle angebunden. sim-Tests 80 grün (11 neu);
+`frontend`: `npm run build` + `npm run lint` grün (die eine oxlint-Warnung
+bei `App.jsx:104` ist vorbestehend, nicht aus B4); `backend/tests/
+test_reports.py` (3 neu) mangels lokalem Postgres nicht ausgeführt — beim
+nächsten DB-Lauf nachholen. Balance-Runner unverändert (Reports haben keine
+Sim-Wirkung).
+
+M2-Backlog, B5 "Wahlprognose mit sichtbarem Turnout/Apathie" (2026-09-09,
+BACKLOG.md): klärt F4 (Turnout abgeleitet aus `satisfaction` +
+`satisfaction_momentum`, kein neues Feld). Neue Funktion
+`engine.py::project_election(state) -> ElectionProjection` — Details im
+Kernmechaniken-Abschnitt "Wahlprognose / Turnout-Apathie". Bewusste
+Abweichung vom Backlog-Anker: `_weighted_approval` bleibt unangetastet, die
+echte Wahl rechnet weiter ohne Turnout (kein Rebalancing von
+B1–B4/Balance-Runner). Backend: `SessionStateResponse.election_projection`
+(nur `status == ACTIVE` und `turns_until_election <= 5`). Frontend:
+"Wenn heute Wahl wäre"-Panel. sim-Tests 88 grün (8 neu); `frontend`:
+build + lint grün (dieselbe vorbestehende oxlint-Warnung);
+`backend/tests/test_election_projection.py` (2 neu) mangels lokalem Postgres
+nicht ausgeführt.
+
+M3-Backlog, B7 "Dynamische Policy-Freischaltung durch Sim-Zustand"
+(2026-09-10, BACKLOG.md): erster M3-Punkt. `Policy.unlock_conditions`
+(`UnlockCondition`) + `engine.py::policy_is_unlocked` / `_validate_unlocks`
+/ `PolicyLockedError` + drei gesperrte Beispiel-Policies — Details im
+Kernmechaniken-Abschnitt "Dynamische Policy-Freischaltung" und in
+BACKLOG.md B7. **Schema-Änderung**: neue JSON-Spalte
+`policy_definition.unlock_conditions` — beim nächsten lokalen Postgres-Lauf
+DB-Reset nötig (nicht per `create_all` nachrüstbar; siehe
+Verifikations-Workflow / conftest droppt+erstellt ohnehin neu). sim-Tests
+102 grün (8 neu: 6 engine + 2 balance_runner); Frontend build+lint grün;
+`backend/tests/test_unlock.py` (4 neu) mangels lokalem Postgres nicht
+ausgeführt.
+
+M3-Backlog, B8 "Fraktions-/Sitz-Datenmodell (Grundstein Opposition/
+Parlament)" (2026-09-10, BACKLOG.md): reine Struktur, keine Mechanik —
+`Faction`-Modell + `SessionRole` + Sitzverteilungs-Anzeige. Details im
+Kernmechaniken-Abschnitt "Fraktions-/Sitz-Datenmodell" und in BACKLOG.md B8.
+**Schema-Änderung**: neue Tabelle `faction` + `game_session.role`-Spalte
+(DB-Reset nötig; conftest baut Test-DB neu). Bewusste Abweichung: Factions
+umgehen `sim_bridge`/`SimState` (keine Sim-Wirkung). Opposition-nach-
+Niederlage nur hinter Flag `DEMOTE_TO_OPPOSITION_ON_LOSS` (Default aus). sim
+103 / backend 53 grün (1 sim + 3 backend neu), Frontend build+lint grün.
+
+M3-Backlog, B9 "Szenario-/Legislatur-Ziele" (2026-09-10, BACKLOG.md):
+klärt F1 (Entscheidung: optionale, unverbindliche Ziele — kein Score-Gate,
+keine Siegbedingung). `ScenarioGoal` + `GoalResult` in models.py,
+`_goal_metric_value()` / `_evaluate_goals()` in engine.py (nutzt
+`_UNLOCK_OPERATORS` aus B7), `SAMPLE_SCENARIO_GOALS` (4 Ziele) in
+sample_data.py, `load_scenario_goals()` in sim_bridge.py (ohne DB),
+`GoalResultOut` in schemas, ✓/✗-Liste im Frontend-Bilanz-Panel.
+`advance_turn()` nimmt jetzt `scenario_goals`-Parameter. sim 107 / backend
+55 grün (4 sim + 2 backend neu), Frontend build+lint grün.
+
+DB-Lauf 2026-09-10 (Docker Desktop jetzt auf Christians Windows-Rechner
+installiert): erstmals die komplette Backend-Testsuite lokal ausgeführt und
+damit den über B1/B3/B4/B5/B7 aufgelaufenen "beim nächsten DB-Lauf
+nachholen"-Rückstand abgearbeitet — **50 Backend-Tests grün** gegen die
+dockerisierte Postgres-16 (`docker compose up -d db`, siehe
+Verifikations-Workflow). Zwei dabei aufgedeckte veraltete Test-Annahmen
+korrigiert (Produkt war korrekt): `test_list_policies_returns_full_sample_
+catalog` erwartete nur 5 statt 8 Policies (B7 fügte 3 hinzu);
+`test_term_summary_reports_policy_driven_statistic_changes` fuhr 15 Runden
+ohne Dilemma-Auflösung, obwohl B3 (konjunkturdelle→rezession) jetzt
+organisch ein Dilemma auslöst — Loop löst Dilemmas nun mit Option 0 auf und
+prüft nur noch dilemma-unabhängige Invarianten. Die B7-Schemaänderung
+(`unlock_conditions`-Spalte) war unkritisch, da `conftest.py` die Test-DB
+per drop_all/create_all frisch aufbaut.
+
+M2-Backlog, B6 "Dilemma-/Event-Trigger-Telemetrie im Balance-Runner"
+(2026-09-10, BACKLOG.md): klärt F6 (Balance-Runner-Zählung über Szenarien ×
+Seeds reicht als Proxy). Kleiner Engine-Zusatz `TurnResult.
+triggered_event_keys` (maschinenlesbarer Regel-Key des gefeuerten Events),
+dann `collect_trigger_counts` / `classify_triggers` / CLI `--seeds N` im
+Balance-Runner — Details im Kernmechaniken-Abschnitt "Trigger-Telemetrie"
+und in BACKLOG.md B6. Reine Dev-Tooling-/Sim-Änderung (Backend/Frontend
+unberührt). Befund: `niedrige_bildungsausgaben` + `gruenes_wachstum`
+triggern nie, `arbeitsmarktkrise` ist dank B3 erreichbar. sim-Tests 94 grün
+(6 neu in `test_balance_runner.py`).
+
 Policy-Repeal-Mechanismus (Auftrag "Mach mit dem Policy-Repeal-Mechanismus
 weiter, schau vorher in Democracy 4 Mechaniken", 2026-09-09): vor der
 Umsetzung wurden gezielt Democracy 4s Repeal-/Budget-/Einnahmen-Mechaniken
@@ -339,15 +547,36 @@ Bekannte, bewusst offene Vereinfachungen:
   (siehe dort: Einführung/Cancel/Regler-Anpassung sind drei separate
   Kostenfälle). Für die MVP-Policy-Anzahl (kein Regler-System) reicht die
   Vereinfachung.
-- Die meisten ursprünglichen Event-/Dilemma-Schwellenwerte
+- ~~Die meisten ursprünglichen Event-/Dilemma-Schwellenwerte
   (`arbeitsmarktkrise` u.a.) bleiben im organischen Spielverlauf praktisch
-  unerreichbar, weil nichts in den Beispiel-Policies die Statistiken so
-  stark in Richtung Krise treibt (siehe `mistakes.md`). Bewusst NICHT
-  breit behoben (bräuchte z.B. zufällige Wirtschafts-Schock-Events) — bei
-  den zwei neuen Dilemmas oben wurde das aber bei der Trigger-Wahl
-  berücksichtigt.
+  unerreichbar~~ — **mit B3 (2026-09-09) adressiert**: die Vorstufe
+  `konjunkturdelle` (`EventRule.probability`, siehe Kernmechaniken
+  "Zustandsgekoppelte Risiko-Events") drückt `gdp_growth` graduell nach
+  unten und macht `rezession` direkt sowie `arbeitsmarktkrise` (über die
+  Situation `abwanderung`) erreichbar. Noch offen: weitere Vorstufen für
+  Statistiken ohne solche Kette; und die Kette zu `arbeitsmarktkrise` ist
+  lang (mehrere Legislaturperioden anhaltend schlechte Wirtschaft nötig).
 
 ## Verifikations-Workflow (bei jeder Engine-/Backend-Änderung)
+
+**Lokale DB unter Windows via Docker Desktop (seit 2026-09-10 installiert) —
+der bequemste Weg für den Backend-Testlauf:**
+
+```bash
+# Postgres 16 hochfahren (nur der db-Service; der backend-Service ist optional):
+docker compose -f "C:/Users/chris/Claude Code Projekte/landtag-sim/docker-compose.yml" up -d db
+# Warten bis bereit, dann die EIGENE Test-DB anlegen (einmalig; die Rolle
+# `landtag` ist hier Bootstrap-Superuser und besitzt beide DBs -> der
+# Postgres-15-Schema-Rechte-Fix von unten ist im Container NICHT nötig):
+docker exec landtag-sim-db-1 psql -U landtag -d postgres -c "CREATE DATABASE landtag_sim_test OWNER landtag;"
+# Backend-Tests (conftest.py biegt DATABASE_URL auf landtag_sim_test und baut
+# das Schema per drop_all/create_all frisch auf -> Schemaänderungen wie B7s
+# unlock_conditions-Spalte greifen automatisch, kein manueller Reset nötig):
+cd backend && python -m pytest tests/ -q
+```
+
+Der folgende Linux-/`sudo -u postgres`-Weg ist die Alternative ohne Docker
+(z.B. in einer Cloud-Sandbox mit lokalem Postgres):
 
 ```bash
 cd sim && pip install -e . --break-system-packages -q && python -m pytest tests/ -q

@@ -62,6 +62,21 @@
   border-color: #f0d98c;
 }
 
+/* B4 "Narrative Konsequenz-Ebene": Presseschau -- bewusst zurueckhaltender
+   als das Ereignis-Panel (grau, kein Alarm-Gelb), weil Reports narrative
+   Begleitung sind und nicht die "Headline" der Runde. */
+.reports {
+  margin-top: 1rem;
+  background: #f4f4f2;
+  border-color: #cfcfc7;
+  font-style: italic;
+}
+
+.history-reports li {
+  font-style: italic;
+  color: #555;
+}
+
 .error {
   color: #b3261e;
   font-weight: 600;
@@ -118,6 +133,83 @@
   margin: 1rem 0;
   background: #fdf1e6;
   border-color: #e8b980;
+}
+
+/* B5 "Wahlprognose mit sichtbarem Turnout/Apathie" (BACKLOG.md) */
+.election-projection {
+  margin: 1rem 0;
+}
+
+.election-projection.won {
+  background: #e8f7ec;
+  border-color: #8fd6a4;
+}
+
+.election-projection.lost {
+  background: #fceceb;
+  border-color: #e0a49e;
+}
+
+.projection-groups {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 0;
+}
+
+.projection-groups li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.2rem 0;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  font-size: 0.9rem;
+}
+
+.projection-name {
+  font-weight: 600;
+}
+
+.projection-turnout {
+  color: #555;
+  white-space: nowrap;
+}
+
+/* B9 "Szenario-/Legislatur-Ziele": erfuellt/verfehlt in der Amtszeit-Bilanz */
+.term-goals {
+  list-style: none;
+  padding: 0;
+  margin: 0.25rem 0 0;
+}
+
+.term-goals li {
+  padding: 0.15rem 0;
+}
+
+.goal-met {
+  color: #1e7a34;
+}
+
+.goal-missed {
+  color: #b3261e;
+}
+
+/* B8 "Fraktions-/Sitz-Datenmodell": Sitzverteilung im Landtag (Anzeige) */
+.faction-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.faction-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.2rem 0;
+}
+
+.faction-seats {
+  color: #555;
+  white-space: nowrap;
 }
 
 /* B1 "Legislatur-Bogen & Amtszeit-Debrief" (BACKLOG.md) */

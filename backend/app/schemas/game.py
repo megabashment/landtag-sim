@@ -8,6 +8,18 @@ class PolicyEffectOut(BaseModel):
     inertia: int
 
 
+class UnlockConditionOut(BaseModel):
+    """B7 "Dynamische Policy-Freischaltung durch Sim-Zustand" (BACKLOG.md, L7):
+    eine Statistik-Schwelle, die erfuellt sein muss, damit die Policy
+    einfuehrbar wird. Das Frontend vergleicht sie gegen die aktuellen
+    Session-Statistiken und graut die Policy sonst aus ("Wird verfuegbar,
+    wenn …")."""
+
+    statistic_key: str
+    operator: str
+    threshold: float
+
+
 class PolicyOut(BaseModel):
     """Dynamischer Policy-Katalog fuer GET /policies -- ersetzt die zuvor
     hart codierte AVAILABLE_POLICIES-Konstante in frontend/src/App.jsx, die
@@ -24,6 +36,7 @@ class PolicyOut(BaseModel):
     income_per_turn: float
     effects: list[PolicyEffectOut]
     requires: list[str]
+    unlock_conditions: list[UnlockConditionOut] = []  # B7
 
 
 class CreateSessionResponse(BaseModel):
@@ -52,6 +65,43 @@ class PendingDilemmaOut(BaseModel):
     options: list[DilemmaOptionOut]
 
 
+class ElectionProjectionGroupOut(BaseModel):
+    """B5 "Wahlprognose mit sichtbarem Turnout/Apathie" (BACKLOG.md, F4/L6):
+    eine Zeile der Wahlvorausschau pro Waehlergruppe."""
+
+    name: str
+    population_share: float
+    satisfaction: float
+    satisfaction_momentum: float
+    estimated_turnout: float
+    trend: str  # "steigend" | "stabil" | "fallend"
+
+
+class ElectionProjectionOut(BaseModel):
+    """B5 (BACKLOG.md): nur gesetzt, wenn `turns_until_election` klein genug
+    ist (siehe routes_game.ELECTION_PROJECTION_WINDOW). `approval` ist die
+    entscheidungsrelevante Zahl (wie die echte Wahl, ohne Turnout);
+    `turnout_adjusted_approval` legt das Apathie-Modell an (nur Anzeige)."""
+
+    approval: float
+    turnout_adjusted_approval: float
+    threshold: float
+    would_win: bool
+    groups: list[ElectionProjectionGroupOut]
+
+
+class FactionOut(BaseModel):
+    """B8 "Fraktions-/Sitz-Datenmodell" (BACKLOG.md, L8): eine Fraktion im
+    Landtag. Reine Anzeige ("Sitzverteilung im Landtag"), noch keine
+    Mechanik."""
+
+    name: str
+    seats: int
+    stance_economy: float
+    stance_social: float
+    stance_environment: float
+
+
 class SessionStateResponse(BaseModel):
     session_id: int
     turn: int
@@ -59,10 +109,17 @@ class SessionStateResponse(BaseModel):
     political_capital: float
     turns_until_election: int
     status: str
+    # B8: Rolle der Spielerpartei ("government"/"opposition"). Im MVP immer
+    # "government" (reine Struktur, siehe SessionRole).
+    role: str = "government"
     statistics: dict[str, float]
     voter_groups: list[dict]
     active_policy_keys: list[str]
     pending_dilemma: PendingDilemmaOut | None = None
+    # B5: Wahlvorausschau, nur in den letzten Runden vor der Wahl gesetzt.
+    election_projection: ElectionProjectionOut | None = None
+    # B8: Sitzverteilung im Landtag (reine Anzeige).
+    factions: list[FactionOut] = []
 
 
 class AttributionOut(BaseModel):
@@ -78,6 +135,15 @@ class ElectionResultOut(BaseModel):
     approval: float
     threshold: float
     won: bool
+
+
+class GoalResultOut(BaseModel):
+    """B9 "Szenario-/Legislatur-Ziele" (BACKLOG.md): ein optionales Ziel und
+    ob es am Legislaturende erfuellt wurde. Reine Anzeige (unverbindlich)."""
+
+    key: str
+    description: str
+    met: bool
 
 
 class TermSummaryOut(BaseModel):
@@ -98,6 +164,8 @@ class TermSummaryOut(BaseModel):
     category_changes: dict[str, float]
     biggest_improvement: str | None = None
     biggest_decline: str | None = None
+    # B9: optionale Legislatur-Ziele, erfuellt/verfehlt (leer = reine Sandbox).
+    goals: list[GoalResultOut] = []
 
 
 class AdvanceTurnRequest(BaseModel):
@@ -116,6 +184,10 @@ class AdvanceTurnResponse(BaseModel):
     election_result: ElectionResultOut | None = None
     pending_dilemma: PendingDilemmaOut | None = None
     term_summary: TermSummaryOut | None = None
+    # B4 "Narrative Konsequenz-Ebene" (BACKLOG.md): hoechstens ein
+    # Presseschau-Text pro Runde, nur in Runden ohne Event/Dilemma. Reine
+    # Anzeige, keine Sim-Wirkung.
+    reports: list[str] = []
 
 
 class ResolveDilemmaRequest(BaseModel):

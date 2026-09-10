@@ -46,6 +46,13 @@ class PolicyDefinition(SQLModel, table=True):
     # Datenhaltung.
     requires: list[str] = Field(default_factory=list, sa_column=Column(JSON))
 
+    # B7 "Dynamische Policy-Freischaltung durch Sim-Zustand" (BACKLOG.md, L7):
+    # Statistik-Schwellen (UND-verknuepft) als JSON, z.B.:
+    # [{"statistic_key": "education_spending", "operator": ">", "threshold": 50.0}]
+    # Die Policy ist erst einfuehrbar, wenn alle erfuellt sind (geprueft in
+    # engine.py, PolicyLockedError). Leere Liste = jederzeit verfuegbar.
+    unlock_conditions: list[dict] = Field(default_factory=list, sa_column=Column(JSON))
+
 
 class EnactedPolicy(SQLModel, table=True):
     __tablename__ = "enacted_policy"

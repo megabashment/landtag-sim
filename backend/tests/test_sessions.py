@@ -57,6 +57,12 @@ def test_list_policies_returns_full_sample_catalog(client):
         "steuersenkung_mittelstand",
         "gesundheitsreform",
         "vermoegensteuer",
+        # B7 "Dynamische Policy-Freischaltung": drei zunaechst gesperrte
+        # Policies (unlock_conditions) -- GET /policies liefert sie trotzdem
+        # aus (das Frontend graut sie aus), siehe routes_game.py.
+        "digitalpakt_schulen",
+        "gruener_wasserstoff",
+        "arbeitsmarkt_sofortprogramm",
     }
     steuersenkung = next(p for p in policies if p["key"] == "steuersenkung_mittelstand")
     assert steuersenkung["requires"] == ["bildungsoffensive"]

@@ -21,9 +21,19 @@ Strategie-Check", siehe find_dominant_policies) -- Hinweis auf Comptons
 "Illusory Choice": wenn eine Policy nie sinnvoll weggelassen wird, ist die
 Entscheidung, sie zu waehlen, keine echte Entscheidung mehr.
 
+B6-Ausbaustufe (BACKLOG.md, L4/F6): Trigger-Telemetrie. Positech balanciert
+Democracy 4s ~100 Dilemmas datengetrieben nach (Ziel ~1% Trigger-Anteil je
+Dilemma; real triggern einige 20x, andere nie). Wir haben keine echte
+Telemetrie, koennen das aber im Kleinen nachbilden: der Runner zaehlt ueber
+alle Szenarien x N Seeds, wie oft jede Event-/Dilemma-/Situation-Regel
+organisch ausloest, und meldet "nie ausgeloest" bzw. ">5x Erwartungswert"
+(siehe collect_trigger_counts / classify_triggers). Zweck: MESSEN, was
+ueberhaupt triggert, BEVOR mehr Content geschrieben wird.
+
 Aufruf (aus sim/ heraus, nach `pip install -e .`):
     python -m landtag_sim.tools.balance_runner
     python -m landtag_sim.tools.balance_runner --turns 40 --csv out.csv
+    python -m landtag_sim.tools.balance_runner --seeds 10   # breitere Telemetrie
 """
 from __future__ import annotations
 
@@ -31,15 +41,19 @@ import argparse
 import csv
 import itertools
 import math
+import random
 import sys
 
 from landtag_sim.engine import advance_turn, resolve_dilemma
-from landtag_sim.models import InsufficientCapitalError, UnmetPrerequisiteError
+from landtag_sim.models import InsufficientCapitalError, PolicyLockedError, UnmetPrerequisiteError
 from landtag_sim.sample_data import (
     SAMPLE_DILEMMA_RULES,
     SAMPLE_EVENT_RULES,
     SAMPLE_POLICIES,
+    SAMPLE_REPORT_RULES,
+    SAMPLE_SITUATION_RULES,
     build_initial_state,
+    jittered_starting_statistics,
 )
 
 
@@ -48,7 +62,14 @@ def _advance_and_autoresolve(state, turns_new_keys):
     ersten Option aufloesen, damit der Runner nicht haengen bleibt. Gibt das
     finale TurnResult zurueck (nach etwaiger Aufloesung) sowie ob ein Dilemma
     dabei war."""
-    result = advance_turn(state, SAMPLE_POLICIES, SAMPLE_EVENT_RULES, turns_new_keys, SAMPLE_DILEMMA_RULES)
+    result = advance_turn(
+        state,
+        SAMPLE_POLICIES,
+        SAMPLE_EVENT_RULES,
+        turns_new_keys,
+        SAMPLE_DILEMMA_RULES,
+        report_rules=SAMPLE_REPORT_RULES,
+    )
     dilemma_fired = result.pending_dilemma is not None
     if dilemma_fired:
         rule = next(r for r in SAMPLE_DILEMMA_RULES if r.key == result.pending_dilemma.rule_key)
@@ -89,6 +110,22 @@ def run_scenario(policy_keys: tuple[str, ...], turns: int) -> dict:
             "dilemmas_fired": 0,
             "election": "-",
             "flags": f"NICHT_MACHBAR(Voraussetzung fehlt: {exc.missing_requirement})",
+        }
+    except PolicyLockedError as exc:
+        # B7: die Kombination enthaelt eine zu Rundenbeginn noch gesperrte
+        # Policy (unlock_conditions nicht erfuellt). Der Combo-Runner enact-et
+        # in Runde 0 -- eine erst spaeter freischaltbare Policy ist hier also
+        # schlicht nicht spielbar, kein Fehler.
+        return {
+            "policies": "+".join(policy_keys) or "(keine)",
+            "policy_keys": policy_keys,
+            "min_budget": None,
+            "end_satisfaction": None,
+            "satisfaction_swing": None,
+            "events_fired": 0,
+            "dilemmas_fired": 0,
+            "election": "-",
+            "flags": f"NICHT_MACHBAR(gesperrt: {exc.unmet_condition})",
         }
 
     state = result.state
@@ -133,14 +170,25 @@ def run_scenario(policy_keys: tuple[str, ...], turns: int) -> dict:
     }
 
 
-def all_policy_combinations() -> list[tuple[str, ...]]:
+def all_policy_combinations(policies: list | None = None) -> list[tuple[str, ...]]:
     """Nur Kombinationen, die ihre eigenen Voraussetzungen erfuellen --
     Kombinationen, die z.B. steuersenkung_mittelstand ohne bildungsoffensive
     enthalten, werden gar nicht erst generiert (spart nutzlose
     NICHT_MACHBAR-Zeilen; ein echter Voraussetzungs-Verstoss wird trotzdem
-    ueber UnmetPrerequisiteError abgefangen, falls sich das mal aendert)."""
-    keys = [p.key for p in SAMPLE_POLICIES]
-    requires_by_key = {p.key: set(p.requires) for p in SAMPLE_POLICIES}
+    ueber UnmetPrerequisiteError abgefangen, falls sich das mal aendert).
+
+    B7: Policies mit `unlock_conditions` werden ausgelassen -- der Runner
+    enact-et ausschliesslich in Runde 0, wo eine erst spaeter freischaltbare
+    Policy zwangslaeufig gesperrt (NICHT_MACHBAR) waere. Sie in jede
+    Kombination aufzunehmen wuerde die Ausgabe mit reinem gesperrt-Rauschen
+    fluten, ohne je etwas zu testen. Ihre Balance deckt stattdessen ein
+    gezielter Engine-Test ab (siehe sim/tests/test_engine.py, Abschnitt B7).
+    Der NICHT_MACHBAR(gesperrt)-Zweig in run_scenario bleibt fuer direkte
+    Aufrufe als Sicherheitsnetz bestehen."""
+    policies = policies if policies is not None else SAMPLE_POLICIES
+    enactable = [p for p in policies if not p.unlock_conditions]
+    keys = [p.key for p in enactable]
+    requires_by_key = {p.key: set(p.requires) for p in enactable}
     combos: list[tuple[str, ...]] = [()]
     for r in range(1, len(keys) + 1):
         for combo in itertools.combinations(keys, r):
@@ -148,6 +196,156 @@ def all_policy_combinations() -> list[tuple[str, ...]]:
             if all(requires_by_key[k] <= combo_set for k in combo):
                 combos.append(combo)
     return combos
+
+
+# ---------------------------------------------------------------------------
+# B6 "Dilemma-/Event-Trigger-Telemetrie" (BACKLOG.md, L4/F6)
+# ---------------------------------------------------------------------------
+
+
+def _seeded_initial_state(seed: int):
+    """Startzustand mit reproduzierbar gejitterten Startwerten (ein Seed = ein
+    Satz Startbedingungen). Bewusst gejittert statt der kanonischen
+    STARTING_STATISTICS: verschiedene Seeds ueberschreiten die Trigger-
+    Schwellen zu unterschiedlichen Zeitpunkten und decken so mehr Regeln ab.
+
+    WICHTIG: Der B3-Wahrscheinlichkeits-Wuerfel (crc32 aus rule_key:turn, siehe
+    events.py::passes_probability_gate) ist vom Seed UNABHAENGIG -- er faellt
+    pro Runde gleich. Die Streuung ueber Seeds kommt allein aus den
+    Startwerten, nicht aus dem Wuerfel; ein probability<1.0-Event wird dadurch
+    nicht ueber Seeds gemittelt, sondern feuert (bei erfuellter Schwelle) in
+    denselben Runden. Fuer die Telemetrie reicht das -- es geht um "triggert
+    ueberhaupt / wie oft relativ", nicht um exakte Wahrscheinlichkeiten."""
+    state = build_initial_state()
+    state.statistics = jittered_starting_statistics(random.Random(seed))
+    return state
+
+
+def collect_trigger_counts(
+    turns: int,
+    seeds: int,
+    *,
+    policies: list | None = None,
+    event_rules: list | None = None,
+    dilemma_rules: list | None = None,
+    situation_rules: list | None = None,
+    report_rules: list | None = None,
+    combos: list[tuple[str, ...]] | None = None,
+) -> dict:
+    """Spielt alle (voraussetzungs-gueltigen) Policy-Kombinationen ueber
+    `seeds` gejitterte Startbedingungen und `turns` Runden durch und zaehlt,
+    wie oft jede Event-/Dilemma-/Situation-Regel tatsaechlich ausloest.
+
+    Anders als run_scenario (das bewusst OHNE Situations laeuft, um den
+    Dominante-Strategie-Check nicht zu verschieben) uebergibt die Telemetrie
+    den VOLLEN Regelsatz inkl. Situations -- sie will das komplette organische
+    Trigger-Bild, nicht die isolierte Policy-Balance.
+
+    Exakte Zaehlung ohne Heuristik: Event-Keys aus
+    TurnResult.triggered_event_keys (B6-Feld), Dilemma-Keys aus
+    pending_dilemma.rule_key, Situation-Aktivierungen aus dem Zuwachs von
+    state.active_situations pro Runde. Gibt die drei Zaehler-Dicts plus die
+    Gesamtzahl simulierter Runden zurueck."""
+    policies = policies if policies is not None else SAMPLE_POLICIES
+    event_rules = event_rules if event_rules is not None else SAMPLE_EVENT_RULES
+    dilemma_rules = dilemma_rules if dilemma_rules is not None else SAMPLE_DILEMMA_RULES
+    situation_rules = situation_rules if situation_rules is not None else SAMPLE_SITUATION_RULES
+    report_rules = report_rules if report_rules is not None else SAMPLE_REPORT_RULES
+    if combos is None:
+        combos = all_policy_combinations(policies)
+
+    event_counts = {r.key: 0 for r in event_rules}
+    dilemma_counts = {r.key: 0 for r in dilemma_rules}
+    situation_counts = {r.key: 0 for r in situation_rules}
+    turns_simulated = 0
+
+    def _advance(state, new_keys):
+        nonlocal turns_simulated
+        before_situations = {s.rule_key for s in state.active_situations}
+        result = advance_turn(
+            state,
+            policies,
+            event_rules,
+            new_keys,
+            dilemma_rules,
+            situation_rules=situation_rules,
+            report_rules=report_rules,
+        )
+        for key in result.triggered_event_keys:
+            event_counts[key] += 1
+        if result.pending_dilemma is not None:
+            fired = result.pending_dilemma.rule_key
+            dilemma_counts[fired] += 1
+            rule = next(r for r in dilemma_rules if r.key == fired)
+            result = resolve_dilemma(result.state, dilemma_rules, rule.options[0].key)
+        after_situations = {s.rule_key for s in result.state.active_situations}
+        for key in after_situations - before_situations:  # neu aktivierte Situations
+            situation_counts[key] += 1
+        turns_simulated += 1
+        return result.state
+
+    for seed in range(seeds):
+        for combo in combos:
+            state = _seeded_initial_state(seed)
+            try:
+                state = _advance(state, list(combo))  # Runde 0: Kombination einfuehren
+            except (InsufficientCapitalError, UnmetPrerequisiteError, PolicyLockedError):
+                continue  # nicht spielbare Kombination -- traegt keine Runden bei
+            for _ in range(turns - 1):
+                state = _advance(state, [])
+
+    return {
+        "event": event_counts,
+        "dilemma": dilemma_counts,
+        "situation": situation_counts,
+        "turns_simulated": turns_simulated,
+    }
+
+
+def classify_triggers(
+    counts_by_key: dict[str, int], turns_simulated: int, overrep_multiplier: float = 5.0
+) -> tuple[list[dict], float]:
+    """Reine Klassifikation (kein Simulieren -- leicht isoliert testbar).
+
+    `expected` = Erwartungswert bei Gleichverteilung = Gesamt-Ausloesungen der
+    Kategorie / Anzahl Regeln (Democracy-4-Heuristik: bei 100 Dilemmas ~1% je
+    Regel). Eine Regel wird als NIE_AUSGELOEST markiert (count == 0) oder als
+    UEBERREPRAESENTIERT (count > overrep_multiplier x expected). Gibt die
+    Zeilen absteigend nach count (Ties nach Key) plus den Erwartungswert
+    zurueck."""
+    total = sum(counts_by_key.values())
+    n = len(counts_by_key) or 1
+    expected = total / n
+    rows: list[dict] = []
+    for key, count in sorted(counts_by_key.items(), key=lambda kv: (-kv[1], kv[0])):
+        flag = "-"
+        if count == 0:
+            flag = "NIE_AUSGELOEST"
+        elif expected > 0 and count > overrep_multiplier * expected:
+            flag = "UEBERREPRAESENTIERT"
+        rows.append(
+            {
+                "key": key,
+                "count": count,
+                "share": (count / turns_simulated) if turns_simulated else 0.0,
+                "flag": flag,
+            }
+        )
+    return rows, expected
+
+
+def _print_trigger_telemetry(counts: dict) -> None:
+    turns_simulated = counts["turns_simulated"]
+    print(f"\n=== Trigger-Telemetrie ({turns_simulated} simulierte Runden) ===")
+    for label, category in (("Events", "event"), ("Dilemmas", "dilemma"), ("Situations", "situation")):
+        rows, expected = classify_triggers(counts[category], turns_simulated)
+        print(f"\n{label} (Erwartungswert bei Gleichverteilung: {expected:.1f}x/Regel):")
+        if not rows:
+            print("  (keine Regeln)")
+            continue
+        for r in rows:
+            marker = "" if r["flag"] == "-" else f"   <-- {r['flag']}"
+            print(f"  {r['key']:<28} {r['count']:>6}x  ({r['share'] * 100:>5.1f}% der Runden){marker}")
 
 
 def find_dominant_policies(
@@ -195,6 +393,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--turns", type=int, default=30, help="Anzahl simulierter Runden pro Szenario")
     parser.add_argument("--csv", type=str, default=None, help="Optional: Ergebnisse zusaetzlich als CSV schreiben")
+    parser.add_argument(
+        "--seeds",
+        type=int,
+        default=5,
+        help="B6-Trigger-Telemetrie: Anzahl gejitterter Startbedingungen (mehr = breiteres Trigger-Bild)",
+    )
     args = parser.parse_args()
 
     rows = [run_scenario(combo, args.turns) for combo in all_policy_combinations()]
@@ -219,6 +423,11 @@ def main() -> None:
             print(f"  - {key}: {share * 100:.0f}%")
     else:
         print("\nKeine vermutlich dominante Policy gefunden.")
+
+    # B6: Trigger-Telemetrie ueber alle Kombinationen x Seeds (eigener,
+    # vollstaendiger Lauf inkl. Situations -- siehe collect_trigger_counts).
+    telemetry = collect_trigger_counts(args.turns, args.seeds)
+    _print_trigger_telemetry(telemetry)
 
     if args.csv:
         with open(args.csv, "w", newline="", encoding="utf-8") as f:

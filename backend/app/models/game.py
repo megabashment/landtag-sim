@@ -17,6 +17,19 @@ class SessionStatus(str, Enum):
     LOST = "lost"  # z.B. Wahl verloren oder Budget-Kollaps
 
 
+class SessionRole(str, Enum):
+    """B8 "Fraktions-/Sitz-Datenmodell (Grundstein Opposition/Parlament)"
+    (BACKLOG.md, L8): Rolle der vom Spieler gefuehrten Partei. Im MVP ist
+    das reine Struktur -- der Spieler regiert immer (GOVERNMENT). OPPOSITION
+    existiert als Datenwert, damit eine spaetere "nach Wahlniederlage in die
+    Opposition statt Game Over"-Mechanik nicht rueckwirkend brechen muss;
+    aktuell nur hinter dem Flag DEMOTE_TO_OPPOSITION_ON_LOSS erreichbar
+    (siehe routes_game.py), Default aus."""
+
+    GOVERNMENT = "government"
+    OPPOSITION = "opposition"
+
+
 class GameSession(SQLModel, table=True):
     __tablename__ = "game_session"
 
@@ -28,6 +41,10 @@ class GameSession(SQLModel, table=True):
     current_turn: int = Field(default=0)
     budget: float = Field(default=0.0)
     status: SessionStatus = Field(default=SessionStatus.ACTIVE)
+
+    # B8 "Fraktions-/Sitz-Datenmodell" (BACKLOG.md, L8): Rolle der Spieler-
+    # partei. Im MVP immer GOVERNMENT (reine Struktur, siehe SessionRole).
+    role: SessionRole = Field(default=SessionRole.GOVERNMENT)
 
     # Zweite Ressource neben dem Budget (nach Game-Director-Review, siehe
     # docs/architecture.md): begrenzt, wie viele Reformen gleichzeitig

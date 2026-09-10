@@ -7,6 +7,7 @@ deterministisch/testbar.
 from __future__ import annotations
 
 import operator as _operator
+import zlib
 
 from landtag_sim.models import EventRule, SimState
 from landtag_sim.templates import render_template
@@ -19,6 +20,24 @@ _OPERATORS = {
     "==": _operator.eq,
     "!=": _operator.ne,
 }
+
+
+def passes_probability_gate(rule_key: str, turn: int, probability: float) -> bool:
+    """B3 "Zustandsgekoppelte Risiko-Events" (BACKLOG.md, L4/L9): eine Regel mit
+    bereits erfuellter Schwelle feuert zusaetzlich nur mit `probability` pro
+    Runde. Der "Wuerfel" ist deterministisch aus Regel-Key + Runde abgeleitet
+    (zlib.crc32, dieselbe Technik wie vignettes.py) -- KEIN `random`, damit
+    Balance-Runner und Tests bei gleichem Ausgangszustand reproduzierbar
+    bleiben. probability >= 1.0 -> immer (Verhalten wie vor B3), <= 0.0 -> nie.
+
+    Wird auch von dilemmas.py importiert (gleiche Semantik fuer DilemmaRule).
+    """
+    if probability >= 1.0:
+        return True
+    if probability <= 0.0:
+        return False
+    roll = (zlib.crc32(f"{rule_key}:{turn}".encode("utf-8")) % 1_000_000) / 1_000_000
+    return roll < probability
 
 
 def _severity(rule: EventRule, value: float) -> float:
@@ -51,6 +70,8 @@ def evaluate_events(state: SimState, rules: list[EventRule]) -> list[tuple[Event
         if compare is None:
             raise ValueError(f"Unbekannter Operator in Event '{rule.key}': {rule.operator}")
         if compare(value, rule.threshold):
+            if not passes_probability_gate(rule.key, state.turn, rule.probability):
+                continue  # B3: Schwelle erfuellt, aber der Wuerfel dieser Runde nicht
             text = render_template(rule.template_text, {"value": value, "statistic": rule.statistic_key})
             triggered.append((rule, text, _severity(rule, value)))
     triggered.sort(key=lambda item: item[2], reverse=True)

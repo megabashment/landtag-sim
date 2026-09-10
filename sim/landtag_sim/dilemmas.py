@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import operator as _operator
 
+from landtag_sim.events import passes_probability_gate
 from landtag_sim.models import DilemmaRule, PendingDilemma, SimState
 from landtag_sim.templates import render_template
 
@@ -46,6 +47,8 @@ def evaluate_dilemmas(state: SimState, rules: list[DilemmaRule]) -> list[Pending
         if compare is None:
             raise ValueError(f"Unbekannter Operator in Dilemma '{rule.key}': {rule.operator}")
         if compare(value, rule.threshold):
+            if not passes_probability_gate(rule.key, state.turn, rule.probability):
+                continue  # B3: Schwelle erfuellt, aber der Wuerfel dieser Runde nicht
             prompt = render_template(rule.prompt_text, {"value": value, "statistic": rule.statistic_key})
             triggered.append(
                 (PendingDilemma(rule_key=rule.key, prompt=prompt, options=rule.options), _severity(rule, value))

@@ -2,16 +2,20 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
 from app.db import get_session
-from app.models import EnactedPolicy, GameSession, PolicyDefinition, VoterGroup
+from app.models import EnactedPolicy, Faction, GameSession, PolicyDefinition, VoterGroup
 from app.models import StatisticValue
-from app.models.game import SessionStatus
+from app.models.game import SessionRole, SessionStatus
 from app.schemas.game import (
     AdvanceTurnRequest,
     AdvanceTurnResponse,
     AttributionOut,
     CreateSessionResponse,
     DilemmaOptionOut,
+    ElectionProjectionGroupOut,
+    ElectionProjectionOut,
     ElectionResultOut,
+    FactionOut,
+    GoalResultOut,
     PendingDilemmaOut,
     PolicyEffectOut,
     PolicyOut,
@@ -21,28 +25,45 @@ from app.schemas.game import (
     ResolveDilemmaResponse,
     SessionStateResponse,
     TermSummaryOut,
+    UnlockConditionOut,
 )
 from app.seed import ensure_niedersachsen, run_all_seeds
 from app.sim_bridge import (
     load_dilemma_rules,
     load_event_rules,
     load_policy_catalog,
+    load_report_rules,
+    load_scenario_goals,
     load_sim_state,
     persist_sim_state,
     serialize_pending_dilemma,
 )
-from landtag_sim.engine import advance_turn, resolve_dilemma
+from landtag_sim.engine import advance_turn, project_election, resolve_dilemma
 from landtag_sim.models import (
     DilemmaPendingError,
     InsufficientCapitalError,
     PolicyAlreadyActiveError,
+    PolicyLockedError,
     PolicyNotActiveError,
     PolicyRequiredByActivePolicyError,
     UnmetPrerequisiteError,
 )
-from landtag_sim.sample_data import SAMPLE_VOTER_GROUPS, jittered_starting_statistics
+from landtag_sim.sample_data import SAMPLE_FACTIONS, SAMPLE_VOTER_GROUPS, jittered_starting_statistics
 
 router = APIRouter(tags=["game"])
+
+# B5 "Wahlprognose mit sichtbarem Turnout/Apathie" (BACKLOG.md): die
+# Vorausschau wird erst in den letzten Runden vor der Wahl mitgeliefert --
+# vorher waere sie nur Rauschen und wuerde die Spannung nehmen.
+ELECTION_PROJECTION_WINDOW = 5
+
+# B8 "Fraktions-/Sitz-Datenmodell" (BACKLOG.md, L8): wenn True, wird eine
+# verlorene Wahl NICHT zu SessionStatus.LOST (Game Over), sondern die Session
+# bleibt ACTIVE und wechselt in die Opposition (role=OPPOSITION). Default aus
+# -- es gibt im MVP noch KEINEN Opposition-Gameplay-Loop (das ist ein eigener
+# spaeterer Backlog-Punkt); das Flag verdrahtet nur den Datenpfad, damit der
+# spaetere Ausbau nicht rueckwirkend brechen muss.
+DEMOTE_TO_OPPOSITION_ON_LOSS = False
 
 
 @router.get("/policies", response_model=list[PolicyOut])
@@ -68,6 +89,7 @@ def list_policies(db: Session = Depends(get_session)) -> list[PolicyOut]:
             income_per_turn=row.income_per_turn,
             effects=[PolicyEffectOut(**effect) for effect in row.effects],
             requires=list(row.requires),
+            unlock_conditions=[UnlockConditionOut(**c) for c in (row.unlock_conditions or [])],  # B7
         )
         for row in rows
     ]
@@ -100,6 +122,20 @@ def create_session(db: Session = Depends(get_session)) -> CreateSessionResponse:
                 weight_economy=vg.weight_economy,
                 weight_social=vg.weight_social,
                 weight_environment=vg.weight_environment,
+            )
+        )
+
+    # B8: Sitzverteilung im Landtag pro Session seeden (reine Anzeige-Daten,
+    # noch keine Mechanik -- siehe app/models/faction.py).
+    for f in SAMPLE_FACTIONS:
+        db.add(
+            Faction(
+                session_id=session.id,
+                name=f.name,
+                seats=f.seats,
+                stance_economy=f.stance_economy,
+                stance_social=f.stance_social,
+                stance_environment=f.stance_environment,
             )
         )
     db.commit()
@@ -143,11 +179,53 @@ def _load_state_for_session(db: Session, session: GameSession):
     )
 
 
+def _election_projection_out(session: GameSession, sim_state) -> ElectionProjectionOut | None:
+    """B5 (BACKLOG.md): Wahlvorausschau nur in den letzten
+    ELECTION_PROJECTION_WINDOW Runden einer laufenden Partie. `sim_state`
+    traegt die aktuelle Zufriedenheit inkl. satisfaction_momentum je Gruppe
+    (aus sim_bridge), aus denen project_election den geschaetzten Turnout
+    ableitet."""
+    if session.status != SessionStatus.ACTIVE:
+        return None
+    if session.turns_until_election > ELECTION_PROJECTION_WINDOW:
+        return None
+    projection = project_election(sim_state)
+    return ElectionProjectionOut(
+        approval=projection.approval,
+        turnout_adjusted_approval=projection.turnout_adjusted_approval,
+        threshold=projection.threshold,
+        would_win=projection.would_win,
+        groups=[
+            ElectionProjectionGroupOut(
+                name=g.name,
+                population_share=g.population_share,
+                satisfaction=g.satisfaction,
+                satisfaction_momentum=g.satisfaction_momentum,
+                estimated_turnout=g.estimated_turnout,
+                trend=g.trend,
+            )
+            for g in projection.groups
+        ],
+    )
+
+
 def _build_state_response(db: Session, session: GameSession) -> SessionStateResponse:
     sim_state = _load_state_for_session(db, session)
     active_keys = [ep.policy_key for ep in db.exec(
         select(EnactedPolicy).where(EnactedPolicy.session_id == session.id, EnactedPolicy.repealed_turn == None)  # noqa: E711
     )]
+    # B8: Sitzverteilung im Landtag (reine Anzeige), stabil nach Sitzen absteigend.
+    faction_rows = db.exec(select(Faction).where(Faction.session_id == session.id)).all()
+    factions = [
+        FactionOut(
+            name=f.name,
+            seats=f.seats,
+            stance_economy=f.stance_economy,
+            stance_social=f.stance_social,
+            stance_environment=f.stance_environment,
+        )
+        for f in sorted(faction_rows, key=lambda f: f.seats, reverse=True)
+    ]
     return SessionStateResponse(
         session_id=session.id,
         turn=session.current_turn,
@@ -155,10 +233,13 @@ def _build_state_response(db: Session, session: GameSession) -> SessionStateResp
         political_capital=session.political_capital,
         turns_until_election=session.turns_until_election,
         status=session.status,
+        role=session.role,
         statistics=sim_state.statistics,
         voter_groups=[vars(g) for g in sim_state.voter_groups],
         active_policy_keys=active_keys,
         pending_dilemma=_pending_dilemma_out(session),
+        election_projection=_election_projection_out(session, sim_state),
+        factions=factions,
     )
 
 
@@ -272,6 +353,21 @@ def preview_session_turn(
             would_trigger_dilemma=False,
             satisfaction_delta_by_group={},
         )
+    except PolicyLockedError as exc:
+        return PreviewResponse(
+            feasible=False,
+            infeasible_reason=(
+                f"Policy '{exc.policy_key}' ist noch gesperrt -- "
+                f"Freischalt-Bedingung nicht erfuellt: {exc.unmet_condition}."
+            ),
+            capital_required=capital_required,
+            capital_available=capital_available,
+            statistic_deltas={},
+            attributions=[],
+            would_trigger_events=[],
+            would_trigger_dilemma=False,
+            satisfaction_delta_by_group={},
+        )
     except PolicyNotActiveError as exc:
         return PreviewResponse(
             feasible=False,
@@ -353,6 +449,8 @@ def advance_session_turn(
     policy_catalog = load_policy_catalog(db)
     event_rules = load_event_rules(db)
     dilemma_rules = load_dilemma_rules(db)
+    report_rules = load_report_rules()
+    scenario_goals = load_scenario_goals()
     sim_state = _load_state_for_session(db, session)
 
     try:
@@ -363,6 +461,8 @@ def advance_session_turn(
             body.enact_policy_keys,
             dilemma_rules,
             body.repeal_policy_keys,
+            report_rules=report_rules,
+            scenario_goals=scenario_goals,
         )
     except InsufficientCapitalError as exc:
         raise HTTPException(
@@ -376,6 +476,14 @@ def advance_session_turn(
         ) from exc
     except PolicyAlreadyActiveError as exc:
         raise HTTPException(status_code=400, detail=f"Policy '{exc.policy_key}' ist bereits aktiv") from exc
+    except PolicyLockedError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Policy '{exc.policy_key}' ist noch gesperrt -- "
+                f"Freischalt-Bedingung nicht erfuellt: {exc.unmet_condition}"
+            ),
+        ) from exc
     except PolicyNotActiveError as exc:
         raise HTTPException(
             status_code=400, detail=f"Policy '{exc.policy_key}' ist nicht aktiv und kann nicht zurueckgezogen werden"
@@ -446,7 +554,17 @@ def advance_session_turn(
         # oben). Gewonnene Wahl setzt NICHT auf WON, sondern die Session
         # bleibt ACTIVE -- Wiederwahl bedeutet Weiterspielen im naechsten
         # Zyklus, das Spiel endet nicht automatisch beim Gewinnen.
-        session.status = SessionStatus.ACTIVE if result.election_result.won else SessionStatus.LOST
+        if result.election_result.won:
+            session.status = SessionStatus.ACTIVE
+            session.role = SessionRole.GOVERNMENT
+        elif DEMOTE_TO_OPPOSITION_ON_LOSS:
+            # B8 (hinter Flag, Default aus): statt Game Over in die Opposition
+            # -- Datenpfad fuer einen spaeteren Opposition-Loop. Im MVP gibt es
+            # dort noch KEIN abweichendes Gameplay.
+            session.status = SessionStatus.ACTIVE
+            session.role = SessionRole.OPPOSITION
+        else:
+            session.status = SessionStatus.LOST
 
     db.add(session)
     db.commit()
@@ -467,6 +585,7 @@ def advance_session_turn(
             category_changes=ts.category_changes,
             biggest_improvement=ts.biggest_improvement,
             biggest_decline=ts.biggest_decline,
+            goals=[GoalResultOut(key=g.key, description=g.description, met=g.met) for g in ts.goals],
         )
 
     return AdvanceTurnResponse(
@@ -478,6 +597,7 @@ def advance_session_turn(
         election_result=election_out,
         pending_dilemma=_pending_dilemma_out(session),
         term_summary=term_summary_out,
+        reports=result.reports,
     )
 
 

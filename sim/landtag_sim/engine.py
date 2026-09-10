@@ -42,22 +42,31 @@ P2-Ausbaustufe (docs/game-design-roadmap.md):
 """
 from __future__ import annotations
 
+import operator as _operator
+
 from landtag_sim.dilemmas import evaluate_dilemmas
 from landtag_sim.events import evaluate_events
+from landtag_sim.reports import evaluate_reports
 from landtag_sim.situations import evaluate_situations
 from landtag_sim.models import (
     DilemmaOption,
     DilemmaPendingError,
     DilemmaRule,
     EffectAttribution,
+    ElectionProjection,
+    ElectionProjectionGroup,
     ElectionResult,
     EnactedPolicy,
+    GoalResult,
     InsufficientCapitalError,
     PendingDilemma,
     Policy,
     PolicyAlreadyActiveError,
+    PolicyLockedError,
     PolicyNotActiveError,
     PolicyRequiredByActivePolicyError,
+    ReportRule,
+    ScenarioGoal,
     SimState,
     SituationRule,
     TermSummary,
@@ -103,6 +112,23 @@ ELECTION_CYCLE_LENGTH = 16
 # Folgerunden weiter). Kleinerer Wert = traeger/ruhiger, siehe
 # _apply_reaction.
 SATISFACTION_MOMENTUM_ALPHA = 0.4
+
+# B5 "Wahlprognose mit sichtbarem Turnout/Apathie" (BACKLOG.md, F4/L6):
+# Apathie-Modell OHNE neues persistiertes Feld -- der geschaetzte Turnout
+# einer Waehlergruppe wird aus `satisfaction` + Vorzeichen/Betrag von
+# `satisfaction_momentum` abgeleitet (F4-Entscheidung: billiger als ein
+# eigener `turnout`-Wert). Idee (L6): "lauwarme, abkuehlende Anhaenger bleiben
+# zu Hause" -- eine Gruppe im MITTLEREN Zufriedenheitsband, deren
+# Zufriedenheit faellt, hat eine reduzierte effektive Wahlbeteiligung.
+# Wuetende Gegner (Zufriedenheit unter dem Floor) mobilisieren dagegen und
+# zufriedene Anhaenger (ueber dem Ceiling) stimmen ohnehin ab -- beide mit
+# vollem Gewicht. Nur die Prognose nutzt das; die echte Wahl in advance_turn
+# bleibt bewusst beim ungewichteten _weighted_approval (siehe project_election).
+TURNOUT_APATHY_FLOOR = 30.0
+TURNOUT_APATHY_CEILING = 55.0
+TURNOUT_MOMENTUM_FULL = 3.0  # momentum <= -diesem Wert -> maximale Apathie
+TURNOUT_MIN = 0.6  # so weit kann die effektive Beteiligung einer Gruppe hoechstens fallen
+TURNOUT_TREND_DEADZONE = 0.05  # |momentum| darunter zaehlt als "stabil"
 
 
 def _policy_by_key(policies: list[Policy], key: str) -> Policy | None:
@@ -169,6 +195,78 @@ def _weighted_approval(state: SimState) -> float:
     return sum(g.satisfaction * g.population_share for g in state.voter_groups) / total_share
 
 
+def _estimated_turnout(group) -> float:
+    """B5 (BACKLOG.md, F4/L6): geschaetzte effektive Wahlbeteiligung einer
+    Gruppe, abgeleitet aus Zufriedenheit + Zufriedenheits-Momentum -- KEIN
+    eigenes persistiertes Feld.
+
+    1.0 = volle Beteiligung. Reduziert wird nur fuer "lauwarme, abkuehlende
+    Anhaenger": Zufriedenheit im Band [FLOOR, CEILING] UND fallendes Momentum.
+    Je staerker das Momentum faellt, desto tiefer (linear bis TURNOUT_MIN).
+    Wuetende Gegner (< FLOOR) und zufriedene Anhaenger (> CEILING) haben volle
+    Beteiligung -- die einen mobilisieren, die anderen sind ohnehin dabei.
+    """
+    momentum = group.satisfaction_momentum
+    if momentum >= 0:
+        return 1.0
+    if not (TURNOUT_APATHY_FLOOR <= group.satisfaction <= TURNOUT_APATHY_CEILING):
+        return 1.0
+    severity = min(1.0, -momentum / TURNOUT_MOMENTUM_FULL)
+    return 1.0 - (1.0 - TURNOUT_MIN) * severity
+
+
+def _turnout_weighted_approval(state: SimState) -> float:
+    """Wie _weighted_approval, aber jede Gruppe zusaetzlich mit ihrer
+    geschaetzten Beteiligung (_estimated_turnout) gewichtet. Faellt auf
+    _weighted_approval zurueck, wenn rechnerisch niemand waehlen wuerde."""
+    total = sum(g.population_share * _estimated_turnout(g) for g in state.voter_groups)
+    if total <= 0:
+        return _weighted_approval(state)
+    return (
+        sum(g.satisfaction * g.population_share * _estimated_turnout(g) for g in state.voter_groups)
+        / total
+    )
+
+
+def project_election(state: SimState) -> ElectionProjection:
+    """B5 "Wahlprognose mit sichtbarem Turnout/Apathie" (BACKLOG.md, F4/L6):
+    Vorausschau auf den Wahlausgang aus dem aktuellen Zustand.
+
+    `approval` ist EXAKT die Groesse, an der die echte Wahl in advance_turn
+    haengt (_weighted_approval, ohne Turnout) -- die Prognose ist damit ein
+    ehrlicher Punkt-Schaetzer, keine Blackbox (L6). `turnout_adjusted_approval`
+    legt zusaetzlich das Apathie-Modell an (nur Anzeige/Fruehwarnung, siehe
+    _estimated_turnout) und die Gruppen-Aufschluesselung zeigt, WER wackelt.
+    """
+    naive_approval = _weighted_approval(state)
+    groups: list[ElectionProjectionGroup] = []
+    for group in state.voter_groups:
+        momentum = group.satisfaction_momentum
+        if momentum > TURNOUT_TREND_DEADZONE:
+            trend = "steigend"
+        elif momentum < -TURNOUT_TREND_DEADZONE:
+            trend = "fallend"
+        else:
+            trend = "stabil"
+        groups.append(
+            ElectionProjectionGroup(
+                name=group.name,
+                population_share=group.population_share,
+                satisfaction=group.satisfaction,
+                satisfaction_momentum=momentum,
+                estimated_turnout=_estimated_turnout(group),
+                trend=trend,
+            )
+        )
+    return ElectionProjection(
+        approval=naive_approval,
+        turnout_adjusted_approval=_turnout_weighted_approval(state),
+        threshold=ELECTION_APPROVAL_THRESHOLD,
+        would_win=naive_approval >= ELECTION_APPROVAL_THRESHOLD,
+        groups=groups,
+    )
+
+
 def _apply_reaction(state: SimState, attributions: list[EffectAttribution]) -> None:
     """Passt die Waehlerzufriedenheit anhand der uebergebenen Attributionen
     an (in-place auf `state`). Ausgelagert, weil sowohl advance_turn (Policy-
@@ -224,6 +322,57 @@ def _validate_prerequisites(
                 raise UnmetPrerequisiteError(policy_key=key, missing_requirement=requirement)
 
 
+_UNLOCK_OPERATORS = {
+    ">": _operator.gt,
+    "<": _operator.lt,
+    ">=": _operator.ge,
+    "<=": _operator.le,
+    "==": _operator.eq,
+    "!=": _operator.ne,
+}
+
+
+def policy_is_unlocked(policy: Policy, statistics: dict[str, float]) -> bool:
+    """B7 'Dynamische Policy-Freischaltung': True, wenn ALLE unlock_conditions
+    der Policy im gegebenen Statistik-Zustand erfuellt sind (UND-verknuepft);
+    leere Bedingungsliste -> immer True (jederzeit verfuegbar, wie vor B7).
+
+    Oeffentlich, weil auch das Backend (GET /policies-Annotation, Preview) und
+    Tests dieselbe Logik brauchen -- eine zweite, abweichende Implementierung
+    waere die klassische Divergenz-Falle."""
+    return _first_unmet_unlock(policy, statistics) is None
+
+
+def _first_unmet_unlock(policy: Policy, statistics: dict[str, float]) -> str | None:
+    """Gibt die erste nicht erfuellte Freischalt-Bedingung als lesbaren String
+    zurueck (z.B. 'renewable_share > 60.0'), oder None wenn alle erfuellt --
+    fuer die Fehlermeldung/UI-Hinweis nuetzlicher als ein blosses False."""
+    for cond in policy.unlock_conditions:
+        compare = _UNLOCK_OPERATORS.get(cond.operator)
+        if compare is None:
+            raise ValueError(
+                f"Unbekannter Operator in unlock_condition ({cond.statistic_key}): {cond.operator}"
+            )
+        value = statistics.get(cond.statistic_key)
+        if value is None or not compare(value, cond.threshold):
+            return f"{cond.statistic_key} {cond.operator} {cond.threshold}"
+    return None
+
+
+def _validate_unlocks(
+    policy_catalog: list[Policy], newly_enacted_keys: list[str], statistics: dict[str, float]
+) -> None:
+    """B7: jede neu einzufuehrende Policy muss ihre unlock_conditions gegen den
+    aktuellen Statistik-Zustand erfuellen -- sonst PolicyLockedError."""
+    for key in newly_enacted_keys:
+        policy = _policy_by_key(policy_catalog, key)
+        if policy is None or not policy.unlock_conditions:
+            continue
+        unmet = _first_unmet_unlock(policy, statistics)
+        if unmet is not None:
+            raise PolicyLockedError(policy_key=key, unmet_condition=unmet)
+
+
 def _validate_new_enactments(active_keys: set[str], newly_enacted_keys: list[str]) -> None:
     """Verhindert ein unbemerktes Doppel-Enact derselben, bereits aktiven
     Policy (vorher ein latenter Bug: die API liess das klaglos zu und
@@ -257,9 +406,15 @@ def advance_turn(
     dilemma_rules: list[DilemmaRule] | None = None,
     newly_repealed_keys: list[str] | None = None,
     situation_rules: list[SituationRule] | None = None,
+    report_rules: list[ReportRule] | None = None,
+    scenario_goals: list[ScenarioGoal] | None = None,
 ) -> TurnResult:
     """Rechnet genau eine Runde. Gibt ein TurnResult zurueck (state, events,
-    attributions, ggf. election_result/pending_dilemma).
+    attributions, ggf. election_result/pending_dilemma/term_summary/reports).
+
+    `report_rules` (B4, optional): rein textliche Presseschau-Meldungen ohne
+    Sim-Wirkung. advance_turn haengt hoechstens einen Report an TurnResult.reports
+    an und nur in Runden ohne Event/Dilemma (siehe Abschnitt 2c).
 
     Reine Funktion: state wird nicht mutiert, sondern geklont -- wichtig,
     damit der Balance-Runner und der Preview-Endpunkt (siehe
@@ -275,6 +430,10 @@ def advance_turn(
 
     Wirft UnmetPrerequisiteError, wenn eine neu einzufuehrende Policy eine
     noch nicht aktive Voraussetzung hat (siehe Policy.requires).
+
+    Wirft PolicyLockedError (B7), wenn eine neu einzufuehrende Policy noch
+    gesperrte unlock_conditions hat (Statistik-Schwellen im aktuellen Zustand
+    nicht erfuellt, siehe Policy.unlock_conditions).
 
     Wirft PolicyAlreadyActiveError, wenn eine bereits aktive Policy erneut
     eingefuehrt werden soll, und PolicyNotActiveError/
@@ -295,11 +454,17 @@ def advance_turn(
     newly_repealed_keys = newly_repealed_keys or []
     dilemma_rules = dilemma_rules or []
     situation_rules = situation_rules or []
+    report_rules = report_rules or []
+    scenario_goals = scenario_goals or []
 
     active_keys = {ep.policy_key for ep in state.active_policies if ep.repealed_turn is None}
     _validate_prerequisites(policy_catalog, active_keys, newly_enacted_keys, newly_repealed_keys)
     _validate_new_enactments(active_keys, newly_enacted_keys)
     _validate_repeals(policy_catalog, active_keys, newly_repealed_keys)
+    # B7: Freischalt-Bedingungen gegen den Statistik-Zustand VOR dieser Runde
+    # pruefen (das ist, was der Spieler beim Waehlen sieht) -- vor jeder
+    # Mutation, damit ein gesperrter Zug den State nicht veraendert.
+    _validate_unlocks(policy_catalog, newly_enacted_keys, state.statistics)
 
     new_state = state.clone()
     new_state.turn += 1
@@ -413,6 +578,7 @@ def advance_turn(
     pending_dilemmas = evaluate_dilemmas(new_state, dilemma_rules)
     pending_dilemma = None
     event_texts: list[str] = []
+    triggered_event_keys: list[str] = []  # B6: maschinenlesbare Regel-Keys
     if pending_dilemmas:
         pending_dilemma = pending_dilemmas[0]
         new_state.pending_dilemma = pending_dilemma
@@ -444,6 +610,7 @@ def advance_turn(
             if category:
                 text = with_vignette(text, category, seed_key=f"{rule.key}:{new_state.turn}")
             event_texts.append(text)
+            triggered_event_keys.append(rule.key)  # B6
             new_state.event_cooldowns[rule.key] = rule.cooldown_turns
             for effect in rule.effects:
                 new_state.statistics[effect.statistic_key] = (
@@ -460,6 +627,32 @@ def advance_turn(
     for key in list(new_state.dilemma_cooldowns):
         if new_state.dilemma_cooldowns[key] > 0:
             new_state.dilemma_cooldowns[key] -= 1
+
+    # 2c) Presseschau / narrative Konsequenz-Ebene (B4 "Narrative Konsequenz-
+    # Ebene", BACKLOG.md, L5). Rein textlich -- KEINE Statistik-Wirkung, keine
+    # Attribution, keine Zufriedenheitsreaktion. Frequenz-Management: nur in
+    # Runden OHNE Event und OHNE Dilemma, und dann hoechstens EIN Report
+    # (Reports treten bewusst hinter die "echten" Ereignisse zurueck).
+    report_texts: list[str] = []
+    if report_rules and not event_texts and pending_dilemma is None:
+        current_active_keys = {
+            ep.policy_key for ep in new_state.active_policies if ep.repealed_turn is None
+        }
+        eligible_reports = evaluate_reports(new_state, report_rules, current_active_keys)
+        if eligible_reports:
+            report_rule, report_text = eligible_reports[0]
+            # P2-Punkt "Namens-Vignetten": passend zur Kategorie der ersten
+            # Bedingung -- gleiche Technik wie bei Events/Dilemmas.
+            category = _STAT_CATEGORY.get(report_rule.conditions[0].statistic_key)
+            if category:
+                report_text = with_vignette(
+                    report_text, category, seed_key=f"report:{report_rule.key}:{new_state.turn}"
+                )
+            report_texts.append(report_text)
+            new_state.report_cooldowns[report_rule.key] = report_rule.cooldown_turns
+    for key in list(new_state.report_cooldowns):
+        if new_state.report_cooldowns[key] > 0:
+            new_state.report_cooldowns[key] -= 1
 
     # 3) Waehlerzufriedenheit auf Basis ALLER attribuierten Deltas dieser Runde
     # (Policies + Events) anpassen. Vereinfachtes, aber nachvollziehbares Modell:
@@ -484,7 +677,7 @@ def advance_turn(
         # B1 (BACKLOG.md): Bilanz der gerade abgelaufenen Legislaturperiode
         # bauen -- BEVOR das Term-Tracking auf den naechsten Zyklus
         # zurueckgesetzt wird.
-        term_summary = _build_term_summary(new_state, approval)
+        term_summary = _build_term_summary(new_state, approval, scenario_goals)
         new_state.turns_until_election = ELECTION_CYCLE_LENGTH
         new_state.term_start_turn = new_state.turn
         new_state.term_start_budget = new_state.budget
@@ -500,14 +693,45 @@ def advance_turn(
         election_result=election_result,
         pending_dilemma=pending_dilemma,
         term_summary=term_summary,
+        reports=report_texts,
+        triggered_event_keys=triggered_event_keys,
     )
 
 
-def _build_term_summary(state: SimState, end_approval: float) -> TermSummary:
+def _goal_metric_value(state: SimState, end_approval: float, metric: str) -> float | None:
+    """B9: loest den Zielwert-Bezug auf -- Sonderwerte "budget"/"approval",
+    sonst ein Statistik-Key. None, wenn die Statistik unbekannt ist."""
+    if metric == "budget":
+        return state.budget
+    if metric == "approval":
+        return end_approval
+    return state.statistics.get(metric)
+
+
+def _evaluate_goals(
+    state: SimState, end_approval: float, scenario_goals: list[ScenarioGoal]
+) -> list[GoalResult]:
+    """B9: prueft jedes optionale Legislatur-Ziel gegen den Endzustand.
+    Unbekannter Metrik-Bezug -> als nicht erfuellt gewertet (statt Absturz)."""
+    results: list[GoalResult] = []
+    for goal in scenario_goals:
+        compare = _UNLOCK_OPERATORS.get(goal.operator)
+        if compare is None:
+            raise ValueError(f"Unbekannter Operator in ScenarioGoal '{goal.key}': {goal.operator}")
+        value = _goal_metric_value(state, end_approval, goal.metric)
+        met = value is not None and compare(value, goal.threshold)
+        results.append(GoalResult(key=goal.key, description=goal.description, met=met))
+    return results
+
+
+def _build_term_summary(
+    state: SimState, end_approval: float, scenario_goals: list[ScenarioGoal] | None = None
+) -> TermSummary:
     """Baut die TermSummary (B1) aus den term_start_*-Schnappschuessen auf
     `state` und dessen aktuellem Zustand. `end_approval` wird uebergeben,
     weil der Aufrufer die gewichtete Zustimmung fuer das ElectionResult
-    ohnehin schon berechnet hat.
+    ohnehin schon berechnet hat. `scenario_goals` (B9) werden gegen den
+    Endzustand ausgewertet und als erfuellt/verfehlt beigelegt.
     """
     statistic_changes: dict[str, float] = {}
     for key, end_value in state.statistics.items():
@@ -546,6 +770,7 @@ def _build_term_summary(state: SimState, end_approval: float) -> TermSummary:
         category_changes=category_changes,
         biggest_improvement=biggest_improvement,
         biggest_decline=biggest_decline,
+        goals=_evaluate_goals(state, end_approval, scenario_goals or []),
     )
 
 

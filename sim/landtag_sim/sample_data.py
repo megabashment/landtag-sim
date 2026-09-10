@@ -17,10 +17,15 @@ from landtag_sim.models import (
     DilemmaOption,
     DilemmaRule,
     EventRule,
+    Faction,
     Policy,
     PolicyEffect,
+    ReportCondition,
+    ReportRule,
+    ScenarioGoal,
     SimState,
     SituationRule,
+    UnlockCondition,
     VoterGroup,
 )
 
@@ -191,6 +196,67 @@ SAMPLE_POLICIES = [
             PolicyEffect(statistic_key="gdp_growth", magnitude=-1.4, delay_turns=1, inertia=4),
         ],
     ),
+    # B7 "Dynamische Policy-Freischaltung durch Sim-Zustand" (BACKLOG.md, L7):
+    # die folgenden drei Policies sind zu Spielbeginn GESPERRT und werden erst
+    # verfuegbar, wenn eine gesellschaftliche Verschiebung ihre
+    # unlock_conditions erfuellt (anders als `requires`, das eine andere
+    # AKTIVE Policy verlangt). Bewusst an Statistiken gekoppelt, die der
+    # Spieler ueber andere Policies/Situations tatsaechlich herbeifuehren kann
+    # (Synergie mit B2/B6-Reachability), damit die Freischaltung nicht totes
+    # Gewicht bleibt. Hinweis: der Combo-Balance-Runner enact-et alle Policies
+    # in Runde 0 und trifft diese daher als NICHT_MACHBAR(gesperrt) an -- das
+    # ist erwartet (siehe run_scenario / mistakes.md), ihre Balance wird ueber
+    # gezielte Engine-Tests abgedeckt.
+    Policy(
+        key="digitalpakt_schulen",
+        name="Digitalpakt Schulen",
+        one_time_cost=25.0,
+        upkeep_cost=6.0,
+        capital_cost=3.0,
+        # Freigeschaltet, sobald in Bildung investiert wurde (bildungsoffensive
+        # hebt education_spending 40 -> ~55): eine bereits gut ausgestattete
+        # Schullandschaft macht die Digitalisierung erst sinnvoll.
+        unlock_conditions=[UnlockCondition(statistic_key="education_spending", operator=">", threshold=50.0)],
+        effects=[
+            PolicyEffect(statistic_key="education_spending", magnitude=6.0, delay_turns=1, inertia=3),
+            # Trade-off: hohe Anschub-/Wartungskosten bremsen kurzfristig das Wachstum.
+            PolicyEffect(statistic_key="gdp_growth", magnitude=-0.8, delay_turns=1, inertia=3),
+        ],
+    ),
+    Policy(
+        key="gruener_wasserstoff",
+        name="Foerderung gruener Wasserstoff",
+        one_time_cost=45.0,
+        upkeep_cost=9.0,
+        capital_cost=4.0,
+        # Freigeschaltet, sobald der Erneuerbaren-Anteil hoch genug ist
+        # (erneuerbare_foerderung hebt renewable_share 35 -> ~43): Wasserstoff
+        # lohnt erst mit reichlich gruenem Strom im Netz.
+        unlock_conditions=[UnlockCondition(statistic_key="renewable_share", operator=">", threshold=42.0)],
+        effects=[
+            PolicyEffect(statistic_key="co2_emissions", magnitude=-8.0, delay_turns=2, inertia=4),
+            # Trade-off: teures Foerderprogramm daempft das Wachstum (Umwelt vs.
+            # Wirtschaft, analog erneuerbare_foerderung -- nur eine Stufe teurer).
+            PolicyEffect(statistic_key="gdp_growth", magnitude=-0.4, delay_turns=1, inertia=3),
+        ],
+    ),
+    Policy(
+        key="arbeitsmarkt_sofortprogramm",
+        name="Arbeitsmarkt-Sofortprogramm",
+        one_time_cost=30.0,
+        upkeep_cost=10.0,
+        capital_cost=4.0,
+        # Freigeschaltet erst in einer Arbeitsmarkt-Schieflage
+        # (unemployment_rate > 7, z.B. ueber die Situation `abwanderung` oder
+        # bildungsoffensives Wachstums-Trade-off erreichbar): ein
+        # Kriseninstrument, das es ohne Krise gar nicht braucht.
+        unlock_conditions=[UnlockCondition(statistic_key="unemployment_rate", operator=">", threshold=7.0)],
+        effects=[
+            PolicyEffect(statistic_key="unemployment_rate", magnitude=-2.0, delay_turns=1, inertia=3),
+            # Trade-off: schnell gegenfinanziert zu Lasten der Bildungsausgaben.
+            PolicyEffect(statistic_key="education_spending", magnitude=-5.0, delay_turns=1, inertia=3),
+        ],
+    ),
 ]
 
 SAMPLE_EVENT_RULES = [
@@ -209,6 +275,34 @@ SAMPLE_EVENT_RULES = [
         threshold=30.0,
         template_text="Bildungsausgaben auf {value:.1f} gesunken - Elternverbaende protestieren.",
         cooldown_turns=6,
+    ),
+    # B3 "Zustandsgekoppelte Risiko-Events" (BACKLOG.md, L4/L9): die Krisen-
+    # Dilemmas (rezession bei gdp_growth < 0.0, arbeitsmarktkrise bei
+    # unemployment_rate > 9.0) triggern im organischen Spielverlauf fast nie,
+    # weil nichts die Statistiken weit genug Richtung Krise treibt (siehe
+    # mistakes.md). Reine Zufalls-Schocks waeren die faule Loesung und nerven
+    # (L9). `konjunkturdelle` ist stattdessen eine ZUSTANDSGEKOPPELTE Vorstufe:
+    # sie greift nur, wenn das Wachstum ohnehin schon schwaechelt
+    # (gdp_growth < 0.5), und verstaerkt den Abwaertstrend dann mit
+    # `probability` pro Runde (deterministischer crc32-Wuerfel, siehe
+    # events.py::passes_probability_gate). Dadurch wird `rezession` aus einer
+    # nur leicht negativen Lage heraus organisch erreichbar -- und ueber die
+    # Situation `abwanderung` (drueckt bei niedrigem Wachstum die
+    # Arbeitslosenquote hoch) mittelbar auch `arbeitsmarktkrise`.
+    EventRule(
+        key="konjunkturdelle",
+        statistic_key="gdp_growth",
+        operator="<",
+        threshold=0.5,
+        template_text=(
+            "Konjunkturdelle: die Auftragseingaenge sinken den dritten Monat in "
+            "Folge, das Wachstum liegt nur noch bei {value:.1f}%."
+        ),
+        cooldown_turns=2,
+        probability=0.4,
+        effects=[
+            PolicyEffect(statistic_key="gdp_growth", magnitude=-0.35, delay_turns=0, inertia=1),
+        ],
     ),
 ]
 
@@ -362,6 +456,152 @@ SAMPLE_SITUATION_RULES = [
             PolicyEffect(statistic_key="gdp_growth", magnitude=0.4, delay_turns=0, inertia=1),
             PolicyEffect(statistic_key="co2_emissions", magnitude=-2.0, delay_turns=0, inertia=1),
         ],
+    ),
+]
+
+
+# B4 "Narrative Konsequenz-Ebene ('Presseschau')" (BACKLOG.md, L5): rein
+# textliche Konsequenz-Meldungen, die die Kausalkette einer Entwicklung
+# benennen, OHNE eine Sim-Statistik zu veraendern. Democracy 4s "Media
+# Reports". Jede Regel ist UND-verknuepft (alle conditions muessen erfuellt
+# sein); requires_policy/forbids_policy koppeln die Meldung zusaetzlich an
+# eine Spieler-Entscheidung, damit der Text wie eine echte Folge WIRKT und
+# nicht wie Zufalls-Flavour. advance_turn haengt hoechstens einen Report pro
+# Runde an, und nur in Runden ohne Event/Dilemma (Frequenz-Management).
+SAMPLE_REPORT_RULES = [
+    ReportRule(
+        key="bildungsoffensive_wirkt",
+        conditions=[
+            ReportCondition(statistic_key="education_spending", operator=">", threshold=50.0),
+            ReportCondition(statistic_key="unemployment_rate", operator="<", threshold=5.5),
+        ],
+        requires_policy="bildungsoffensive",
+        template_text=(
+            "Berufsschulen melden volle Klassen und sinkende Abbrecherquoten -- "
+            "Fachleute fuehren das auf die Bildungsoffensive zurueck."
+        ),
+    ),
+    ReportRule(
+        key="werksschliessung",
+        conditions=[
+            ReportCondition(statistic_key="gdp_growth", operator="<", threshold=0.2),
+            ReportCondition(statistic_key="unemployment_rate", operator=">", threshold=7.0),
+        ],
+        template_text=(
+            "Ein Automobilzulieferer schliesst sein Werk. Die Geschaeftsfuehrung nennt "
+            "die schwache Konjunktur und {unemployment_rate:.1f}% Arbeitslosigkeit als Grund."
+        ),
+    ),
+    ReportRule(
+        key="energiewende_vorzeigeland",
+        conditions=[
+            ReportCondition(statistic_key="renewable_share", operator=">", threshold=55.0),
+            ReportCondition(statistic_key="co2_emissions", operator="<", threshold=92.0),
+        ],
+        template_text=(
+            "Ein Bundesministerium bezeichnet das Land als Vorbild bei der Energiewende -- "
+            "{renewable_share:.0f}% Erneuerbare im Netz."
+        ),
+    ),
+    ReportRule(
+        key="pflegenotstand",
+        conditions=[
+            ReportCondition(statistic_key="healthcare_quality", operator="<", threshold=50.0),
+        ],
+        template_text=(
+            "Kliniken schliessen Stationen, Verbaende sprechen von einem Pflegenotstand "
+            "(Versorgungsindex {healthcare_quality:.0f})."
+        ),
+    ),
+    ReportRule(
+        key="vermoegensteuer_debatte",
+        conditions=[
+            ReportCondition(statistic_key="gdp_growth", operator="<", threshold=0.8),
+        ],
+        requires_policy="vermoegensteuer",
+        template_text=(
+            "Wirtschaftsverbaende machen die Vermoegensteuer fuer zurueckhaltende "
+            "Investitionen verantwortlich; die Regierung widerspricht."
+        ),
+    ),
+    ReportRule(
+        key="klimaklage",
+        conditions=[
+            ReportCondition(statistic_key="co2_emissions", operator=">", threshold=108.0),
+            ReportCondition(statistic_key="renewable_share", operator="<", threshold=40.0),
+        ],
+        forbids_policy="erneuerbare_foerderung",
+        template_text=(
+            "Ein Umweltverband reicht Klage gegen das Land ein: die Emissionen steigen, "
+            "ein Foerderprogramm fuer Erneuerbare fehlt weiterhin."
+        ),
+    ),
+    ReportRule(
+        key="mittelstand_lob",
+        conditions=[
+            ReportCondition(statistic_key="gdp_growth", operator=">", threshold=2.2),
+        ],
+        requires_policy="steuersenkung_mittelstand",
+        template_text=(
+            "Die Handwerkskammer lobt das Investitionsklima; die Auftragsbuecher seien "
+            "so voll wie lange nicht."
+        ),
+    ),
+]
+
+
+# B8 "Fraktions-/Sitz-Datenmodell" (BACKLOG.md, L8): fiktive Sitzverteilung
+# eines Landtags, rein zur ANZEIGE ("Sitzverteilung im Landtag"). Noch keine
+# Mechanik -- weder Koalitionslogik noch Mehrheitszwang fuer Policies (das ist
+# explizit Post-M3, siehe BACKLOG.md). Bewusst generische Fraktionsnamen statt
+# realer Parteien, konsistent mit den generischen Waehlergruppen oben. Summe
+# der Sitze ist eine glatte Zahl (135), keine reale Landtagsgroesse.
+SAMPLE_FACTIONS = [
+    Faction(name="Sozialdemokratische Fraktion", seats=42, stance_economy=0.2, stance_social=0.7, stance_environment=0.3),
+    Faction(name="Konservative Fraktion", seats=38, stance_economy=-0.4, stance_social=-0.2, stance_environment=-0.3),
+    Faction(name="Gruene Fraktion", seats=24, stance_economy=0.1, stance_social=0.4, stance_environment=0.9),
+    Faction(name="Liberale Fraktion", seats=17, stance_economy=-0.7, stance_social=-0.1, stance_environment=-0.1),
+    Faction(name="Linke Fraktion", seats=14, stance_economy=0.6, stance_social=0.8, stance_environment=0.4),
+]
+
+
+# B9 "Szenario-/Legislatur-Ziele" (BACKLOG.md, L1/L10; F1 = optionale,
+# unverbindliche Ziele): am Legislaturende gegen den Endzustand geprueft und
+# in der Amtszeit-Bilanz als erfuellt/verfehlt ausgewiesen. UNVERBINDLICH --
+# ein verfehltes Ziel beendet die Partie nicht (die Sandbox bleibt ohne Ziele
+# spielbar). Bewusst ein Mix aus leicht/schwer und ueber alle Ebenen
+# (Umwelt/Wirtschaft/Haushalt/Zustimmung), damit eine Partie eine Richtung
+# bekommt, ohne den entspannten Charakter in eine Fail-State-Challenge zu
+# kippen. `metric` ist ein Statistik-Key oder die Sonderwerte
+# "budget"/"approval".
+SAMPLE_SCENARIO_GOALS = [
+    ScenarioGoal(
+        key="klimaziel",
+        description="CO2-Emissionen bis Legislaturende unter 95",
+        metric="co2_emissions",
+        operator="<",
+        threshold=95.0,
+    ),
+    ScenarioGoal(
+        key="arbeitsmarkt",
+        description="Arbeitslosenquote bis Legislaturende unter 5,0%",
+        metric="unemployment_rate",
+        operator="<",
+        threshold=5.0,
+    ),
+    ScenarioGoal(
+        key="solide_finanzen",
+        description="Haushalt am Ende ueber 900",
+        metric="budget",
+        operator=">",
+        threshold=900.0,
+    ),
+    ScenarioGoal(
+        key="rueckhalt",
+        description="Zustimmung am Ende ueber 60 (komfortable Wiederwahl)",
+        metric="approval",
+        operator=">",
+        threshold=60.0,
     ),
 ]
 

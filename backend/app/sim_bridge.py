@@ -28,9 +28,13 @@ from landtag_sim.models import (
     PendingDilemma,
     Policy,
     PolicyEffect,
+    ReportRule,
+    ScenarioGoal,
     SimState,
+    UnlockCondition,
     VoterGroup as SimVoterGroup,
 )
+from landtag_sim.sample_data import SAMPLE_REPORT_RULES, SAMPLE_SCENARIO_GOALS
 
 
 def load_policy_catalog(db: Session) -> list[Policy]:
@@ -45,6 +49,7 @@ def load_policy_catalog(db: Session) -> list[Policy]:
             income_per_turn=row.income_per_turn,
             effects=[PolicyEffect(**effect) for effect in row.effects],
             requires=list(row.requires),
+            unlock_conditions=[UnlockCondition(**c) for c in (row.unlock_conditions or [])],  # B7
         )
         for row in rows
     ]
@@ -64,6 +69,7 @@ def load_event_rules(db: Session) -> list[EventRule]:
                 template_text=row.template_text,
                 cooldown_turns=row.cooldown_turns,
                 effects=[PolicyEffect(**effect) for effect in row.effects],
+                probability=cond.get("probability", 1.0),  # B3, siehe seed.py
             )
         )
     return rules
@@ -83,9 +89,32 @@ def load_dilemma_rules(db: Session) -> list[DilemmaRule]:
                 prompt_text=row.prompt_text,
                 cooldown_turns=row.cooldown_turns,
                 options=[_dilemma_option_from_dict(option) for option in row.options],
+                probability=cond.get("probability", 1.0),  # B3, siehe seed.py
             )
         )
     return rules
+
+
+def load_report_rules() -> list[ReportRule]:
+    """B4 "Narrative Konsequenz-Ebene" (BACKLOG.md): anders als Policies/
+    Events/Dilemmas werden Report-Regeln NICHT aus der DB geladen -- sie sind
+    reiner statischer Content ohne Session-Zustand, ohne Effekt auf die Sim
+    und ohne Editier-Bedarf im MVP. Sie kommen daher direkt aus
+    landtag_sim.sample_data. Die Funktion behaelt eine Loader-Signatur (statt
+    die Konstante direkt in routes_game zu importieren), damit ein spaeterer
+    Umzug in eine ReportDefinition-Tabelle nur diese eine Stelle beruehrt.
+    Kein `db`-Parameter -- bewusst, damit klar ist, dass hier nichts aus
+    Postgres kommt."""
+    return list(SAMPLE_REPORT_RULES)
+
+
+def load_scenario_goals() -> list[ScenarioGoal]:
+    """B9 "Szenario-/Legislatur-Ziele" (BACKLOG.md): wie load_report_rules()
+    reiner statischer Szenario-Content ohne DB/Session-Zustand -- kommt direkt
+    aus landtag_sim.sample_data. Loader-Signatur (statt Direktimport in
+    routes_game), damit ein spaeterer Umzug in eine DB-Tabelle / pro-Szenario-
+    Zuordnung nur diese Stelle beruehrt. Kein `db`-Parameter -- bewusst."""
+    return list(SAMPLE_SCENARIO_GOALS)
 
 
 def _dilemma_option_from_dict(data: dict) -> DilemmaOption:
