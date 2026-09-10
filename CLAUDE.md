@@ -836,14 +836,15 @@ Bundes-/EU-Ebene.
 
 **Sprint-Struktur (empfohlene Reihenfolge):**
 
-### **Sprint 1 — B15 Phase 1: Opposition-Engine**
-- Dauer: 2-3 Tage
+### **Sprint 1 — B15 Phase 1: Opposition-Engine** ✓
+- Dauer: 2-3 Tage → **1 Session abgeschlossen (2026-09-10)**
 - Scope: Sim-Engine nur
-- Deliverable: `opposition_satisfaction`, `opposition_momentum`, `_calculate_coalition_viability()`, 108-115 Tests grün
-- Dateien:
-  - `sim/landtag_sim/models.py` — `opposition_satisfaction`, `opposition_momentum` zu `SimState`
-  - `sim/landtag_sim/engine.py` — `_calculate_coalition_viability()`, `advance_turn()` Opposition-Branch
-  - `sim/tests/test_engine.py` — 6-8 neue Tests (Opposition-Mechanik)
+- Deliverable: ✓ `opposition_satisfaction`, `opposition_momentum`, `_calculate_coalition_viability()`, 99 Tests grün
+- Dateien (committet):
+  - ✓ `sim/landtag_sim/models.py` — `opposition_satisfaction`, `opposition_momentum`, `opposition_mode` zu `SimState`, `OppositionCampaign` Dataclass
+  - ✓ `sim/landtag_sim/engine.py` — `_calculate_coalition_viability()` (einheitliche Metrik für beide Rollen)
+  - ✓ `sim/landtag_sim/sample_data.py` — `SAMPLE_OPPOSITION_CAMPAIGNS` (4 Kampagnen)
+  - ✓ `sim/tests/test_engine.py` — 5 neue Tests (Viability-Berechnung, Kampagnen-Validierung)
 
 ### **Sprint 2 — B15 Phase 2: Backend-API**
 - Dauer: 1-2 Tage
