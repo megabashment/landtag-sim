@@ -243,6 +243,13 @@ def _pending_dilemma_out(session: GameSession) -> PendingDilemmaOut | None:
 
 
 def _load_state_for_session(db: Session, session: GameSession):
+    # B23 Phase 3: Party-Ideologie laden (falls vorhanden)
+    party_ideology = None
+    if session.party_id:
+        party = db.get(Party, session.party_id)
+        if party:
+            party_ideology = party.ideology.value
+
     return load_sim_state(
         db,
         session.id,
@@ -262,6 +269,7 @@ def _load_state_for_session(db: Session, session: GameSession):
         session.opposition_mode,
         session.opposition_satisfaction,
         session.opposition_momentum,
+        party_ideology,
     )
 
 

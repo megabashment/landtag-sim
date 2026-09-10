@@ -208,6 +208,7 @@ def load_sim_state(
     opposition_mode: bool = False,
     opposition_satisfaction: dict[str, float] | None = None,
     opposition_momentum: dict[str, float] | None = None,
+    party_ideology: str | None = None,
 ) -> SimState:
     latest_values: dict[str, float] = {}
     for row in db.exec(
@@ -280,6 +281,7 @@ def load_sim_state(
         opposition_mode=opposition_mode,
         opposition_satisfaction=dict(opposition_satisfaction or {}),
         opposition_momentum=dict(opposition_momentum or {}),
+        party_ideology=party_ideology,
     )
 
 

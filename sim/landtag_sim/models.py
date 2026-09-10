@@ -625,6 +625,11 @@ class SimState:
     opposition_satisfaction: dict[str, float] = field(default_factory=dict)
     opposition_momentum: dict[str, float] = field(default_factory=dict)
 
+    # B23 "Party-Gründung (Persistente Meta-Ebene)" Phase 3: Ideologie der
+    # Partei (green/red/blue), wirkt auf Voter-Affinität-Modifikatoren.
+    # None = keine Party-Ideologie (klassischer Modus), String = Party.ideology
+    party_ideology: str | None = None
+
     def clone(self) -> "SimState":
         return SimState(
             turn=self.turn,
@@ -649,4 +654,5 @@ class SimState:
             opposition_mode=self.opposition_mode,
             opposition_satisfaction=dict(self.opposition_satisfaction),
             opposition_momentum=dict(self.opposition_momentum),
+            party_ideology=self.party_ideology,
         )

@@ -191,9 +191,59 @@ def _effect_delta(
     return effect.magnitude * (current_fraction - prev_fraction)
 
 
+def _ideology_modifier(group: VoterGroup, ideology: str | None) -> float:
+    """B23 Phase 3: Berechne Ideologie-Affinitaets-Modifikator fuer eine
+    Waehlergruppe basierend auf ihrer Gewichtung (economy/social/environment).
+
+    Modifikatoren:
+    - Green: +20% Umwelt-Gruppen (weight_environment > 1.2), -5% Wirtschaft
+    - Red: +15% Arbeitnehmer/Sozial (weight_social > 1.2), -8% Wirtschaft
+    - Blue: +15% Wirtschaft (weight_economy > 1.2), -10% Umwelt
+
+    Normalisiert auf Multiplikator (z.B. +20% = 1.2, -5% = 0.95).
+    """
+    if ideology is None:
+        return 1.0
+
+    # Bestimme dominante Gewichtung der Gruppe
+    is_economy = group.weight_economy > 1.2
+    is_social = group.weight_social > 1.2
+    is_environment = group.weight_environment > 1.2
+
+    if ideology == "green":
+        if is_environment:
+            return 1.2
+        elif is_economy:
+            return 0.95
+        else:
+            return 1.0
+    elif ideology == "red":
+        if is_social:
+            return 1.15
+        elif is_economy:
+            return 0.92
+        else:
+            return 1.0
+    elif ideology == "blue":
+        if is_economy:
+            return 1.15
+        elif is_environment:
+            return 0.90
+        else:
+            return 1.0
+
+    return 1.0
+
+
 def _weighted_approval(state: SimState) -> float:
+    """Gewichtete durchschnittliche Zufriedenheit mit optionalem
+    Ideologie-Modifikator (B23 Phase 3: Party-Ideologie wirkt auf Affinitaet)."""
     total_share = sum(g.population_share for g in state.voter_groups) or 1.0
-    return sum(g.satisfaction * g.population_share for g in state.voter_groups) / total_share
+    weighted_sum = 0.0
+    for g in state.voter_groups:
+        modifier = _ideology_modifier(g, state.party_ideology)
+        weighted_sum += g.satisfaction * modifier * g.population_share
+    return weighted_sum / total_share
 
 
 def _estimated_turnout(group) -> float:
@@ -219,14 +269,19 @@ def _estimated_turnout(group) -> float:
 def _turnout_weighted_approval(state: SimState) -> float:
     """Wie _weighted_approval, aber jede Gruppe zusaetzlich mit ihrer
     geschaetzten Beteiligung (_estimated_turnout) gewichtet. Faellt auf
-    _weighted_approval zurueck, wenn rechnerisch niemand waehlen wuerde."""
+    _weighted_approval zurueck, wenn rechnerisch niemand waehlen wuerde.
+    Wendet auch Ideologie-Modifikatoren an (B23 Phase 3)."""
     total = sum(g.population_share * _estimated_turnout(g) for g in state.voter_groups)
     if total <= 0:
         return _weighted_approval(state)
-    return (
-        sum(g.satisfaction * g.population_share * _estimated_turnout(g) for g in state.voter_groups)
-        / total
+    weighted_sum = sum(
+        g.satisfaction
+        * _ideology_modifier(g, state.party_ideology)
+        * g.population_share
+        * _estimated_turnout(g)
+        for g in state.voter_groups
     )
+    return weighted_sum / total
 
 
 def _calculate_coalition_viability(state: SimState, opposition_mode: bool) -> float:
