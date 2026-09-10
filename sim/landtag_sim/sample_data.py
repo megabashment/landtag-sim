@@ -29,8 +29,32 @@ from landtag_sim.models import (
     VoterGroup,
 )
 
+# B13 "Echte Niedersachsen-Statistik-Importe" (BACKLOG.md): die Startwerte
+# sind gegen recherchierte reale Niedersachsen-Kennzahlen abgeglichen und
+# dokumentiert -- die vollstaendige Herleitung inkl. Quellen und Abrufdatum
+# steht in data/sources/niedersachsen_startwerte.md. Kurzfassung je Wert:
+#   unemployment_rate  5.9  -- reale Arbeitslosenquote Nds. Jahresdurchschnitt
+#                             2024 (LSN). Direkt uebernommen.
+#   gdp_growth         1.2  -- reales BIP-Wachstum Nds. 2024 lag bei +0.4%,
+#                             einem konjunkturell schwachen Jahr; als
+#                             Spielstart bewusst der laengerfristige Nds.-
+#                             Korridor (~1.0-1.5%) statt des Ausreisserjahrs,
+#                             sonst startet jede Partie direkt in der
+#                             konjunkturdelle-/strompreiskrise-Triggerzone.
+#   renewable_share   35.0  -- real deckt Nds. seinen Stromverbrauch 2024
+#                             bilanziell zu >100% aus Erneuerbaren (54% des
+#                             physischen Bruttostromverbrauchs). Das Spiel
+#                             modelliert bewusst eine FRUEHERE Phase der
+#                             Energiewende (~Nds. Mitte der 2010er), damit der
+#                             Ausbau ueberhaupt noch Spiel-Hebel ist.
+#   co2_emissions    100.0  -- 0-100-Index, KEINE Tonnen. 100 = Referenz-
+#                             niveau des Spielstarts; sinkende Werte = real
+#                             beobachteter Rueckgang (Nds. -33.8% ggue. 1990).
+#   education_spending 40.0  } bewusst synthetische 0-100-Indizes ohne eine
+#   healthcare_quality 60.0  } einzelne amtliche Entsprechung (siehe data-
+#                            } README) -- plausibel gesetzt, nicht importiert.
 STARTING_STATISTICS = {
-    "unemployment_rate": 6.0,
+    "unemployment_rate": 5.9,
     "gdp_growth": 1.2,
     "education_spending": 40.0,
     "healthcare_quality": 60.0,

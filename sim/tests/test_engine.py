@@ -1091,7 +1091,7 @@ def test_report_fires_only_when_all_and_conditions_are_met():
     )
     result = advance_turn(state, [], [], report_rules=[full])
     assert len(result.reports) == 1
-    assert "6.0" in result.reports[0]
+    assert "5.9" in result.reports[0]  # STARTING_STATISTICS unemployment_rate (B13)
 
 
 def test_report_is_suppressed_in_a_turn_with_an_event():
@@ -1139,7 +1139,7 @@ def test_report_template_placeholders_are_filled_not_left_raw():
         template_text="Arbeitslosigkeit bei {unemployment_rate:.1f}, CO2 bei {co2_emissions:.0f}.",
     )
     text = advance_turn(state, [], [], report_rules=[rule]).reports[0]
-    assert "6.0" in text and "100" in text
+    assert "5.9" in text and "100" in text
     assert "[FEHLT:" not in text
 
 

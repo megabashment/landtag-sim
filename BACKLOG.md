@@ -559,10 +559,22 @@ vorherigen auf).
     „diese Regeln bleiben bei 0"-Test) — Telemetrie-Sweep, faellt wenn
     neuer Content nicht triggert. Balance-Runner unveraendert „keine
     dominante Policy". sim 108 / backend 55 grün.
-- [ ] **B13 — Echte Niedersachsen-Statistik-Importe** · Impact 2 × Aufwand 3 → M4
+- [x] **B13 — Echte Niedersachsen-Statistik-Importe** · Impact 2 × Aufwand 3 → M4
   - *Warum (`architecture.md`):* `data/` enthaelt nur Platzhalter-Module.
-    LSN/Regionalstatistik.de-Startwerte fuer `STARTING_STATISTICS`
-    verankern (Quellen-Doku in `data/README.md` existiert schon).
+  - *Umsetzung 2026-09-10:* **manueller Recherche-Anker statt GENESIS-API-
+    Pipeline** (Letzteres braucht Registrierung → separater Fast-Follow,
+    in `data/README.md` „Stand" vermerkt). Alle 6 Startwerte gegen reale
+    Nds.-Kennzahlen (LSN, Energiewendebericht 2024) abgeglichen und je
+    Wert dokumentiert: neue Datei `data/sources/niedersachsen_startwerte.md`
+    (Tabelle Spielwert vs. Realwert, Quellen, Abrufdatum, bewusste
+    Abweichungen), Kurz-Herleitung als Kommentarblock ueber
+    `STARTING_STATISTICS`. `unemployment_rate` 6.0→5.9 (realer Wert);
+    `gdp_growth`/`renewable_share`/`co2_emissions` weichen bewusst ab
+    (Balance/Progression — 2024 war ein konjunkturell schwaches Jahr,
+    Nds. deckt Strom real schon >100% erneuerbar); `education_spending`/
+    `healthcare_quality` bleiben synthetische 0-100-Indizes. 2 Report-
+    Tests mit hart codiertem 6.0 nachgezogen. sim 108 / backend 55 grün,
+    Balance-Runner unveraendert.
 - [ ] **B14 — Policy-/Statistik-Icons + `CREDITS.md` befuellen** · Impact 1 × Aufwand 2 → M4
   - game-icons.net (CC-BY 3.0) / Kenney (CC0), jeder Eintrag mit
     Lizenzzeile in `CREDITS.md` (Pflicht laut `architecture.md` Punkt 9).

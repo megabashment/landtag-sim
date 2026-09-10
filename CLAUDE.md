@@ -542,6 +542,22 @@ Roster `rezession` (< 0.0) bei Schweregrad + Optionen — die konjunkturdelle-
 Vorstufen-Test isoliert deshalb bewusst nur die `rezession`-Regel.
 Balance-Runner weiter „keine dominante Policy". sim 108 / backend 55 grün.
 
+M4-Backlog, B13 "Echte Niedersachsen-Statistik-Importe" (2026-09-10,
+BACKLOG.md): bewusst der **manuelle Recherche-Anker**, nicht die
+GENESIS-API-Pipeline (braucht Registrierung → Fast-Follow, siehe
+`data/README.md` „Stand"). Neue Datei `data/sources/niedersachsen_
+startwerte.md`: Tabelle Spielwert vs. realer Nds.-Wert (LSN /
+Energiewendebericht 2024), Quellen + Abrufdatum, bewusste Abweichungen.
+`STARTING_STATISTICS`: `unemployment_rate` 6.0→5.9 (realer Jahreswert
+2024); `gdp_growth` (real 2024 nur +0.4%, schwaches Jahr), `renewable_
+share` (real Nds. deckt Strom bilanziell >100% erneuerbar), `co2_emissions`
+(0-100-Index, keine Tonnen) weichen **bewusst** ab, weil B12-Content und
+Balance-Runner darauf getunt sind — 1:1-Import wuerde Freischalt-/
+Situations-Schwellen in Runde 0 ausloesen. `education_spending`/
+`healthcare_quality` bleiben synthetische Indizes. Kommentarblock ueber
+`STARTING_STATISTICS` fasst das je Wert zusammen. Zwei Report-Tests mit
+hart codiertem „6.0" auf „5.9" nachgezogen.
+
 DB-Lauf 2026-09-10 (Docker Desktop jetzt auf Christians Windows-Rechner
 installiert): erstmals die komplette Backend-Testsuite lokal ausgeführt und
 damit den über B1/B3/B4/B5/B7 aufgelaufenen "beim nächsten DB-Lauf

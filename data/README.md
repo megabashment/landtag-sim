@@ -30,11 +30,20 @@ braucht also kein neues Schema, nur eine neue Importquelle plus neue Zeilen.
   ausgeschlossen (regenerierbar, teils gross) -- Download-Skript statt
   Binaerdaten einchecken.
 
-## Naechster Schritt
+## Stand
 
-Sobald feststeht, welche konkreten Niedersachsen-Statistiken das Spiel
-braucht (z.B. Arbeitslosenquote nach Kreis, Bildungsausgaben, CO2-Bilanz),
-`sources/lsn_regionalstatistik.py` mit den passenden Tabellencodes aus der
-Landesdatenbank fuellen. Die Landesdatenbank bietet einen CSV/Tabellen-Export
-pro Statistik -- kein Live-API-Zugriff wie bei Weltbank, daher eher ein
-manueller/regelmaessiger Batch-Import als ein Live-Call.
+- **Startwerte plausibilisiert (B13, 2026-09-10):** die sechs
+  Start-Statistiken in `sim/landtag_sim/sample_data.py::STARTING_STATISTICS`
+  sind gegen recherchierte reale Niedersachsen-Kennzahlen abgeglichen und
+  je Wert dokumentiert -- siehe `sources/niedersachsen_startwerte.md`
+  (Tabelle Spielwert vs. Realwert, Quellen, Abrufdatum, bewusste
+  Abweichungen). `unemployment_rate` wurde auf den realen Wert gesetzt
+  (5,9 %); `renewable_share`/`co2_emissions`/`gdp_growth` weichen bewusst
+  ab (Balance/Progression -- Begruendung im Dokument). `education_spending`
+  und `healthcare_quality` bleiben synthetische 0-100-Indizes.
+- **Noch offen -- automatisierter Import:** `sources/lsn_regionalstatistik.py`
+  mit den passenden GENESIS-Tabellencodes fuellen. Die Landesdatenbank
+  bietet CSV/Tabellen-Export pro Statistik (kein Live-API wie bei Weltbank),
+  daher eher ein manueller/regelmaessiger Batch-Import als ein Live-Call.
+  Der Backend-Seed wuerde dann `STARTING_STATISTICS` fuer echte Sessions
+  ueberschreiben; Tests/Balance-Runner bleiben auf den synthetischen Werten.
