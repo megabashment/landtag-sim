@@ -791,6 +791,12 @@ PARTEI (persistent)
     - Trigger: nur in Opposition-Modus oder unter bestimmten Bedingungen
     - Effekte: PC-Malus, Satisfaction-Hit, oder positiv (Fusion = neue Basis)
     - Narrative: "Rücktritt des Co-Vorsitzenden" statt nur Zahlenänderung
+  - *Design-Idee (2026-09-10): Koalitions-Dilemmas (Anti-Machtkonzentration)*
+    - Wenn Koalitionsfähigkeit > 60% → automatisches Dilemma triggert
+    - Narrative: "Widerstand gegen deine Dominanz wächst"
+    - Options: Allianzen bilden (-PC, +Stabilität) / Kompromisse (-Viability) / Durchsetzen (Krise-Risiko)
+    - **Totale Mehrheit (>66%) = extrem selten**, nur Szenario-Ziel oder Endgame
+    - Ziel: Balance bewahren, Dominanz-Spirale verhindert, Drama bei Erfolg
 
 ---
 
