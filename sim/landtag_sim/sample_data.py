@@ -211,6 +211,110 @@ SAMPLE_POLICIES = [
             PolicyEffect(statistic_key="gdp_growth", magnitude=-1.2, delay_turns=1, inertia=3),
         ],
     ),
+    # B2 "Policy-Zerstückelung: Healthcare-Familie" (BACKLOG.md, Phase 2):
+    # Die monolithische Gesundheitsreform wird graduell ergaenzt. Kleine,
+    # spezialisierte Policies ermöglichen: (a) schnellere Reaktion auf kleine
+    # Krisen, (b) weniger "Alles-oder-Nichts"-Planung, (c) Spieler kann
+    # Portfolio selbst komponieren (alle drei kombiniert ~5.4 healthcare
+    # statt 12.0). Capital-Kosten sind einzeln niedrig, zusammen immer noch
+    # substanziell (3+4+4=11 < gesundheitsreform 12, aber teuer genug für echte
+    # Trade-offs). Keine requires -- reines Portfolio-Voting.
+    Policy(
+        key="elektronische_krankenschreibung",
+        name="Elektronische Krankenschreibung",
+        description=(
+            "Digitalisierung von Krankschreibungen spart Arztzeit und Verwaltungs-"
+            "aufwand, hebt die Versorgungsqualitaet mit minimalem Budget-Impact. "
+            "Kleiner, schnell umsetzbarer erste Schritt in der Digitalisierung "
+            "des Gesundheitswesens."
+        ),
+        one_time_cost=15.0,
+        upkeep_cost=2.0,
+        capital_cost=1.0,
+        effects=[
+            PolicyEffect(statistic_key="healthcare_quality", magnitude=0.8, delay_turns=1, inertia=2),
+            # Minimal negativer Effekt: Verwaltungsumstellung kostet kurz Geld.
+            PolicyEffect(statistic_key="gdp_growth", magnitude=-0.1, delay_turns=1, inertia=2),
+        ],
+    ),
+    Policy(
+        key="telemedizin_foerderung",
+        name="Telemedizin-Förderung",
+        description=(
+            "Breitband und Videokonsultationen erweitern den Zugang zur Versorgung "
+            "insbesondere in laendlichen Gebieten. Moderater Fokus auf "
+            "Flaechendeckung statt Spezialisierung."
+        ),
+        one_time_cost=20.0,
+        upkeep_cost=4.0,
+        capital_cost=2.0,
+        effects=[
+            PolicyEffect(statistic_key="healthcare_quality", magnitude=1.2, delay_turns=2, inertia=3),
+            # Infrastrukturkosten und Breitband-Ausbau bremsen kurzfristig Wachstum.
+            PolicyEffect(statistic_key="gdp_growth", magnitude=-0.2, delay_turns=1, inertia=2),
+        ],
+    ),
+    Policy(
+        key="digitale_patientenakte",
+        name="Digitale Patientenakte",
+        description=(
+            "EHR-System verbessert Koordination und Fehlerquoten, hebt aber die "
+            "IT-Sicherheits- und Datenschutz-Anforderungen. Fokus auf "
+            "Interoperabilität und Datenschutz."
+        ),
+        one_time_cost=25.0,
+        upkeep_cost=3.0,
+        capital_cost=2.0,
+        effects=[
+            PolicyEffect(statistic_key="healthcare_quality", magnitude=0.9, delay_turns=2, inertia=3),
+            # Sicherheitsinfrastruktur kostet Geld, IT-Wartung bremsst Wachstum.
+            PolicyEffect(statistic_key="gdp_growth", magnitude=-0.15, delay_turns=1, inertia=2),
+        ],
+    ),
+    # B2 "Policy-Zerstückelung: Erneuerbare-Familie" (BACKLOG.md, Phase 2):
+    # Die grosse Foerderprogramm-Policy wird durch spezialisierte kleinere
+    # Policies ergaenzt (nicht ersetzt). Spieler kann graduell Ausbau fahren:
+    # einzeln +2 bis +2.5 renewable, zusammen +5 (ggü. erneuerbare_foerderung +8).
+    # Capital-Kosten gering (1-2), aber kumulativ substanziell. Erlaubt
+    # schnellere Reaktionen auf renewable_share-Ziele oder
+    # gruenes_wachstum-Situation ohne die volle erneuerbare_foerderung-Bremse.
+    Policy(
+        key="solar_dachanlagen",
+        name="Solar-Dachanlagen-Förderung",
+        description=(
+            "Zuschuesse fuer Photovoltaik auf privaten und gewerblichen Dächern. "
+            "Geringe Flaechenanforderungen, schnelle Amortisation, breite "
+            "akzeptance. Kostengünstiger Weg zu lokalem grünem Strom."
+        ),
+        one_time_cost=10.0,
+        upkeep_cost=2.0,
+        capital_cost=1.0,
+        effects=[
+            PolicyEffect(statistic_key="renewable_share", magnitude=2.0, delay_turns=1, inertia=2),
+            PolicyEffect(statistic_key="co2_emissions", magnitude=-3.0, delay_turns=2, inertia=3),
+            # Moderat: Förderkosten bremsen Wachstum, aber weniger als
+            # erneuerbare_foerderung (erneuerbare: -0.6, solar: -0.15).
+            PolicyEffect(statistic_key="gdp_growth", magnitude=-0.15, delay_turns=1, inertia=2),
+        ],
+    ),
+    Policy(
+        key="windkraft_kleinanlagen",
+        name="Windkraft-Kleinanlagen",
+        description=(
+            "Zuschuesse fuer Windkraftanlagen unter 5 MW, oft als Bürgerbeteiligungs-"
+            "projekte. Breitere Dezentralisierung des Stromnetzes, hoeheres "
+            "Potenzial als Solar, aber laengere Genehmigungen."
+        ),
+        one_time_cost=18.0,
+        upkeep_cost=3.0,
+        capital_cost=2.0,
+        effects=[
+            PolicyEffect(statistic_key="renewable_share", magnitude=2.5, delay_turns=2, inertia=3),
+            PolicyEffect(statistic_key="co2_emissions", magnitude=-4.0, delay_turns=3, inertia=4),
+            # Genehmigungskosten, Netzanbindung, Flaechensuche kosten Wachstum.
+            PolicyEffect(statistic_key="gdp_growth", magnitude=-0.25, delay_turns=1, inertia=2),
+        ],
+    ),
     # Democracy-4-Recherche (siehe CLAUDE.md "Woher kommen positive Budget-
     # Werte?"): D4 modelliert Budget-Einnahmen nicht als unsichtbaren
     # Pauschal-Zuschuss, sondern als vom Spieler gewaehlte, sichtbare
