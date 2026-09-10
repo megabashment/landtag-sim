@@ -34,7 +34,7 @@ const CAPITAL_CAP = 10;
 
 // M5 "Opposition-Loop" (BACKLOG.md B15): Opposition-Kampagnen (Placeholder für MVP).
 // Idealerweise vom Backend kommen, aber für Prototyping hardcoded.
-const OPPOSITION_CAMPAIGNS = [
+const _OPPOSITION_CAMPAIGNS = [
   {
     key: "arbeitsmarkt_kritik",
     name: "Arbeitsmarkt-Kritik",
@@ -60,6 +60,73 @@ const OPPOSITION_CAMPAIGNS = [
     capital_cost: 1.5,
   },
 ];
+
+// M5 "Opposition-Loop" (BACKLOG.md B15 Phase 4): Sonntagsfrage-Overlay
+// im Stil deutscher Umfragen. Zeigt Regierung vs. Opposition mit
+// Koalitionsfähigkeit-Schwelle (30%).
+function SonntagsfragOverlay({ session }) {
+  if (!session) return null;
+
+  // Koalitionsfähigkeit berechnen (Näherung basierend auf Stats + Opposition-Satisfaction)
+  // Regierung: aus Stats + Wähler-Zufriedenheit abgeleitet
+  const regierungProzent = Math.round(
+    ((session.approval ?? 50) + (session.satisfaction_momentum ?? 0)) / 2
+  );
+
+  // Opposition: aus opposition_satisfaction abgeleitet
+  const oppositionSatisfaction = session.opposition_satisfaction ?? {};
+  const avgOppositionSat = Object.values(oppositionSatisfaction).length > 0
+    ? Object.values(oppositionSatisfaction).reduce((a, b) => a + b, 0) /
+      Object.values(oppositionSatisfaction).length
+    : 0;
+  const oppositionProzent = Math.round(Math.max(0, Math.min(100, avgOppositionSat)));
+
+  const coalitionThreshold = 30;
+  const regierungExceedsThreshold = regierungProzent >= coalitionThreshold;
+  const oppositionExceedsThreshold = oppositionProzent >= coalitionThreshold;
+
+  return (
+    <div className="sonntagsfrage-overlay">
+      <h2 className="sonntagsfrage-title">Sonntagsfrage: Koalitionsfähigkeit</h2>
+
+      <div className="sonntagsfrage-bars">
+        <div className="bar-container">
+          <div
+            className={`bar regierung-bar ${regierungExceedsThreshold ? "viable" : "not-viable"}`}
+            style={{ width: `${regierungProzent}%` }}
+          >
+            <span className="bar-label">Regierung</span>
+          </div>
+          <span className="bar-percent">{regierungProzent}%</span>
+        </div>
+
+        <div className="bar-container">
+          <div
+            className={`bar opposition-bar ${oppositionExceedsThreshold ? "viable" : "not-viable"}`}
+            style={{ width: `${oppositionProzent}%` }}
+          >
+            <span className="bar-label">Opposition</span>
+          </div>
+          <span className="bar-percent">{oppositionProzent}%</span>
+        </div>
+      </div>
+
+      <div className="sonntagsfrage-threshold">
+        <div
+          className="threshold-line"
+          style={{ left: `${coalitionThreshold}%` }}
+        />
+        <span className="threshold-label">Schwelle: {coalitionThreshold}%</span>
+      </div>
+
+      {session.opposition_mode && (
+        <p className="hint opposition-mode-hint">
+          Du spielst als <strong>Opposition</strong>. Ziel: Koalitionsfähigkeit auf {coalitionThreshold}% oder mehr bringen.
+        </p>
+      )}
+    </div>
+  );
+}
 
 // Phase 3 des Frontend-Umbaus: die persistente Statusleiste als "Amtsblatt-
 // Kopf" -- Ledger-Felder mit Kennzahl je Ressource, plus als Signatur ein
@@ -219,7 +286,7 @@ export default function App() {
   // gleichzeitig neu eingefuehrt UND zurueckgezogen werden kann.
   const [selectedRepeals, setSelectedRepeals] = useState([]);
   // M5 "Opposition-Loop" (BACKLOG.md B15): Opposition-Kampagnen-UI
-  const [oppositionCampaigns, setOppositionCampaigns] = useState([]);
+  // const [oppositionCampaigns, setOppositionCampaigns] = useState([]); // TODO: Phase 4c
   const [selectedCampaign, setSelectedCampaign] = useState(null);
   const [showOppositionChoice, setShowOppositionChoice] = useState(false);
   const [events, setEvents] = useState([]);
@@ -532,6 +599,7 @@ export default function App() {
       {session && (
         <>
           <StatusBar session={session} events={events} />
+          <SonntagsfragOverlay session={session} />
 
           {dilemmaPending && (
             <section className="panel dilemma-banner">
@@ -562,7 +630,38 @@ export default function App() {
               {electionResult.won ? (
                 <p>Wiederwahl geschafft &mdash; die naechste Legislaturperiode beginnt.</p>
               ) : (
-                <p>Die Partie ist beendet. Eine neue Partie kann gestartet werden.</p>
+                <>
+                  <p>Die Wahl ist verloren.</p>
+                  {showOppositionChoice && !session.opposition_mode && (
+                    <div className="opposition-choice">
+                      <p>
+                        <strong>Option:</strong> Du kannst in die Opposition gehen und versuchen,
+                        in der nächsten Legislaturperiode eine Koalition zu bilden.
+                      </p>
+                      <button
+                        onClick={() => {
+                          setSession({ ...session, opposition_mode: true });
+                          setShowOppositionChoice(false);
+                        }}
+                        className="button-primary"
+                      >
+                        In Opposition gehen
+                      </button>
+                      <button
+                        onClick={() => setShowOppositionChoice(false)}
+                        className="button-secondary"
+                      >
+                        Partie beenden
+                      </button>
+                    </div>
+                  )}
+                  {!showOppositionChoice && !session.opposition_mode && (
+                    <p>Die Partie ist beendet. Eine neue Partie kann gestartet werden.</p>
+                  )}
+                  {session.opposition_mode && (
+                    <p>Du spielst jetzt als <strong>Opposition</strong>. Nächste Legislaturperiode beginnt.</p>
+                  )}
+                </>
               )}
             </section>
           )}

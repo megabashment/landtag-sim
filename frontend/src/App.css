@@ -578,3 +578,158 @@ button:disabled {
   border-bottom: none;
   padding: 0.1rem 0;
 }
+
+/* M5 "Opposition-Loop" (BACKLOG.md B15 Phase 4): Sonntagsfrage-Overlay
+   im Stil deutscher Umfragen. Zeigt Regierung vs. Opposition mit
+   Koalitionsfähigkeit-Schwelle. */
+.sonntagsfrage-overlay {
+  background: linear-gradient(to bottom, #f9f9fc, #f3f3f8);
+  border: 1px solid #d8d8e0;
+  border-radius: 3px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.sonntagsfrage-title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 1rem 0;
+  font-family: var(--title);
+}
+
+.sonntagsfrage-bars {
+  margin-bottom: 1rem;
+}
+
+.bar-container {
+  position: relative;
+  height: 2.5rem;
+  margin-bottom: 1.2rem;
+  background: #eee;
+  border-radius: 2px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+}
+
+.bar {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding: 0 0.75rem;
+  transition: width 0.3s ease-out;
+  font-weight: 600;
+  color: white;
+  font-size: 0.9rem;
+}
+
+.regierung-bar {
+  background: linear-gradient(to right, #e53935, #c62828);
+}
+
+.opposition-bar {
+  background: linear-gradient(to right, #1e88e5, #1565c0);
+}
+
+.bar.viable {
+  background: linear-gradient(to right, #2e7d32, #1b5e20) !important;
+}
+
+.bar.not-viable {
+  opacity: 0.6;
+}
+
+.bar-label {
+  flex-shrink: 0;
+  margin-right: 0.5rem;
+}
+
+.bar-percent {
+  position: absolute;
+  right: 1rem;
+  font-family: var(--data);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #333;
+}
+
+.sonntagsfrage-threshold {
+  position: relative;
+  height: 2rem;
+  margin-bottom: 1rem;
+  background: #fafafa;
+  border: 1px solid #d8d8e0;
+  border-radius: 2px;
+}
+
+.threshold-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #2e7d32;
+  box-shadow: 0 0 4px rgba(46, 125, 50, 0.4);
+}
+
+.threshold-label {
+  position: absolute;
+  left: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #2e7d32;
+}
+
+.opposition-mode-hint {
+  background: #e3f2fd;
+  border-left: 4px solid #1e88e5;
+  padding: 0.75rem 1rem;
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+/* Opposition-Wahl-Dialog nach Wahlverlust */
+.opposition-choice {
+  background: #f0f4f8;
+  border: 2px solid #1e88e5;
+  border-radius: 3px;
+  padding: 1.5rem;
+  margin-top: 1rem;
+}
+
+.opposition-choice p {
+  margin: 0 0 1rem 0;
+}
+
+.opposition-choice .button-primary,
+.opposition-choice .button-secondary {
+  display: inline-block;
+  margin-right: 1rem;
+  margin-top: 0.5rem;
+  padding: 0.6rem 1.2rem;
+  border: none;
+  border-radius: 3px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.opposition-choice .button-primary {
+  background: #1e88e5;
+  color: white;
+}
+
+.opposition-choice .button-primary:hover {
+  background: #1565c0;
+}
+
+.opposition-choice .button-secondary {
+  background: #e0e0e0;
+  color: #333;
+}
+
+.opposition-choice .button-secondary:hover {
+  background: #d0d0d0;
+}
