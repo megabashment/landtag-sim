@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
 from app.db import get_session
-from app.models import EnactedPolicy, Faction, GameSession, Party, PolicyDefinition, VoterGroup
+from app.models import EnactedPolicy, Faction, GameSession, Party, PolicyDefinition, ScenarioDefinition, VoterGroup
 from app.models import StatisticValue
 from app.models.game import SessionRole, SessionStatus
 from app.models.party import PartyIdeology
@@ -19,6 +19,7 @@ from app.schemas.game import (
     FactionOut,
     GoalResultOut,
     NewPartyRequest,
+    PartySummaryOut,
     PendingDilemmaOut,
     PolicyEffectOut,
     PolicyOut,
@@ -26,6 +27,8 @@ from app.schemas.game import (
     PreviewResponse,
     ResolveDilemmaRequest,
     ResolveDilemmaResponse,
+    RivalPartyOut,
+    ScenarioOut,
     SessionStateResponse,
     TermSummaryOut,
     UnlockConditionOut,
@@ -41,9 +44,17 @@ from app.sim_bridge import (
     load_sim_state,
     load_situation_rules,
     persist_sim_state,
+    seed_rival_parties,
     serialize_pending_dilemma,
+    serialize_rival_parties,
 )
-from landtag_sim.engine import advance_turn, project_election, resolve_dilemma
+from landtag_sim.engine import (
+    REPUTATION_GAIN_ON_WIN,
+    REPUTATION_LOSS_ON_DEFEAT,
+    advance_turn,
+    project_election,
+    resolve_dilemma,
+)
 from landtag_sim.models import (
     DilemmaPendingError,
     InsufficientCapitalError,
@@ -53,7 +64,12 @@ from landtag_sim.models import (
     PolicyRequiredByActivePolicyError,
     UnmetPrerequisiteError,
 )
-from landtag_sim.sample_data import SAMPLE_FACTIONS, SAMPLE_VOTER_GROUPS, jittered_starting_statistics
+from landtag_sim.sample_data import (
+    SAMPLE_FACTIONS,
+    SAMPLE_VOTER_GROUPS,
+    get_scenario_starting_statistics,
+    jittered_starting_statistics,
+)
 
 router = APIRouter(tags=["game"])
 
@@ -68,7 +84,7 @@ ELECTION_PROJECTION_WINDOW = 5
 # -- es gibt im MVP noch KEINEN Opposition-Gameplay-Loop (das ist ein eigener
 # spaeterer Backlog-Punkt); das Flag verdrahtet nur den Datenpfad, damit der
 # spaetere Ausbau nicht rueckwirkend brechen muss.
-DEMOTE_TO_OPPOSITION_ON_LOSS = False
+DEMOTE_TO_OPPOSITION_ON_LOSS = True
 
 
 @router.get("/policies", response_model=list[PolicyOut])
@@ -95,6 +111,24 @@ def list_policies(db: Session = Depends(get_session)) -> list[PolicyOut]:
             effects=[PolicyEffectOut(**effect) for effect in row.effects],
             requires=list(row.requires),
             unlock_conditions=[UnlockConditionOut(**c) for c in (row.unlock_conditions or [])],  # B7
+        )
+        for row in rows
+    ]
+
+
+@router.get("/scenarios", response_model=list[ScenarioOut])
+def list_scenarios(db: Session = Depends(get_session)) -> list[ScenarioOut]:
+    """B24 "Scenario Mode" (M6): Liste aller verfügbaren Szenarien mit
+    Namen und Beschreibungen. Szenarien sind vordefinierte Spielmodi mit
+    Preset-Startbedingungen (z.B. "Klimakrise bewältigen" mit hohem
+    co2_emissions-Startwert)."""
+    run_all_seeds(db)
+    rows = db.exec(select(ScenarioDefinition)).all()
+    return [
+        ScenarioOut(
+            key=row.key,
+            name=row.name,
+            description=row.description,
         )
         for row in rows
     ]
@@ -133,39 +167,14 @@ def create_party_session(request: NewPartyRequest, db: Session = Depends(get_ses
         budget=1000.0,
         current_turn=0
     )
+    # Mehrparteiensystem (Medium-Scope): Party-Sessions treten gegen die drei
+    # festen Rivalen-Parteien an (klassische parteilose Sessions nicht).
+    session.rival_parties = seed_rival_parties()
     db.add(session)
     db.commit()
     db.refresh(session)
 
-    # Statistiken, Wählergruppen und Fraktionen seeden (gleich wie in create_session)
-    for stat_key, value in jittered_starting_statistics().items():
-        db.add(StatisticValue(session_id=session.id, statistic_key=stat_key, turn_number=0, value=value))
-
-    for vg in SAMPLE_VOTER_GROUPS:
-        db.add(
-            VoterGroup(
-                session_id=session.id,
-                name=vg.name,
-                population_share=vg.population_share,
-                satisfaction=vg.satisfaction,
-                weight_economy=vg.weight_economy,
-                weight_social=vg.weight_social,
-                weight_environment=vg.weight_environment,
-            )
-        )
-
-    for f in SAMPLE_FACTIONS:
-        db.add(
-            Faction(
-                session_id=session.id,
-                name=f.name,
-                seats=f.seats,
-                stance_economy=f.stance_economy,
-                stance_social=f.stance_social,
-                stance_environment=f.stance_environment,
-            )
-        )
-    db.commit()
+    _seed_session_world(db, session.id)
 
     return CreateSessionResponse(
         session_id=session.id,
@@ -174,8 +183,59 @@ def create_party_session(request: NewPartyRequest, db: Session = Depends(get_ses
         budget=session.budget,
         party_id=party.id,
         party_name=party.name,
-        party_ideology=party.ideology.value
+        party_ideology=party.ideology.value,
+        scenario_id=None,
+        scenario_name=None,
     )
+
+
+def _seed_session_world(
+    db: Session,
+    session_id: int,
+    scenario_statistics_override: dict[str, float] | None = None,
+) -> None:
+    """Seedet Startstatistiken (mit Jitter), Waehlergruppen (inkl. B23-
+    Ideologie-Affinitaeten) und die Landtags-Sitzverteilung fuer eine frisch
+    angelegte Session. Gemeinsam genutzt von create_session,
+    create_party_session und create_session_from_party.
+
+    B24 "Scenario Mode": falls scenario_statistics_override gesetzt,
+    werden diese Werte ueber die Jitter-Werte fuer bestimmte Statistiken
+    gelegt."""
+    stats = jittered_starting_statistics()
+    if scenario_statistics_override:
+        stats.update(scenario_statistics_override)
+
+    for stat_key, value in stats.items():
+        db.add(StatisticValue(session_id=session_id, statistic_key=stat_key, turn_number=0, value=value))
+
+    for vg in SAMPLE_VOTER_GROUPS:
+        db.add(
+            VoterGroup(
+                session_id=session_id,
+                name=vg.name,
+                population_share=vg.population_share,
+                satisfaction=vg.satisfaction,
+                weight_economy=vg.weight_economy,
+                weight_social=vg.weight_social,
+                weight_environment=vg.weight_environment,
+                ideology_preference=vg.ideology_preference,
+                ideology_dislike=vg.ideology_dislike,
+            )
+        )
+
+    for f in SAMPLE_FACTIONS:
+        db.add(
+            Faction(
+                session_id=session_id,
+                name=f.name,
+                seats=f.seats,
+                stance_economy=f.stance_economy,
+                stance_social=f.stance_social,
+                stance_environment=f.stance_environment,
+            )
+        )
+    db.commit()
 
 
 @router.post("/sessions", response_model=CreateSessionResponse)
@@ -188,43 +248,120 @@ def create_session(db: Session = Depends(get_session)) -> CreateSessionResponse:
     db.commit()
     db.refresh(session)
 
-    # P2-Punkt "Randomisierte Startbedingungen" (docs/game-design-roadmap.md):
-    # kleine Zufallsstreuung pro echter Session, damit nicht jede Partie mit
-    # exakt identischen Zahlen beginnt. Tests/Balance-Runner nutzen bewusst
-    # weiterhin die unrandomisierte build_initial_state()/STARTING_STATISTICS.
-    for stat_key, value in jittered_starting_statistics().items():
-        db.add(StatisticValue(session_id=session.id, statistic_key=stat_key, turn_number=0, value=value))
-
-    for vg in SAMPLE_VOTER_GROUPS:
-        db.add(
-            VoterGroup(
-                session_id=session.id,
-                name=vg.name,
-                population_share=vg.population_share,
-                satisfaction=vg.satisfaction,
-                weight_economy=vg.weight_economy,
-                weight_social=vg.weight_social,
-                weight_environment=vg.weight_environment,
-            )
-        )
-
-    # B8: Sitzverteilung im Landtag pro Session seeden (reine Anzeige-Daten,
-    # noch keine Mechanik -- siehe app/models/faction.py).
-    for f in SAMPLE_FACTIONS:
-        db.add(
-            Faction(
-                session_id=session.id,
-                name=f.name,
-                seats=f.seats,
-                stance_economy=f.stance_economy,
-                stance_social=f.stance_social,
-                stance_environment=f.stance_environment,
-            )
-        )
-    db.commit()
+    # P2-Punkt "Randomisierte Startbedingungen": Jitter + Waehlergruppen +
+    # Sitzverteilung (gemeinsame Seed-Logik, siehe _seed_session_world).
+    _seed_session_world(db, session.id)
 
     return CreateSessionResponse(
-        session_id=session.id, admin_unit=admin_unit.name, turn=session.current_turn, budget=session.budget
+        session_id=session.id,
+        admin_unit=admin_unit.name,
+        turn=session.current_turn,
+        budget=session.budget,
+        scenario_id=None,
+        scenario_name=None,
+    )
+
+
+@router.get("/parties", response_model=list[PartySummaryOut])
+def list_parties(db: Session = Depends(get_session)) -> list[PartySummaryOut]:
+    """B20 "Party-Legacy": alle bisher gegruendeten Parteien mit ihrem
+    aktuellen Ruf und der Zahl gespielter Legislaturperioden -- Grundlage fuer
+    den "Weiter mit Partei X"-Einstieg im Frontend."""
+    parties = db.exec(select(Party).order_by(Party.founded_at)).all()
+    out: list[PartySummaryOut] = []
+    for p in parties:
+        terms = (p.extra_data or {}).get("terms", [])
+        out.append(
+            PartySummaryOut(
+                id=p.id,
+                name=p.name,
+                ideology=p.ideology.value,
+                reputation=p.reputation,
+                terms_played=len(terms),
+                terms_won=sum(1 for t in terms if t.get("won")),
+            )
+        )
+    return out
+
+
+@router.post("/sessions/new-scenario/{scenario_id}", response_model=CreateSessionResponse)
+def create_session_from_scenario(scenario_id: str, db: Session = Depends(get_session)) -> CreateSessionResponse:
+    """B24 "Scenario Mode" (M6): startet eine neue Session mit einem
+    vordefinierten Szenario (Preset-Startbedingungen, Story). Szenarien
+    können beliebig oft gespielt werden."""
+    scenario = db.get(ScenarioDefinition, scenario_id)
+    if not scenario:
+        raise HTTPException(status_code=404, detail="Szenario nicht gefunden")
+
+    run_all_seeds(db)
+    admin_unit = ensure_niedersachsen(db)
+
+    session = GameSession(
+        admin_unit_id=admin_unit.id,
+        scenario_id=scenario_id,
+        budget=1000.0,
+        current_turn=0,
+        rival_parties=seed_rival_parties(),
+    )
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+
+    # B24 "Scenario Mode": apply scenario-spezifische Startbedingungen
+    _seed_session_world(
+        db,
+        session.id,
+        scenario_statistics_override=scenario.starting_statistics_override,
+    )
+
+    return CreateSessionResponse(
+        session_id=session.id,
+        admin_unit=admin_unit.name,
+        turn=session.current_turn,
+        budget=session.budget,
+        party_id=None,
+        party_name=None,
+        party_ideology=None,
+        scenario_id=scenario.key,
+        scenario_name=scenario.name,
+    )
+
+
+@router.post("/sessions/from-party/{party_id}", response_model=CreateSessionResponse)
+def create_session_from_party(party_id: int, db: Session = Depends(get_session)) -> CreateSessionResponse:
+    """B20 "Party-Legacy": startet eine neue Legislaturperiode fuer eine
+    BESTEHENDE Partei. Ihr aufgebauter Ruf (Party.reputation) wirkt ab Runde 0
+    als Amtsbonus/-malus (siehe engine._reputation_multiplier)."""
+    party = db.get(Party, party_id)
+    if not party:
+        raise HTTPException(status_code=404, detail="Partei nicht gefunden")
+
+    run_all_seeds(db)
+    admin_unit = ensure_niedersachsen(db)
+
+    session = GameSession(
+        admin_unit_id=admin_unit.id,
+        party_id=party.id,
+        budget=1000.0,
+        current_turn=0,
+        rival_parties=seed_rival_parties(),
+    )
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+
+    _seed_session_world(db, session.id)
+
+    return CreateSessionResponse(
+        session_id=session.id,
+        admin_unit=admin_unit.name,
+        turn=session.current_turn,
+        budget=session.budget,
+        party_id=party.id,
+        party_name=party.name,
+        party_ideology=party.ideology.value,
+        scenario_id=None,
+        scenario_name=None,
     )
 
 
@@ -244,11 +381,14 @@ def _pending_dilemma_out(session: GameSession) -> PendingDilemmaOut | None:
 
 def _load_state_for_session(db: Session, session: GameSession):
     # B23 Phase 3: Party-Ideologie laden (falls vorhanden)
+    # B20 "Party-Legacy": Ruf der Partei aus vorherigen Legislaturen laden
     party_ideology = None
+    party_reputation = 50.0
     if session.party_id:
         party = db.get(Party, session.party_id)
         if party:
             party_ideology = party.ideology.value
+            party_reputation = party.reputation
 
     return load_sim_state(
         db,
@@ -270,6 +410,8 @@ def _load_state_for_session(db: Session, session: GameSession):
         session.opposition_satisfaction,
         session.opposition_momentum,
         party_ideology,
+        party_reputation,
+        session.rival_parties,
     )
 
 
@@ -346,6 +488,11 @@ def _build_state_response(db: Session, session: GameSession) -> SessionStateResp
         election_projection=_election_projection_out(session, sim_state),
         factions=factions,
         active_situations=active_situations,
+        party_reputation=sim_state.party_reputation if session.party_id else None,
+        rival_parties=[
+            RivalPartyOut(name=r.name, ideology=r.ideology, approval=round(r.approval, 1))
+            for r in sim_state.rival_parties
+        ],
     )
 
 
@@ -715,12 +862,16 @@ def advance_session_turn(
     session.opposition_satisfaction = dict(new_state.opposition_satisfaction)
     session.opposition_momentum = dict(new_state.opposition_momentum)
 
+    # Mehrparteiensystem: fortgeschriebene Rivalen-Stimmenanteile zurueckschreiben
+    session.rival_parties = serialize_rival_parties(new_state.rival_parties)
+
     election_out: ElectionResultOut | None = None
     if result.election_result:
         election_out = ElectionResultOut(
             approval=result.election_result.approval,
             threshold=result.election_result.threshold,
             won=result.election_result.won,
+            standings=[list(s) for s in result.election_result.standings],
         )
         # Wahlmechanik (P0, siehe docs/game-design-roadmap.md): verlorene Wahl
         # beendet die Session (kein weiteres /advance moeglich, siehe Check
@@ -738,6 +889,30 @@ def advance_session_turn(
             session.role = SessionRole.OPPOSITION
         else:
             session.status = SessionStatus.LOST
+
+        # B20 "Party-Legacy": Ruf der Partei nach der Wahl anpassen und die
+        # Legislaturperiode in Party.extra_data["terms"] protokollieren. Sieg
+        # hebt den Ruf, Niederlage senkt ihn staerker (siehe engine-Konstanten
+        # REPUTATION_GAIN_ON_WIN / REPUTATION_LOSS_ON_DEFEAT).
+        if session.party_id:
+            party = db.get(Party, session.party_id)
+            if party:
+                if result.election_result.won:
+                    party.reputation = min(100.0, party.reputation + REPUTATION_GAIN_ON_WIN)
+                else:
+                    party.reputation = max(0.0, party.reputation - REPUTATION_LOSS_ON_DEFEAT)
+                data = dict(party.extra_data or {})
+                terms = list(data.get("terms", []))
+                terms.append(
+                    {
+                        "turn": new_state.turn,
+                        "won": bool(result.election_result.won),
+                        "approval": round(result.election_result.approval, 1),
+                    }
+                )
+                data["terms"] = terms
+                party.extra_data = data
+                db.add(party)
 
     db.add(session)
     db.commit()

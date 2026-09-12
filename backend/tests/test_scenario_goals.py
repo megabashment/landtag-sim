@@ -61,5 +61,9 @@ def test_missed_goals_do_not_end_the_game(client, session_id):
     # rueckhalt (Zustimmung > 60) muss bei ~5 Zufriedenheit verfehlt sein.
     rueckhalt = next(g for g in ts["goals"] if g["key"] == "rueckhalt")
     assert rueckhalt["met"] is False
-    # Das Spielende haengt an der Wahl (status=lost), nicht an den Zielen.
-    assert body["state"]["status"] == "lost"
+    # Unverbindlichkeit (F1): die verfehlten Ziele beenden die Partie nicht --
+    # der Ausgang haengt allein am Wahlergebnis. Mit DEMOTE_TO_OPPOSITION_ON_LOSS
+    # bedeutet "Wahl verloren" jetzt Rollenwechsel in die Opposition (status
+    # bleibt "active"), nicht Game Over.
+    assert body["election_result"]["won"] is False
+    assert body["state"]["role"] == "opposition"

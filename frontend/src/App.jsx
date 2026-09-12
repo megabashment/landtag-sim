@@ -67,7 +67,32 @@ const _OPPOSITION_CAMPAIGNS = [
 // Koalitionsfähigkeit-Schwelle (30%).
 // B23 "Party-Gründung (Persistente Meta-Ebene)" Phase 2: Game-Start-Menu
 // mit Option "Neue Partei gründen" vs. "Existierende laden"
-function GameStartMenu({ onNewParty, onStartClassic, disabled }) {
+function ScenarioSelectionDialog({ scenarios, onSelect, onClose, disabled }) {
+  return (
+    <div className="modal-overlay">
+      <div className="modal-content">
+        <h2>Szenario wählen</h2>
+        <div className="scenarios-list">
+          {scenarios.map((s) => (
+            <div key={s.key} className="scenario-card">
+              <h3>{s.name}</h3>
+              <p>{s.description}</p>
+              <button onClick={() => onSelect(s.key)} disabled={disabled} className="button-primary">
+                Dieses Szenario spielen
+              </button>
+            </div>
+          ))}
+        </div>
+        <button onClick={onClose} disabled={disabled} className="button-secondary">
+          Abbrechen
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function GameStartMenu({ onNewParty, onStartClassic, onContinueParty, onShowScenarios, existingParties, disabled }) {
+  const ideologyEmoji = { green: "🟢", red: "🔴", blue: "🔵" };
   return (
     <div className="game-start-menu">
       <h2>Landtag-Simulation</h2>
@@ -75,9 +100,37 @@ function GameStartMenu({ onNewParty, onStartClassic, disabled }) {
       <button className="button-primary" onClick={onNewParty} disabled={disabled}>
         🟢 Neue Partei gründen
       </button>
+      <button className="button-secondary" onClick={onShowScenarios} disabled={disabled}>
+        🎯 Szenario spielen
+      </button>
       <button className="button-secondary" onClick={onStartClassic} disabled={disabled}>
         ▶ Klassische Partie
       </button>
+
+      {existingParties.length > 0 && (
+        <div className="existing-parties">
+          <h3>Weiter mit einer bestehenden Partei</h3>
+          <ul className="existing-parties-list">
+            {existingParties.map((p) => (
+              <li key={p.id} className="existing-party-row">
+                <span className="existing-party-info">
+                  {ideologyEmoji[p.ideology] ?? ""} <strong>{p.name}</strong>
+                  <span className="existing-party-meta">
+                    {" "}Ruf {p.reputation.toFixed(0)} &middot; {p.terms_won}/{p.terms_played} Legislaturen gewonnen
+                  </span>
+                </span>
+                <button
+                  className="button-secondary"
+                  onClick={() => onContinueParty(p.id)}
+                  disabled={disabled}
+                >
+                  Weiter
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
@@ -164,8 +217,68 @@ function PartyCreationDialog({
   );
 }
 
+// Mehrparteiensystem (Medium-Scope): Naeherung der aktuellen Zustimmung aus
+// den Waehlergruppen (nach population_share gewichtet) -- keine exakte
+// Kopie der Ideologie-/Ruf-Modifikatoren der Sim-Engine, nur fuer die
+// laufende Sonntagsfrage-Anzeige zwischen den Wahlen gedacht.
+function estimatePlayerApproval(voterGroups) {
+  if (!voterGroups || voterGroups.length === 0) return 50;
+  const totalShare = voterGroups.reduce((sum, g) => sum + g.population_share, 0) || 1;
+  const weighted = voterGroups.reduce((sum, g) => sum + g.satisfaction * g.population_share, 0);
+  return weighted / totalShare;
+}
+
+const RIVAL_IDEOLOGY_COLOR = { green: "#2e7d32", red: "#c62828", blue: "#1565c0" };
+
+function MultiPartySonntagsfrage({ session }) {
+  const rivals = session.rival_parties ?? [];
+  const playerRaw = Math.max(0, estimatePlayerApproval(session.voter_groups));
+  const rivalRaw = rivals.map((r) => ({ ...r, raw: Math.max(0, r.approval) }));
+  const total = playerRaw + rivalRaw.reduce((s, r) => s + r.raw, 0) || 1;
+
+  const standings = [
+    { name: "Deine Partei", pct: (playerRaw / total) * 100, isPlayer: true },
+    ...rivalRaw.map((r) => ({ name: r.name, pct: (r.raw / total) * 100, ideology: r.ideology })),
+  ].sort((a, b) => b.pct - a.pct);
+
+  const leading = standings[0];
+
+  return (
+    <div className="sonntagsfrage-overlay">
+      <h2 className="sonntagsfrage-title">Sonntagsfrage</h2>
+      <div className="sonntagsfrage-bars multi-party-bars">
+        {standings.map((s) => (
+          <div className="bar-container" key={s.name}>
+            <div
+              className={`bar multi-party-bar ${s.isPlayer ? "player-bar" : ""}`}
+              style={{
+                width: `${Math.max(2, s.pct)}%`,
+                background: s.isPlayer ? undefined : RIVAL_IDEOLOGY_COLOR[s.ideology],
+              }}
+            >
+              <span className="bar-label">{s.name}</span>
+            </div>
+            <span className="bar-percent">{s.pct.toFixed(1)}%</span>
+          </div>
+        ))}
+      </div>
+      <p className="hint">
+        {leading.isPlayer
+          ? "Deine Partei liegt aktuell vorn."
+          : `${leading.name} liegt aktuell vorn -- bei der Wahl zaehlt der hoechste Stimmenanteil.`}
+      </p>
+    </div>
+  );
+}
+
 function SonntagsfragOverlay({ session }) {
   if (!session) return null;
+
+  // Mehrparteiensystem: eigene Ansicht, sobald Rivalen-Parteien existieren
+  // (nur Party-Sessions, siehe backend/app/api/routes_game.py::seed_rival_parties).
+  if (session.rival_parties && session.rival_parties.length > 0) {
+    return <MultiPartySonntagsfrage session={session} />;
+  }
 
   // Koalitionsfähigkeit berechnen (Näherung basierend auf Stats + Opposition-Satisfaction)
   // Regierung: aus Stats + Wähler-Zufriedenheit abgeleitet
@@ -411,9 +524,20 @@ export default function App() {
   const [showPartyCreation, setShowPartyCreation] = useState(false);
   const [partyName, setPartyName] = useState("");
   const [partyIdeology, setPartyIdeology] = useState("green");
+  // B20 "Party-Legacy": bestehende Parteien fuer "Weiter mit Partei X" im Startmenue
+  const [existingParties, setExistingParties] = useState([]);
+  // B24 "Scenario Mode": vordefinierte Spielmodi mit Preset-Bedingungen
+  const [scenarios, setScenarios] = useState([]);
+  const [showScenarioSelection, setShowScenarioSelection] = useState(false);
+  // Policy-Erweiterungsstate: speichert, welche Policies expandiert sind (Key -> true/false)
+  const [expandedPolicies, setExpandedPolicies] = useState({});
 
   function pushHistoryEntry(entry) {
     setHistory((prev) => [entry, ...prev].slice(0, HISTORY_LIMIT));
+  }
+
+  function togglePolicyExpanded(policyKey) {
+    setExpandedPolicies((prev) => ({ ...prev, [policyKey]: !prev[policyKey] }));
   }
 
   const dilemmaPending = Boolean(session?.pending_dilemma);
@@ -441,6 +565,41 @@ export default function App() {
       cancelled = true;
     };
   }, []);
+
+  // B20 "Party-Legacy": bestehende Parteien fuer das Startmenue holen, solange
+  // keine Session laeuft -- Grundlage fuer "Weiter mit Partei X".
+  useEffect(() => {
+    if (session) return;
+    let cancelled = false;
+    api
+      .listParties()
+      .then((result) => {
+        if (!cancelled) setExistingParties(result);
+      })
+      .catch(() => {
+        if (!cancelled) setExistingParties([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
+
+  // B24 "Scenario Mode": vordefinierte Spielmodi beim Start laden
+  useEffect(() => {
+    if (session) return;
+    let cancelled = false;
+    api
+      .listScenarios()
+      .then((result) => {
+        if (!cancelled) setScenarios(result);
+      })
+      .catch(() => {
+        if (!cancelled) setScenarios([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
 
   // Effekt-Vorschau (P0.1): sobald sich die Policy-Auswahl aendert, wird die
   // naechste Runde read-only simuliert und verworfen (kein Persistieren,
@@ -503,6 +662,56 @@ export default function App() {
       setShowGameStart(false);
       setShowPartyCreation(false);
       setPartyName("");
+      setEvents([]);
+      setAttributions([]);
+      setReports([]);
+      setElectionResult(null);
+      setTermSummary(null);
+      setSelectedPolicies([]);
+      setSelectedRepeals([]);
+      setHistory([]);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // B20 "Party-Legacy": neue Legislaturperiode fuer eine bestehende Partei
+  // starten -- ihr aufgebauter Ruf (Party.reputation) wirkt ab Runde 0.
+  async function handleContinueParty(partyId) {
+    setError(null);
+    setLoading(true);
+    try {
+      const created = await api.createSessionFromParty(partyId);
+      const state = await api.getSession(created.session_id);
+      setSession(state);
+      setShowGameStart(false);
+      setEvents([]);
+      setAttributions([]);
+      setReports([]);
+      setElectionResult(null);
+      setTermSummary(null);
+      setSelectedPolicies([]);
+      setSelectedRepeals([]);
+      setHistory([]);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // B24 "Scenario Mode": neue Session mit vordefinierten Scenario starten
+  async function handleStartScenario(scenarioId) {
+    setError(null);
+    setLoading(true);
+    try {
+      const created = await api.createSessionFromScenario(scenarioId);
+      const state = await api.getSession(created.session_id);
+      setSession(state);
+      setShowGameStart(false);
+      setShowScenarioSelection(false);
       setEvents([]);
       setAttributions([]);
       setReports([]);
@@ -728,8 +937,19 @@ export default function App() {
           <GameStartMenu
             onNewParty={() => setShowPartyCreation(true)}
             onStartClassic={handleStart}
+            onContinueParty={handleContinueParty}
+            onShowScenarios={() => setShowScenarioSelection(true)}
+            existingParties={existingParties}
             disabled={loading}
           />
+          {showScenarioSelection && (
+            <ScenarioSelectionDialog
+              scenarios={scenarios}
+              onSelect={handleStartScenario}
+              onClose={() => setShowScenarioSelection(false)}
+              disabled={loading}
+            />
+          )}
           {showPartyCreation && (
             <PartyCreationDialog
               onClose={() => {
@@ -782,6 +1002,20 @@ export default function App() {
                 Zufriedenheit (gewichtet): {electionResult.approval.toFixed(1)} / Schwellenwert{" "}
                 {electionResult.threshold.toFixed(1)}
               </p>
+              {electionResult.standings && electionResult.standings.length > 0 && (
+                <ol className="election-standings">
+                  {electionResult.standings.map(([name, pct], idx) => (
+                    <li
+                      key={name}
+                      className={name === "Deine Partei" ? "standings-player" : ""}
+                    >
+                      <span className="standings-rank">{idx + 1}.</span>
+                      <span className="standings-name">{name}</span>
+                      <span className="standings-pct">{pct.toFixed(1)}%</span>
+                    </li>
+                  ))}
+                </ol>
+              )}
               {electionResult.won ? (
                 <p>Wiederwahl geschafft &mdash; die naechste Legislaturperiode beginnt.</p>
               ) : (
@@ -969,63 +1203,100 @@ export default function App() {
 
             <div className="panel">
               <h2>Policies fuer naechste Runde</h2>
-              <ul className="policy-list">
-                {policies.map((p) => {
-                  const active = session.active_policy_keys.includes(p.key);
-                  const missing = unmetRequirements(p);
-                  const missingUnlocks = active ? [] : unmetUnlocks(p);  // B7
-                  const locked = !active && (missing.length > 0 || missingUnlocks.length > 0);
-                  // Democracy-4-Vorbild "Woher kommen positive Budget-Werte":
-                  // eine echte Einnahmen-Policy (income_per_turn) wird sichtbar
-                  // ausgewiesen statt als unsichtbarer Pauschal-Zuschuss zu wirken.
-                  const incomeHint = p.income_per_turn > 0 ? ` · +${p.income_per_turn} Einnahme/Runde` : "";
-                  const dependents = active ? activeDependents(p.key) : [];
-                  const repealBlocked = dependents.length > 0;
-                  return (
-                    <li key={p.key}>
-                      {active ? (
-                        <label>
-                          <input
-                            type="checkbox"
-                            disabled={gameOver || dilemmaPending || repealBlocked}
-                            checked={selectedRepeals.includes(p.key)}
-                            onChange={() => toggleRepeal(p.key)}
-                          />
-                          {p.name} (aktiv{incomeHint}) &mdash; zurueckziehen ({p.capital_cost} Political Capital)
-                        </label>
-                      ) : (
-                        <label>
-                          <input
-                            type="checkbox"
-                            disabled={gameOver || dilemmaPending || locked}
-                            checked={selectedPolicies.includes(p.key)}
-                            onChange={() => togglePolicy(p.key)}
-                          />
-                          {p.name} ({p.capital_cost} Political Capital{incomeHint})
-                        </label>
-                      )}
-                      {p.description && (
-                        <p className="policy-description">{p.description}</p>
-                      )}
-                      {locked && missing.length > 0 && (
-                        <p className="hint requirement-hint">
-                          Braucht zuerst: {missing.map(policyLabel).join(", ")}
-                        </p>
-                      )}
-                      {locked && missingUnlocks.length > 0 && (
-                        <p className="hint requirement-hint">
-                          Wird verfuegbar, wenn: {missingUnlocks.join(", ")}
-                        </p>
-                      )}
-                      {repealBlocked && (
-                        <p className="hint requirement-hint">
-                          Kann nicht zurueckgezogen werden, solange aktiv: {dependents.join(", ")}
-                        </p>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
+              <div className="policies-grid">
+                {["economy", "social", "environment"].map((category) => (
+                  <div key={category} className="policy-category">
+                    <h3 className="category-title">
+                      {category === "economy" && "💼 Wirtschaft"}
+                      {category === "social" && "👥 Soziales"}
+                      {category === "environment" && "🌍 Umwelt"}
+                    </h3>
+                    <div className="policy-cards">
+                      {policies
+                        .filter((p) => p.category === category)
+                        .map((p) => {
+                          const active = session.active_policy_keys.includes(p.key);
+                          const missing = unmetRequirements(p);
+                          const missingUnlocks = active ? [] : unmetUnlocks(p);
+                          const locked = !active && (missing.length > 0 || missingUnlocks.length > 0);
+                          const incomeHint = p.income_per_turn > 0 ? `+${p.income_per_turn}` : "";
+                          const dependents = active ? activeDependents(p.key) : [];
+                          const repealBlocked = dependents.length > 0;
+                          const expanded = expandedPolicies[p.key] || false;
+
+                          // B23 Phase 3: Party-Ideologie gibt Bonus in der Kategorie
+                          const partyIdeologyBonus =
+                            (session.party_ideology === "green" && category === "environment") ||
+                            (session.party_ideology === "red" && category === "social") ||
+                            (session.party_ideology === "blue" && category === "economy");
+
+                          return (
+                            <div
+                              key={p.key}
+                              className={`policy-card ${active ? "active" : ""} ${locked ? "locked" : ""} ${partyIdeologyBonus ? "bonus" : ""}`}
+                            >
+                              <div className="card-header">
+                                <label className="card-checkbox">
+                                  <input
+                                    type="checkbox"
+                                    disabled={gameOver || dilemmaPending || (active ? repealBlocked : locked)}
+                                    checked={active ? selectedRepeals.includes(p.key) : selectedPolicies.includes(p.key)}
+                                    onChange={() => (active ? toggleRepeal(p.key) : togglePolicy(p.key))}
+                                  />
+                                </label>
+                                <div className="card-title-section">
+                                  <h4>{p.name}</h4>
+                                  <div className="card-badges">
+                                    {partyIdeologyBonus && (
+                                      <span className={`badge bonus-badge bonus-${session.party_ideology}`}>
+                                        {session.party_ideology === "green" && "🟢 Grün-Bonus"}
+                                        {session.party_ideology === "red" && "🔴 Rot-Bonus"}
+                                        {session.party_ideology === "blue" && "🔵 Blau-Bonus"}
+                                      </span>
+                                    )}
+                                    <span className="badge cost-badge">🔵 {p.capital_cost} PC</span>
+                                    {incomeHint && <span className="badge income-badge">💰 {incomeHint}</span>}
+                                    {active && <span className="badge active-badge">aktiv</span>}
+                                  </div>
+                                </div>
+                                <button
+                                  className="expand-btn"
+                                  onClick={() => togglePolicyExpanded(p.key)}
+                                  title={p.description ? "Details" : ""}
+                                >
+                                  {expanded ? "▼" : "▶"}
+                                </button>
+                              </div>
+
+                              {expanded && (
+                                <div className="card-details">
+                                  {p.description && (
+                                    <p className="policy-description">{p.description}</p>
+                                  )}
+                                  {locked && missing.length > 0 && (
+                                    <p className="hint requirement-hint">
+                                      ⚠️ Braucht zuerst: {missing.map(policyLabel).join(", ")}
+                                    </p>
+                                  )}
+                                  {locked && missingUnlocks.length > 0 && (
+                                    <p className="hint requirement-hint">
+                                      🔓 Wird verfuegbar, wenn: {missingUnlocks.join(", ")}
+                                    </p>
+                                  )}
+                                  {repealBlocked && (
+                                    <p className="hint requirement-hint">
+                                      🔒 Kann nicht zurueckgezogen werden, solange aktiv: {dependents.join(", ")}
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+                ))}
+              </div>
               {selectedCapitalCost > session.political_capital && (
                 <p className="error">
                   Ausgewaehlt: {selectedCapitalCost} Political Capital, verfuegbar nur{" "}

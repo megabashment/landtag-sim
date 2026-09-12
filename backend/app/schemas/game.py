@@ -1,6 +1,14 @@
 from pydantic import BaseModel
 
 
+class ScenarioOut(BaseModel):
+    """B24 "Scenario Mode" (M6): ein vordefiniertes Spielszenario mit Story und Preset-Startbedingungen."""
+
+    key: str
+    name: str
+    description: str
+
+
 class PartyOut(BaseModel):
     """B23 "Party-Gründung (Persistente Meta-Ebene)" (BACKLOG.md):
     eine Partei mit persistenter Ideologie über mehrere Sessions hinweg."""
@@ -20,8 +28,31 @@ class NewPartyRequest(BaseModel):
     ideology: str  # "green" | "red" | "blue"
 
 
+class PartySummaryOut(BaseModel):
+    """B20 "Party-Legacy" (BACKLOG.md M6): Kurzprofil einer bestehenden Partei
+    fuer den "Weiter mit Partei X"-Einstieg -- Ruf + gespielte/gewonnene
+    Legislaturperioden aus Party.extra_data["terms"]."""
+
+    id: int
+    name: str
+    ideology: str
+    reputation: float
+    terms_played: int
+    terms_won: int
+
+
+class RivalPartyOut(BaseModel):
+    """Mehrparteiensystem (Medium-Scope): aktueller Stand einer computer-
+    gesteuerten Gegnerpartei (Anzeige in der Sonntagsfrage)."""
+
+    name: str
+    ideology: str
+    approval: float
+
+
 class CreateSessionResponse(BaseModel):
-    """Alte Definition bleibt, aber PartyOut wird auch in Party-Gründung verwendet."""
+    """Alte Definition bleibt, aber PartyOut wird auch in Party-Gründung verwendet.
+    B24 "Scenario Mode": optional scenario_id und scenario_name."""
 
     session_id: int
     admin_unit: str
@@ -30,6 +61,8 @@ class CreateSessionResponse(BaseModel):
     party_id: int | None = None
     party_name: str | None = None
     party_ideology: str | None = None
+    scenario_id: str | None = None
+    scenario_name: str | None = None
 
 
 class PolicyEffectOut(BaseModel):
@@ -169,6 +202,12 @@ class SessionStateResponse(BaseModel):
     factions: list[FactionOut] = []
     # B2: aktuell wirksame Situations (Lageanzeige in der Statusleiste).
     active_situations: list[ActiveSituationOut] = []
+    # B20 "Party-Legacy": aktueller Ruf der Partei (0-100, 50 neutral). None
+    # im parteilosen klassischen Modus.
+    party_reputation: float | None = None
+    # Mehrparteiensystem: aktuelle Stimmenanteile der Rivalen-Parteien
+    # (Sonntagsfrage). Leer im Einzel-Partei-Modus.
+    rival_parties: list[RivalPartyOut] = []
 
 
 class AttributionOut(BaseModel):
@@ -184,6 +223,9 @@ class ElectionResultOut(BaseModel):
     approval: float
     threshold: float
     won: bool
+    # Mehrparteiensystem: [(partei_name, stimmenanteil_prozent)] absteigend.
+    # Leer im klassischen Einzel-Partei-Modus (dann zaehlt approval>=threshold).
+    standings: list[tuple[str, float]] = []
 
 
 class GoalResultOut(BaseModel):

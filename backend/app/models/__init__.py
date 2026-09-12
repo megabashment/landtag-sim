@@ -7,6 +7,7 @@ from app.models.faction import Faction
 from app.models.game import GameSession, SessionRole, SessionStatus
 from app.models.party import Party, PartyIdeology
 from app.models.policy import EnactedPolicy, PolicyDefinition
+from app.models.scenario import ScenarioDefinition
 from app.models.situation import ActiveSituation
 from app.models.statistic import StatisticDefinition, StatisticValue
 from app.models.voter_group import VoterGroup

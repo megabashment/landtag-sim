@@ -32,3 +32,9 @@ class VoterGroup(SQLModel, table=True):
     # Muss ueber Restarts hinweg persistiert werden, sonst "vergisst" eine
     # Session bei jedem Neuladen den nachklingenden Ueberhang.
     satisfaction_momentum: float = Field(default=0.0)
+
+    # B23 Phase 3 Erweiterung: Wählergruppen-Ideologie-Affinität.
+    # `ideology_preference` (grün/rot/blau/None): die Ideologie, die diese Gruppe bevorzugt (+20% Bonus)
+    # `ideology_dislike` (grün/rot/blau/None): die Ideologie, die diese Gruppe ablehnt (-5% Malus)
+    ideology_preference: str | None = Field(default=None)
+    ideology_dislike: str | None = Field(default=None)

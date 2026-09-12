@@ -36,6 +36,7 @@ class GameSession(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     admin_unit_id: int = Field(foreign_key="admin_unit.id")
     party_id: int | None = Field(default=None, foreign_key="party.id")
+    scenario_id: str | None = Field(default=None, foreign_key="scenario_definition.key")
     name: str = Field(default="Neue Partie")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -88,6 +89,11 @@ class GameSession(SQLModel, table=True):
     opposition_mode: bool = Field(default=False)
     opposition_satisfaction: dict = Field(default_factory=dict, sa_column=Column(JSON))
     opposition_momentum: dict = Field(default_factory=dict, sa_column=Column(JSON))
+
+    # Mehrparteiensystem (Medium-Scope): serialisierte Rivalen-Parteien
+    # [{name, ideology, base_strength, approval, momentum}, ...]. Leer =
+    # klassischer Einzel-Partei-Modus. Wird bei jedem advance zurueckgeschrieben.
+    rival_parties: list = Field(default_factory=list, sa_column=Column(JSON))
 
     # Ressourcen-Basis pro Runde (skaliert mit coalition_viability am Wahl-Abend)
     political_capital_per_turn: float = Field(default=3.0)

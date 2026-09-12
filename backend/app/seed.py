@@ -126,3 +126,7 @@ def run_all_seeds(db: Session) -> None:
     ensure_policy_catalog(db)
     ensure_event_catalog(db)
     ensure_dilemma_catalog(db)
+
+    from app.sim_bridge import seed_scenarios
+
+    seed_scenarios(db)

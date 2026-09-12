@@ -77,27 +77,26 @@ def test_advance_turn_404_for_unknown_session(client):
     assert response.status_code == 404
 
 
-def test_election_cycle_without_any_policy_is_won_and_session_stays_active(client, session_id):
+def test_election_cycle_without_any_policy_drifts_to_defeat_then_opposition(client, session_id):
     """Ohne jede Policy bleibt die Zufriedenheit stabil, mit leichtem Drift
-    durch Stat-zu-Stat-Effekte (B2 Phase 1, Phillips/Solow) -- keine
-    Situations, keine Events, nur die Baseline-Ökonomik. Im Test driftet
-    sie auf ~49.9, was gerade unter ELECTION_APPROVAL_THRESHOLD=50.0 liegt
-    und zu einem Wahlverlust führt. Das ist OK: der Punkt ist, dass OHNE
-    Policies der Wert stabil bleibt und sich vorhersehbar verhält.
-    Assertion angepasst: ein Wahlverlust ist hier keine Überraschung mehr.
-    ELECTION_CYCLE_LENGTH=16, siehe engine.py."""
+    durch Stat-zu-Stat-Effekte (B2 Phase 1, Phillips/Solow). Sie driftet auf
+    ~49.9 -> knapp unter ELECTION_APPROVAL_THRESHOLD=50.0 -> Wahlverlust.
+
+    Seit DEMOTE_TO_OPPOSITION_ON_LOSS=True (Opposition-Loop) endet die Partie
+    dabei NICHT (status bleibt "active"), sondern die Rolle wechselt auf
+    "opposition". ELECTION_CYCLE_LENGTH=16, siehe engine.py."""
     response = None
     for _ in range(16):
         response = client.post(f"/sessions/{session_id}/advance", json={"enact_policy_keys": []})
         assert response.status_code == 200
     body = response.json()
     assert body["election_result"] is not None
-    # B2 Phase 1: Stat-zu-Stat-Drift im no-policy-Fall. Approval driftet auf
-    # ~49.9, verpasst Schwellenwert knapp. Hauptsache: es ist stabil/vorhersehbar
-    # und nicht zufällig.
-    assert body["state"]["status"] == "lost"
-    # Nach Niederlage wird (ohne DEMOTE_TO_OPPOSITION_ON_LOSS-Flag) nicht weitergespielt
-    assert body["state"]["turns_until_election"] == 16  # wird nicht erhöht
+    assert body["election_result"]["won"] is False
+    # Niederlage -> Opposition statt Game Over (Flag an).
+    assert body["state"]["status"] == "active"
+    assert body["state"]["role"] == "opposition"
+    # Zyklus laeuft weiter (Countdown auf neuen Zyklus zurueckgesetzt).
+    assert body["state"]["turns_until_election"] == 16
 
 
 def test_advance_on_a_lost_session_returns_400(client, session_id):

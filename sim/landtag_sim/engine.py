@@ -67,6 +67,7 @@ from landtag_sim.models import (
     PolicyNotActiveError,
     PolicyRequiredByActivePolicyError,
     ReportRule,
+    RivalParty,
     ScenarioGoal,
     SimState,
     SituationRule,
@@ -107,6 +108,26 @@ BASE_BUDGET_INCOME_PER_TURN = 15.0
 # spielbar bleibt).
 ELECTION_APPROVAL_THRESHOLD = 50.0
 ELECTION_CYCLE_LENGTH = 16
+
+# B20 "Party-Legacy": der Partei-Ruf (0-100, 50 neutral) wirkt als globaler
+# Multiplikator auf die gewichtete Zustimmung. REPUTATION_APPROVAL_SPAN steuert
+# die maximale Auslenkung: bei Ruf 0 -> Faktor (1 - SPAN), bei Ruf 100 ->
+# (1 + SPAN). 0.10 = bis zu ±10% Amtsbonus/-malus.
+REPUTATION_APPROVAL_SPAN = 0.10
+
+# Ruf-Anpassung nach einer Wahl (in routes_game.py angewendet, hier als
+# gemeinsame Referenz): Sieg hebt den Ruf, Niederlage senkt ihn staerker
+# (Abstrafung wiegt schwerer als Belohnung -- verhindert Ruf-Inflation ueber
+# viele gewonnene Zyklen).
+REPUTATION_GAIN_ON_WIN = 6.0
+REPUTATION_LOSS_ON_DEFEAT = 8.0
+
+# Mehrparteiensystem: Glaettung der Rivalen-Stimmenanteil-Drift pro Runde
+# (EMA-Alpha, analog SATISFACTION_MOMENTUM_ALPHA). Klein = traege Gegner.
+RIVAL_APPROVAL_ALPHA = 0.30
+# Wie stark sich Waehler-Unzufriedenheit auf einer Achse in Rivalen-Zuspruch
+# uebersetzt (Prozentpunkte pro "voll unzufrieden"-Einheit).
+RIVAL_DISCONTENT_SCALE = 22.0
 
 # P2-Punkt "Zufriedenheits-Momentum/Glaettung": Anteil der neuen Reaktion,
 # der SOFORT einfliesst (Rest wirkt als nachklingender Ueberhang in
@@ -192,27 +213,37 @@ def _effect_delta(
 
 
 def _ideology_modifier(group: VoterGroup, ideology: str | None) -> float:
-    """B23 Phase 3: Berechne Ideologie-Affinitaets-Modifikator fuer eine
-    Waehlergruppe basierend auf ihrer Gewichtung (economy/social/environment).
+    """B23 Phase 3 (erweitert um Wählergruppen-Affinitäten): Berechne
+    Ideologie-Affinitaets-Modifikator fuer eine Waehlergruppe.
 
-    Modifikatoren:
-    - Green: +20% Umwelt-Gruppen (weight_environment > 1.2), -5% Wirtschaft
-    - Red: +15% Arbeitnehmer/Sozial (weight_social > 1.2), -8% Wirtschaft
-    - Blue: +15% Wirtschaft (weight_economy > 1.2), -10% Umwelt
+    Zwei Ebenen:
+    1. **Explizite Gruppen-Affinitaet** (ideology_preference/dislike):
+       - +20% wenn group.ideology_preference == ideology
+       - -5% wenn group.ideology_dislike == ideology
+    2. **Gewichtungs-basierte Affinitaet** (weight_*-Felder, Fallback):
+       - Green: +15% Umwelt (weight_environment > 1.2), -5% Wirtschaft
+       - Red: +15% Sozial (weight_social > 1.2), -5% Wirtschaft
+       - Blue: +15% Wirtschaft (weight_economy > 1.2), -10% Umwelt
 
     Normalisiert auf Multiplikator (z.B. +20% = 1.2, -5% = 0.95).
     """
     if ideology is None:
         return 1.0
 
-    # Bestimme dominante Gewichtung der Gruppe
+    # Stufe 1: Explizite Affinity Check
+    if ideology == group.ideology_preference:
+        return 1.2
+    if ideology == group.ideology_dislike:
+        return 0.95
+
+    # Stufe 2: Fallback zu gewichtungs-basierten Modifikatoren
     is_economy = group.weight_economy > 1.2
     is_social = group.weight_social > 1.2
     is_environment = group.weight_environment > 1.2
 
     if ideology == "green":
         if is_environment:
-            return 1.2
+            return 1.15
         elif is_economy:
             return 0.95
         else:
@@ -221,7 +252,7 @@ def _ideology_modifier(group: VoterGroup, ideology: str | None) -> float:
         if is_social:
             return 1.15
         elif is_economy:
-            return 0.92
+            return 0.95
         else:
             return 1.0
     elif ideology == "blue":
@@ -235,15 +266,25 @@ def _ideology_modifier(group: VoterGroup, ideology: str | None) -> float:
     return 1.0
 
 
+def _reputation_multiplier(reputation: float) -> float:
+    """B20 "Party-Legacy": bildet den Partei-Ruf (0-100) linear auf einen
+    Zustimmungs-Multiplikator ab. 50 -> 1.0, 0 -> (1 - SPAN), 100 -> (1 + SPAN).
+    """
+    clamped = max(0.0, min(100.0, reputation))
+    return 1.0 + (clamped - 50.0) / 50.0 * REPUTATION_APPROVAL_SPAN
+
+
 def _weighted_approval(state: SimState) -> float:
     """Gewichtete durchschnittliche Zufriedenheit mit optionalem
-    Ideologie-Modifikator (B23 Phase 3: Party-Ideologie wirkt auf Affinitaet)."""
+    Ideologie-Modifikator (B23 Phase 3: Party-Ideologie wirkt auf Affinitaet)
+    und Party-Legacy-Multiplikator (B20: Ruf aus vorherigen Legislaturen)."""
     total_share = sum(g.population_share for g in state.voter_groups) or 1.0
     weighted_sum = 0.0
     for g in state.voter_groups:
         modifier = _ideology_modifier(g, state.party_ideology)
         weighted_sum += g.satisfaction * modifier * g.population_share
-    return weighted_sum / total_share
+    raw = weighted_sum / total_share
+    return raw * _reputation_multiplier(state.party_reputation)
 
 
 def _estimated_turnout(group) -> float:
@@ -281,7 +322,73 @@ def _turnout_weighted_approval(state: SimState) -> float:
         * _estimated_turnout(g)
         for g in state.voter_groups
     )
-    return weighted_sum / total
+    return weighted_sum / total * _reputation_multiplier(state.party_reputation)
+
+
+# Ordnet jeder Rivalen-Ideologie die Missstands-Achsen zu, aus denen sie
+# Zuspruch zieht: (statistik_key, ist_hoeher_schlechter, referenzwert, spanne).
+# "score" = clamp((wert - ref) / span, 0, 1) bzw. invertiert -> [0..1]-Unzufriedenheit.
+_RIVAL_DISCONTENT_AXES: dict[str, list[tuple[str, bool, float, float]]] = {
+    # Gruene Opposition: profitiert von schmutziger Lage / stockender Energiewende
+    "green": [
+        ("co2_emissions", True, 45.0, 35.0),
+        ("renewable_share", False, 45.0, 30.0),
+    ],
+    # Rote Opposition: profitiert von sozialer Schieflage
+    "red": [
+        ("unemployment_rate", True, 6.0, 4.0),
+        ("healthcare_quality", False, 55.0, 25.0),
+    ],
+    # Blaue Opposition: profitiert von wirtschaftlicher Schwaeche
+    "blue": [
+        ("gdp_growth", False, 1.0, 2.5),
+        ("unemployment_rate", True, 6.0, 4.0),
+    ],
+}
+
+
+def _rival_discontent_score(state: SimState, ideology: str) -> float:
+    """[0..1]: wie stark die aktuelle Lage der Ideologie einer Rivalen-Partei
+    in die Haende spielt (Mittel ueber ihre Missstands-Achsen)."""
+    axes = _RIVAL_DISCONTENT_AXES.get(ideology, [])
+    if not axes:
+        return 0.0
+    scores = []
+    for stat_key, higher_is_worse, ref, span in axes:
+        value = state.statistics.get(stat_key, ref)
+        raw = (value - ref) / span if higher_is_worse else (ref - value) / span
+        scores.append(max(0.0, min(1.0, raw)))
+    return sum(scores) / len(scores)
+
+
+def _update_rival_approval(state: SimState) -> None:
+    """Mehrparteiensystem: aktualisiert den Stimmenanteil jeder Rivalen-Partei
+    in-place. Ziel = base_strength + Lage-Bonus; weiche EMA-Drift dorthin.
+    Kein Zufall -- rein aus dem Sim-Zustand abgeleitet (reproduzierbar)."""
+    if not state.rival_parties:
+        return
+    for rival in state.rival_parties:
+        discontent = _rival_discontent_score(state, rival.ideology)
+        target = rival.base_strength + discontent * RIVAL_DISCONTENT_SCALE
+        target = max(0.0, min(100.0, target))
+        delta = target - rival.approval
+        rival.momentum = (
+            RIVAL_APPROVAL_ALPHA * delta + (1.0 - RIVAL_APPROVAL_ALPHA) * rival.momentum
+        )
+        rival.approval = max(0.0, min(100.0, rival.approval + rival.momentum))
+
+
+def _build_election_standings(
+    state: SimState, player_approval: float, player_name: str = "Deine Partei"
+) -> list[tuple[str, float]]:
+    """Normalisiert Spieler-Zustimmung + Rivalen-Stimmenanteile auf 100% und
+    gibt eine absteigend sortierte Rangliste [(name, prozent)] zurueck."""
+    raw = [(player_name, max(0.0, player_approval))]
+    raw += [(r.name, max(0.0, r.approval)) for r in state.rival_parties]
+    total = sum(v for _, v in raw) or 1.0
+    standings = [(name, round(v / total * 100.0, 1)) for name, v in raw]
+    standings.sort(key=lambda t: t[1], reverse=True)
+    return standings
 
 
 def _calculate_coalition_viability(state: SimState, opposition_mode: bool) -> float:
@@ -852,6 +959,10 @@ def advance_turn(
     # noch keine Effekte bei -- die kommen erst mit resolve_dilemma().
     _apply_reaction(new_state, attributions)
 
+    # 3b) Mehrparteiensystem: Rivalen-Stimmenanteile aus der aktuellen Lage
+    # fortschreiben (weiche EMA-Drift, kein Zufall). No-op ohne Rivalen.
+    _update_rival_approval(new_state)
+
     # 4) Wahlmechanik: Countdown fortschreiben, bei Erreichen von 0 Ergebnis
     # berechnen und Zyklus neu starten (Wiederwahl moeglich -- ob eine Session
     # nach LOST beendet wird, entscheidet die aufrufende Schicht, siehe
@@ -861,8 +972,22 @@ def advance_turn(
     term_summary: TermSummary | None = None
     if new_state.turns_until_election <= 0:
         approval = _weighted_approval(new_state)
+        # Wahlausgang: mit Rivalen zaehlt die Pluralitaet (hoechster
+        # Stimmenanteil gewinnt), sonst der klassische Schwellenwert.
+        if new_state.rival_parties:
+            standings = _build_election_standings(new_state, approval)
+            player_share = next(
+                (pct for name, pct in standings if name == "Deine Partei"), 0.0
+            )
+            won = player_share >= max(pct for _, pct in standings)
+        else:
+            standings = []
+            won = approval >= ELECTION_APPROVAL_THRESHOLD
         election_result = ElectionResult(
-            approval=approval, threshold=ELECTION_APPROVAL_THRESHOLD, won=approval >= ELECTION_APPROVAL_THRESHOLD
+            approval=approval,
+            threshold=ELECTION_APPROVAL_THRESHOLD,
+            won=won,
+            standings=standings,
         )
         # B1 (BACKLOG.md): Bilanz der gerade abgelaufenen Legislaturperiode
         # bauen -- BEVOR das Term-Tracking auf den naechsten Zyklus

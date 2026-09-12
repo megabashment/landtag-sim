@@ -23,6 +23,8 @@ from landtag_sim.models import (
     PolicyEffect,
     ReportCondition,
     ReportRule,
+    RivalParty,
+    ScenarioDefinition,
     ScenarioGoal,
     SimState,
     SituationRule,
@@ -78,10 +80,22 @@ def jittered_starting_statistics(rng: random.Random | None = None, spread: float
     return {key: value * (1 + rng.uniform(-spread, spread)) for key, value in STARTING_STATISTICS.items()}
 
 SAMPLE_VOTER_GROUPS = [
-    VoterGroup(name="Landwirtschaft", population_share=0.12, weight_economy=1.4, weight_environment=0.6),
-    VoterGroup(name="Industriearbeiter", population_share=0.28, weight_economy=1.6, weight_social=1.0),
-    VoterGroup(name="Staedtische Mitte", population_share=0.35, weight_social=1.3, weight_environment=1.3),
-    VoterGroup(name="Rentner", population_share=0.25, weight_social=1.5, weight_economy=0.8),
+    VoterGroup(
+        name="Landwirtschaft", population_share=0.12, weight_economy=1.4, weight_environment=0.6,
+        ideology_preference="green", ideology_dislike="blue"  # Umweltschutz wichtig, Liberalismus bedroht kleine Bauern
+    ),
+    VoterGroup(
+        name="Industriearbeiter", population_share=0.28, weight_economy=1.6, weight_social=1.0,
+        ideology_preference="red", ideology_dislike="blue"  # Arbeitnehmerschutz, gegen Liberalismus
+    ),
+    VoterGroup(
+        name="Staedtische Mitte", population_share=0.35, weight_social=1.3, weight_environment=1.3,
+        ideology_preference="green", ideology_dislike="blue"  # Progressiv, gegen wirtschaftliche Ungleichheit
+    ),
+    VoterGroup(
+        name="Rentner", population_share=0.25, weight_social=1.5, weight_economy=0.8,
+        ideology_preference="red", ideology_dislike="green"  # Sozialsystem-Sicherheit, gegen progressive Steuern
+    ),
     # Nach-P2-Nachschaerfung ("Waehlergruppen sind exklusiv", README.md
     # "Bekannte Vereinfachungen"): die vier Gruppen oben sind berufs-/
     # lebensphasenbasiert und schliessen sich gegenseitig aus (Summe exakt
@@ -94,8 +108,14 @@ SAMPLE_VOTER_GROUPS = [
     # Anteile 1.0 ergeben -- das macht dies zu einer reinen Datenaenderung
     # ohne Engine-/Schema-Aenderung (siehe test_voter_group_shares_
     # deliberately_overlap in test_engine.py).
-    VoterGroup(name="Umweltbewusste Waehler", population_share=0.20, weight_environment=1.8, weight_economy=0.7, weight_social=1.0),
-    VoterGroup(name="Junge Familien", population_share=0.18, weight_social=1.6, weight_economy=1.1, weight_environment=1.0),
+    VoterGroup(
+        name="Umweltbewusste Waehler", population_share=0.20, weight_environment=1.8, weight_economy=0.7, weight_social=1.0,
+        ideology_preference="green", ideology_dislike="blue"  # Grüne Politik, gegen Liberalismus
+    ),
+    VoterGroup(
+        name="Junge Familien", population_share=0.18, weight_social=1.6, weight_economy=1.1, weight_environment=1.0,
+        ideology_preference="red", ideology_dislike="blue"  # Soziale Sicherheit für Familien, gegen Liberalismus
+    ),
 ]
 
 # Summe der capital_cost der urspruenglichen drei Policies (erneuerbare_
@@ -1109,6 +1129,67 @@ SAMPLE_OPPOSITION_CAMPAIGNS = [
     ),
 ]
 
+# Mehrparteiensystem (Medium-Scope): drei feste computer-gesteuerte
+# Gegnerparteien, je eine pro Ideologie-Achse. `base_strength` ist ihr
+# Sockel-Stimmenanteil in ruhiger Lage; unter Missstaenden auf "ihrer" Achse
+# waechst der Zuspruch (siehe engine._update_rival_approval). `approval`
+# startet = base_strength. Summe der Sockel (~48) laesst der Spieler-Partei
+# in guter Lage bequem die Mehrheit, in der Krise wird es eng.
+SAMPLE_RIVAL_PARTIES = [
+    RivalParty(name="Klima-Liste", ideology="green", base_strength=16.0, approval=16.0),
+    RivalParty(name="SozialAllianz", ideology="red", base_strength=18.0, approval=18.0),
+    RivalParty(name="Wirtschaftsunion", ideology="blue", base_strength=14.0, approval=14.0),
+]
+
+# B24 "Scenario Mode" (M6 Sprint 1): vordefinierte Spielmodi mit Story +
+# Startbedingungen. Jedes Szenario kann mehrfach gespielt werden (anders als
+# klassische Partie oder Party-Sessions).
+SAMPLE_SCENARIOS = [
+    ScenarioDefinition(
+        key="klimakrise_bewaeltigen",
+        name="Klimakrise bewältigen",
+        description="Die CO2-Emissionen sind unkontrolliert gewachsen. Kannst du die Trendwende einleiten, bevor es zu spät ist?",
+        starting_statistics_override={
+            "co2_emissions": 90.0,  # Krise-Niveau
+            "renewable_share": 25.0,  # Stark hinter Potential
+        },
+    ),
+    ScenarioDefinition(
+        key="wirtschaftskrise_meistern",
+        name="Wirtschaftskrise meistern",
+        description="Das Wachstum ist zusammengebrochen. Du musst die Konjunktur stabilisieren und Arbeitsplätze sichern.",
+        starting_statistics_override={
+            "gdp_growth": -0.5,  # Rezessions-Territorium
+            "unemployment_rate": 8.5,  # Stark erhöht
+        },
+    ),
+    ScenarioDefinition(
+        key="arbeitsmarkt_stabilisieren",
+        name="Arbeitsmarkt stabilisieren",
+        description="Die Arbeitslosigkeit ist auf ein Jahrzehnt-Hoch gestiegen. Dein Auftrag: sie senken ohne die Wirtschaft zu schädigen.",
+        starting_statistics_override={
+            "unemployment_rate": 9.2,  # Krise-Niveau
+            "gdp_growth": 0.3,  # Schwach
+        },
+    ),
+    ScenarioDefinition(
+        key="gesundheitssystem_reformieren",
+        name="Gesundheitssystem reformieren",
+        description="Das Vertrauen in die Infrastruktur sinkt. Eine modernisierte Gesundheitspolitik ist dringend nötig.",
+        starting_statistics_override={
+            "healthcare_quality": 35.0,  # Deutlich unter Schnitt
+        },
+    ),
+    ScenarioDefinition(
+        key="bildung_zukunftssichern",
+        name="Bildung zukunftssichern",
+        description="Schulen verfallen, Lehrkräfte sind überfordert. Investitionen sind jetzt erforderlich.",
+        starting_statistics_override={
+            "education_spending": 30.0,  # Unterfinanziert
+        },
+    ),
+]
+
 
 def build_initial_state() -> SimState:
     return SimState(
@@ -1118,3 +1199,12 @@ def build_initial_state() -> SimState:
         voter_groups=[VoterGroup(**vars(vg)) for vg in SAMPLE_VOTER_GROUPS],
         political_capital=10.0,
     )
+
+
+def get_scenario_starting_statistics(scenario: ScenarioDefinition) -> dict[str, float]:
+    """B24 "Scenario Mode": Basisstatistiken mit Szenario-spezifischen Overrides
+    kombinieren. Alle nicht überschriebenen Statistiken bleiben bei ihren
+    Standard-Werten."""
+    stats = dict(STARTING_STATISTICS)
+    stats.update(scenario.starting_statistics_override)
+    return stats

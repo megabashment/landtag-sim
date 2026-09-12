@@ -17,7 +17,17 @@ def init_db() -> None:
 
     Fuer die MVP-Phase reicht create_all; sobald das Schema sich haeufiger
     aendert, uebernimmt Alembic (siehe backend/alembic/) die Migrationen.
+
+    WICHTIG: create_all fuegt nur FEHLENDE Tabellen hinzu, es aendert KEINE
+    bestehenden (keine neuen Spalten). Bei einer Schemaaenderung an einer
+    schon existierenden Tabelle (z.B. game_session.rival_parties, B20) muss
+    die Dev-DB einmalig neu aufgebaut werden:
+        docker compose down -v && docker compose up -d --build
+    Die Backend-Testsuite ist davon unberuehrt -- conftest.py macht pro Lauf
+    drop_all/create_all gegen die separate landtag_sim_test-DB.
     """
+    import app.models  # noqa: F401  -- Tabellen bei SQLModel registrieren
+
     SQLModel.metadata.create_all(engine)
 
 

@@ -27,6 +27,15 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ name, ideology }),
     }),
+  // B20 "Party-Legacy": bestehende Parteien (Ruf, gespielte/gewonnene
+  // Legislaturperioden) fuer den "Weiter mit Partei X"-Einstieg.
+  listParties: () => request("/parties"),
+  createSessionFromParty: (partyId) =>
+    request(`/sessions/from-party/${partyId}`, { method: "POST" }),
+  // B24 "Scenario Mode" (M6): vordefinierte Spielmodi mit Preset-Bedingungen
+  listScenarios: () => request("/scenarios"),
+  createSessionFromScenario: (scenarioId) =>
+    request(`/sessions/new-scenario/${scenarioId}`, { method: "POST" }),
   getSession: (id) => request(`/sessions/${id}`),
   // repealPolicyKeys: Democracy-4-Vorbild "Policy-Repeal" (siehe
   // landtag_sim.engine.py::advance_turn) -- Policies, die diese Runde

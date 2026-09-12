@@ -175,6 +175,12 @@ class VoterGroup:
     # _apply_reaction.
     satisfaction_momentum: float = 0.0
 
+    # B23 Phase 3 Erweiterung: Wählergruppen-Ideologie-Affinität.
+    # `ideology_preference` (grün/rot/blau/None): die Ideologie, die diese Gruppe bevorzugt (+20% Bonus auf ihre Lieblingskateg.)
+    # `ideology_dislike` (grün/rot/blau/None): die Ideologie, die diese Gruppe ablehnt (-5% Malus)
+    ideology_preference: str | None = None
+    ideology_dislike: str | None = None
+
 
 @dataclass
 class Faction:
@@ -302,12 +308,20 @@ class ElectionResult:
     """Ergebnis einer Wahl am Ende eines Zyklus (turns_until_election == 0).
 
     approval ist die nach population_share gewichtete Durchschnitts-
-    zufriedenheit aller Waehlergruppen; won=True wenn approval >= threshold.
+    zufriedenheit aller Waehlergruppen.
+
+    Wahlausgang (B20 / Mehrparteiensystem): sobald `standings` gesetzt ist
+    (mind. eine Rivalen-Partei im Spiel), zaehlt die PLURALITAET -- won=True,
+    wenn der Spieler-Stimmenanteil der hoechste ist. Ohne Rivalen faellt es
+    auf das alte Schwellen-Kriterium zurueck (approval >= threshold).
     """
 
     approval: float
     threshold: float
     won: bool
+    # [(partei_name, stimmenanteil_prozent)] absteigend sortiert, inkl. Spieler.
+    # Leer im klassischen Einzel-Partei-Modus.
+    standings: list[tuple[str, float]] = field(default_factory=list)
 
 
 @dataclass
@@ -548,6 +562,25 @@ class DelayedEffect:
 
 
 @dataclass
+class RivalParty:
+    """B20 / Mehrparteiensystem (Medium-Scope): eine computer-gesteuerte
+    Gegnerpartei. Wird NICHT parallel simuliert -- ihr Stimmenanteil
+    (`approval`, 0-100) driftet jede Runde per EMA auf ein Ziel zu, das sich
+    aus `base_strength` plus der zur Ideologie passenden Waehler-Unzufriedenheit
+    mit der aktuellen Lage ergibt (siehe engine._update_rival_approval).
+
+    `ideology`: "green" | "red" | "blue" -- bestimmt, aus welcher
+    Missstands-Achse die Partei Kapital schlaegt (Gruen: CO2/Erneuerbare,
+    Rot: Arbeitslosigkeit/Gesundheit, Blau: Wachstum/Arbeitsmarkt).
+    """
+    name: str
+    ideology: str
+    base_strength: float  # Sockel-Stimmenanteil ohne Lage-Bonus (z.B. 18.0)
+    approval: float = 18.0  # aktueller Stimmenanteil, wird pro Runde aktualisiert
+    momentum: float = 0.0  # EMA-Gedaechtnis fuer weiche Drift
+
+
+@dataclass
 class OppositionCampaign:
     """M5 "Opposition-Loop" (BACKLOG.md B15): Kampagne statt Policy fuer die
     Opposition. Beeinflusst Wähler-Zufriedenheit direkt (nicht Statistiken),
@@ -630,6 +663,17 @@ class SimState:
     # None = keine Party-Ideologie (klassischer Modus), String = Party.ideology
     party_ideology: str | None = None
 
+    # B20 "Party-Legacy" (BACKLOG.md M6): Ruf der Partei aus vorherigen
+    # Legislaturperioden (0-100, 50 = neutral). Wirkt als globaler
+    # Multiplikator auf die gewichtete Zustimmung (siehe _weighted_approval):
+    # eine erfolgreich regierende Partei startet die naechste Partie mit
+    # Amtsbonus, eine abgestrafte mit Malus (jeweils bis ca. ±10%).
+    party_reputation: float = 50.0
+
+    # Mehrparteiensystem (Medium-Scope): computer-gesteuerte Gegnerparteien.
+    # Leer = klassischer Einzel-Partei-Modus (Wahl per Schwellenwert).
+    rival_parties: list[RivalParty] = field(default_factory=list)
+
     def clone(self) -> "SimState":
         return SimState(
             turn=self.turn,
@@ -655,4 +699,28 @@ class SimState:
             opposition_satisfaction=dict(self.opposition_satisfaction),
             opposition_momentum=dict(self.opposition_momentum),
             party_ideology=self.party_ideology,
+            party_reputation=self.party_reputation,
+            rival_parties=[RivalParty(**vars(r)) for r in self.rival_parties],
         )
+
+
+@dataclass
+class ScenarioDefinition:
+    """B24 "Scenario Mode" (M6): ein Szenario ist ein Preset-Spielmodus mit
+    vordefinierten Startbedingungen, optionalen Zielen und einer Story.
+
+    Beispiele: "Klimakrise bewältigen" (hohes co2 zu Start), "Arbeitsmarkt
+    stabilisieren" (hohe Arbeitslosigkeit), etc. Jedes Szenario kann mehrmals
+    gespielt werden (anders als "Klassische Partie" oder Party-Sessions).
+    """
+
+    key: str  # z.B. "klimakrise_bewaeltigen" (eindeutig)
+    name: str  # "Klimakrise bewältigen" (UI-Label)
+    description: str  # "Die CO2-Emissionen sind unkontrolliert gewachsen..."
+
+    # Optionale Overrides für Startstatistiken (alle anderen bleiben unverändert)
+    starting_statistics_override: dict[str, float] = field(default_factory=dict)
+
+    # Optionale Scenarios-spezifische Ziele (zusätzlich zu SAMPLE_SCENARIO_GOALS)
+    # Falls leer, werden die Standard-Goals verwendet
+    scenario_goals: list[str] = field(default_factory=list)  # Goal-Keys

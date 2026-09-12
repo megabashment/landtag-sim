@@ -30,6 +30,7 @@ from landtag_sim.models import (
     Policy,
     PolicyEffect,
     ReportRule,
+    RivalParty as SimRivalParty,
     ScenarioGoal,
     SimState,
     SituationRule,
@@ -39,8 +40,11 @@ from landtag_sim.models import (
 from landtag_sim.sample_data import (
     SAMPLE_OPPOSITION_CAMPAIGNS,
     SAMPLE_REPORT_RULES,
+    SAMPLE_RIVAL_PARTIES,
     SAMPLE_SCENARIO_GOALS,
+    SAMPLE_SCENARIOS,
     SAMPLE_SITUATION_RULES,
+    get_scenario_starting_statistics,
 )
 
 
@@ -133,6 +137,37 @@ def load_opposition_campaigns() -> list[OppositionCampaign]:
     return list(SAMPLE_OPPOSITION_CAMPAIGNS)
 
 
+def seed_rival_parties() -> list[dict]:
+    """Mehrparteiensystem (Medium-Scope): serialisierte Startaufstellung der
+    computer-gesteuerten Gegnerparteien fuer eine neue Party-Session. Wird
+    als JSON in GameSession.rival_parties gelegt und danach pro Runde von der
+    Sim-Engine fortgeschrieben (siehe serialize_rival_parties)."""
+    return [
+        {
+            "name": r.name,
+            "ideology": r.ideology,
+            "base_strength": r.base_strength,
+            "approval": r.approval,
+            "momentum": r.momentum,
+        }
+        for r in SAMPLE_RIVAL_PARTIES
+    ]
+
+
+def serialize_rival_parties(rivals: list) -> list[dict]:
+    """SimState.rival_parties -> JSON-taugliche Liste (fuer GameSession.rival_parties)."""
+    return [
+        {
+            "name": r.name,
+            "ideology": r.ideology,
+            "base_strength": r.base_strength,
+            "approval": r.approval,
+            "momentum": r.momentum,
+        }
+        for r in rivals
+    ]
+
+
 def load_situation_rules() -> list[SituationRule]:
     """B2 "Situations-Layer" (BACKLOG.md): wie load_report_rules() /
     load_scenario_goals() reiner statischer Content ohne DB/Session-Zustand.
@@ -209,6 +244,8 @@ def load_sim_state(
     opposition_satisfaction: dict[str, float] | None = None,
     opposition_momentum: dict[str, float] | None = None,
     party_ideology: str | None = None,
+    party_reputation: float = 50.0,
+    rival_parties: list[dict] | None = None,
 ) -> SimState:
     latest_values: dict[str, float] = {}
     for row in db.exec(
@@ -236,6 +273,9 @@ def load_sim_state(
             # sonst "vergisst" die Session den nachklingenden Ueberhang bei
             # jedem Neuladen (siehe engine.py::_apply_reaction).
             satisfaction_momentum=vg.satisfaction_momentum,
+            # B23 Phase 3 Erweiterung: Ideologie-Affinitäten laden
+            ideology_preference=vg.ideology_preference,
+            ideology_dislike=vg.ideology_dislike,
         )
         for vg in db.exec(select(DbVoterGroup).where(DbVoterGroup.session_id == session_id))
     ]
@@ -282,6 +322,17 @@ def load_sim_state(
         opposition_satisfaction=dict(opposition_satisfaction or {}),
         opposition_momentum=dict(opposition_momentum or {}),
         party_ideology=party_ideology,
+        party_reputation=party_reputation,
+        rival_parties=[
+            SimRivalParty(
+                name=r["name"],
+                ideology=r["ideology"],
+                base_strength=r["base_strength"],
+                approval=r.get("approval", r["base_strength"]),
+                momentum=r.get("momentum", 0.0),
+            )
+            for r in (rival_parties or [])
+        ],
     )
 
 
@@ -325,3 +376,22 @@ def persist_sim_state(db: Session, session_id: int, new_state: SimState) -> None
                 session_id=session_id, rule_key=sim_situation.rule_key, since_turn=sim_situation.since_turn
             )
         )
+
+
+def seed_scenarios(db: Session) -> None:
+    """B24 "Scenario Mode": seede alle Szenarien in die DB."""
+    from app.models import ScenarioDefinition as DbScenarioDefinition
+
+    for scenario in SAMPLE_SCENARIOS:
+        existing = db.get(DbScenarioDefinition, scenario.key)
+        if not existing:
+            db.add(
+                DbScenarioDefinition(
+                    key=scenario.key,
+                    name=scenario.name,
+                    description=scenario.description,
+                    starting_statistics_override=scenario.starting_statistics_override,
+                    scenario_goal_keys=scenario.scenario_goals,
+                )
+            )
+    db.commit()

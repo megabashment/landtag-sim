@@ -1622,3 +1622,110 @@ def test_blue_ideology_boosts_economy_groups():
 
     assert isinstance(approval, float)
     assert 0 <= approval <= 100
+
+
+# --- B20 "Party-Legacy": Ruf-Multiplikator -----------------------------------
+
+
+def test_party_reputation_above_neutral_lifts_weighted_approval():
+    """Ein Ruf > 50 hebt die gewichtete Zustimmung (Amtsbonus), ein Ruf < 50
+    senkt sie -- jeweils bis rund ±10% an den Extremen."""
+    from landtag_sim.engine import _weighted_approval
+
+    neutral = build_initial_state()
+    neutral.party_reputation = 50.0
+    base = _weighted_approval(neutral)
+
+    high = build_initial_state()
+    high.party_reputation = 100.0
+    low = build_initial_state()
+    low.party_reputation = 0.0
+
+    assert _weighted_approval(high) > base
+    assert _weighted_approval(low) < base
+    assert _weighted_approval(high) == pytest.approx(base * 1.10)
+    assert _weighted_approval(low) == pytest.approx(base * 0.90)
+
+
+def test_party_reputation_default_is_neutral_no_effect():
+    """Ohne gesetzten Ruf (Default 50) darf sich die Zustimmung nicht ändern."""
+    from landtag_sim.engine import _weighted_approval
+
+    state = build_initial_state()
+    assert state.party_reputation == pytest.approx(50.0)
+    # Multiplikator exakt 1.0
+    from landtag_sim.engine import _reputation_multiplier
+
+    assert _reputation_multiplier(50.0) == pytest.approx(1.0)
+
+
+# --- Mehrparteiensystem: Rivalen-Parteien ----------------------------------
+
+
+def _state_with_rivals():
+    from landtag_sim.sample_data import SAMPLE_RIVAL_PARTIES
+    from landtag_sim.models import RivalParty
+
+    state = build_initial_state()
+    state.rival_parties = [RivalParty(**vars(r)) for r in SAMPLE_RIVAL_PARTIES]
+    return state
+
+
+def test_rival_approval_grows_under_matching_discontent():
+    """Eine schlechte Klimalage treibt den Zuspruch der grünen Rivalen-Partei
+    über mehrere Runden nach oben."""
+    state = _state_with_rivals()
+    state.statistics["co2_emissions"] = 95.0
+    state.statistics["renewable_share"] = 10.0
+
+    green_before = next(r.approval for r in state.rival_parties if r.ideology == "green")
+    result_state = state
+    for _ in range(5):
+        result_state = advance_turn(result_state, [], []).state
+    green_after = next(r.approval for r in result_state.rival_parties if r.ideology == "green")
+
+    assert green_after > green_before + 3.0
+
+
+def test_election_with_rivals_uses_plurality_not_threshold():
+    """Mit Rivalen zählt der höchste Stimmenanteil -- eine Partei kann mit
+    < 50 gewichteter Zustimmung gewinnen, wenn die Rivalen schwächer sind."""
+    state = _state_with_rivals()
+    # Zufriedenheit bewusst mau (unter der alten 50-Schwelle), Rivalen aber
+    # noch schwächer.
+    for g in state.voter_groups:
+        g.satisfaction = 45.0
+    for r in state.rival_parties:
+        r.approval = 5.0
+        r.base_strength = 5.0
+    state.turns_until_election = 1
+
+    result = advance_turn(state, [], [])
+    er = result.election_result
+    assert er is not None
+    assert er.standings  # Rangliste gefüllt
+    assert er.standings[0][0] == "Deine Partei"
+    assert er.won is True
+    assert er.approval < 50.0  # trotz Unterschreiten der alten Schwelle
+
+
+def test_election_standings_sum_to_roughly_100():
+    state = _state_with_rivals()
+    state.turns_until_election = 1
+    result = advance_turn(state, [], [])
+    er = result.election_result
+    assert er is not None
+    assert sum(pct for _, pct in er.standings) == pytest.approx(100.0, abs=0.5)
+
+
+def test_no_rivals_keeps_classic_threshold_election():
+    """Ohne Rivalen bleibt das Schwellen-Kriterium unverändert."""
+    state = build_initial_state()
+    for g in state.voter_groups:
+        g.satisfaction = 45.0
+    state.turns_until_election = 1
+    result = advance_turn(state, [], [])
+    er = result.election_result
+    assert er is not None
+    assert er.standings == []
+    assert er.won is False  # < 50 -> verloren, klassisch
