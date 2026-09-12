@@ -21,11 +21,14 @@ export const api = {
   // Konstante in App.jsx.
   listPolicies: () => request("/policies"),
   createSession: () => request("/sessions", { method: "POST" }),
-  // B23 "Party-Gründung (Persistente Meta-Ebene)": neue Session mit Party
-  createPartySession: (name, ideology) =>
+  // B23 "Party-Gründung (Persistente Meta-Ebene)": neue Session mit Party.
+  // bundeslandKey: UX-Onboarding-Redesign (2026-09-13) -- neuer Einstieg ist
+  // Bundesland -> Partei -> Start, optional (null = bisheriger Niedersachsen-
+  // Default).
+  createPartySession: (name, ideology, bundeslandKey = null) =>
     request("/sessions/new-party", {
       method: "POST",
-      body: JSON.stringify({ name, ideology }),
+      body: JSON.stringify({ name, ideology, bundesland_key: bundeslandKey }),
     }),
   // B20 "Party-Legacy": bestehende Parteien (Ruf, gespielte/gewonnene
   // Legislaturperioden) fuer den "Weiter mit Partei X"-Einstieg.

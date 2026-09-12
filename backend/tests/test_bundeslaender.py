@@ -84,3 +84,41 @@ def test_bayern_and_nrw_sessions_are_independent_and_reflect_distinct_baselines(
     # AdminUnit-Zeile (ensure_bundesland ist idempotent, analog ensure_niedersachsen).
     second_bayern_resp = client.post("/sessions/new-bundesland/bayern")
     assert second_bayern_resp.json()["admin_unit"] == bayern_resp.json()["admin_unit"] == "Bayern"
+
+
+def test_new_party_session_with_bundesland_key_uses_that_baseline(client):
+    """UX-Onboarding-Redesign (2026-09-13): POST /sessions/new-party akzeptiert
+    jetzt optional bundesland_key -- der neue Ersteinstieg (Bundesland ->
+    Partei -> Start) erzeugt Session+Partei in EINEM Schritt statt zwei
+    getrennten Endpoints."""
+    resp = client.post(
+        "/sessions/new-party",
+        json={"name": "Bayern-Partei", "ideology": "blue", "bundesland_key": "bayern"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["admin_unit"] == "Bayern"
+    assert body["party_name"] == "Bayern-Partei"
+
+    state = client.get(f"/sessions/{body['session_id']}").json()
+    assert state["admin_unit_name"] == "Bayern"
+    # Statistik muss um Bayerns Baseline streuen, nicht um Niedersachsen
+    # (Bayern unemployment_rate 3.6 vs. Niedersachsen 5.9 -- Baender
+    # ueberlappen nicht, siehe sample_data.py-Kommentar zu den Bundeslaendern).
+    assert state["statistics"]["unemployment_rate"] < 4.5
+
+
+def test_new_party_session_without_bundesland_key_defaults_to_niedersachsen(client):
+    """Rueckwaertskompatibilitaet: bundesland_key ist optional, alte Aufrufer
+    (ohne das Feld) starten weiterhin wie bisher in Niedersachsen."""
+    resp = client.post("/sessions/new-party", json={"name": "Nds-Partei", "ideology": "green"})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["admin_unit"] == "Niedersachsen"
+
+
+def test_new_party_session_with_unknown_bundesland_key_returns_404(client):
+    resp = client.post(
+        "/sessions/new-party",
+        json={"name": "x", "ideology": "green", "bundesland_key": "atlantis"},
+    )
+    assert resp.status_code == 404

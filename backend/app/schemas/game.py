@@ -39,6 +39,11 @@ class NewPartyRequest(BaseModel):
 
     name: str
     ideology: str  # "green" | "red" | "blue"
+    # UX-Onboarding-Redesign (2026-09-13): Bundesland VOR der Partei waehlen
+    # (Reihenfolge Karte -> Partei -> Start). Optional + None-Default, damit
+    # bestehende Aufrufer (z.B. alte Frontend-Builds) ohne dieses Feld
+    # weiterhin wie bisher in Niedersachsen starten.
+    bundesland_key: str | None = None
 
 
 class PartySummaryOut(BaseModel):

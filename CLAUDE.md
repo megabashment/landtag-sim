@@ -225,6 +225,26 @@ mistakes.md.
 Element, das nicht ganz zum dunklen Ledger-Look passt -- kleinerer
 Folgepunkt für einen künftigen Visual-Pass, kein Blocker.
 
+### Onboarding-Flow-Redesign (2026-09-13, Nutzer-Feedback)
+
+Der Ersteinstieg war vorher ein 4-Buttons-Menu (Neue Partei / Szenario /
+Bundesland / Klassische Partie) mit vier gleichrangigen, unabhängigen
+Pfaden. Jetzt ein gefuehrter 2-Schritt-Assistent (`NewGameWizard` in
+`App.jsx`): **Bundesland wählen → Partei gründen → Partie startet direkt**.
+Szenario-Modus/Klassische Partie/bestehende Partei fortsetzen bleiben als
+bewusst kleiner gehaltene Zweitoptionen ("Oder:"-Sektion) erreichbar, sind
+aber nicht mehr gleichrangig.
+
+- Backend: `POST /sessions/new-party` akzeptiert jetzt optional
+  `bundesland_key` (kombiniert Bundesland+Partei in einem Request statt
+  zwei getrennten Endpoints) -- `None`-Default bleibt rückwärtskompatibel
+  (Niedersachsen wie bisher).
+- `BundeslandSelectionDialog` und `PartyCreationDialog` als eigenständige
+  Komponenten entfernt (Inhalt lebt jetzt in `NewGameWizard`s zwei Schritten).
+- Per Chrome DevTools MCP komplett durchgeklickt (Bundesland wählen → Partei
+  gründen → Session läuft mit korrekter Baseline) -- nicht nur Code gelesen.
+- 3 neue Backend-Tests (`test_bundeslaender.py`).
+
 ---
 
 **Für tiefere Doku:** `docs/architecture.md` (Game-Director-Review), `docs/game-design-roadmap.md` (P0-P2 Roadmap), `ARCHIVE.md` (historische Learnings).

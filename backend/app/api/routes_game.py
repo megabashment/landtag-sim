@@ -184,9 +184,21 @@ def list_scenarios(db: Session = Depends(get_session)) -> list[ScenarioOut]:
 @router.post("/sessions/new-party", response_model=CreateSessionResponse)
 def create_party_session(request: NewPartyRequest, db: Session = Depends(get_session)) -> CreateSessionResponse:
     """B23 'Party-Gründung (Persistente Meta-Ebene)': Gründe eine neue Partei
-    mit einer Ideologie und starte eine neue Session für diese Partei."""
+    mit einer Ideologie und starte eine neue Session für diese Partei.
+
+    UX-Onboarding-Redesign (2026-09-13): akzeptiert jetzt optional
+    `bundesland_key` (Reihenfolge im neuen Einstieg: Bundesland -> Partei ->
+    Start, siehe App.jsx). Ohne Angabe bleibt es beim bisherigen
+    Niedersachsen-Default."""
     run_all_seeds(db)
-    admin_unit = ensure_niedersachsen(db)
+    bundesland = None
+    if request.bundesland_key:
+        bundesland = next((b for b in SAMPLE_BUNDESLAENDER if b.key == request.bundesland_key), None)
+        if not bundesland:
+            raise HTTPException(status_code=404, detail=f"Unbekanntes Bundesland: {request.bundesland_key}")
+        admin_unit = ensure_bundesland(db, request.bundesland_key)
+    else:
+        admin_unit = ensure_niedersachsen(db)
 
     # Party gründen
     try:
@@ -221,7 +233,7 @@ def create_party_session(request: NewPartyRequest, db: Session = Depends(get_ses
     db.commit()
     db.refresh(session)
 
-    _seed_session_world(db, session.id)
+    _seed_session_world(db, session.id, base_statistics=bundesland.starting_statistics if bundesland else None)
 
     return CreateSessionResponse(
         session_id=session.id,

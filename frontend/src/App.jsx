@@ -82,11 +82,30 @@ function ScenarioSelectionDialog({ scenarios, onSelect, onClose, disabled }) {
   );
 }
 
-// B27 "Bundes-Skalierung" (M7_SPRINT_PLAN.md): State-Auswahl im Start-Menu,
-// analog zu ScenarioSelectionDialog. Zeigt die Baseline-Statistiken direkt
-// im Katalog (siehe BundeslandOut.starting_statistics), damit der Unterschied
-// zwischen den Bundeslaendern schon VOR dem Start sichtbar ist.
-function BundeslandSelectionDialog({ bundeslaender, onSelect, onClose, disabled }) {
+// UX-Onboarding-Redesign (2026-09-13, Nutzer-Feedback: "Bundeskarte -> Partei
+// -> los"): der Ersteinstieg ist jetzt ein gefuehrter 2-Schritt-Assistent
+// statt eines 4-Buttons-Menus mit vier gleichrangigen, unabhaengigen Pfaden.
+// Schritt 1 waehlt das Bundesland (ersetzt die vorherige eigenstaendige
+// BundeslandSelectionDialog), Schritt 2 gruendet dafuer die Partei (ersetzt
+// PartyCreationDialog) -- danach startet die Partie direkt. Szenario-Modus/
+// Klassische Partie/bestehende Partei bleiben als bewusst kleiner gehaltene
+// Zweitoptionen erreichbar (siehe .wizard-secondary unten), nicht mehr
+// gleichrangig neben dem Hauptpfad.
+function NewGameWizard({
+  bundeslaender,
+  onCreateParty, // (name, ideology, bundeslandKey) => void
+  onShowScenarios,
+  onStartClassic,
+  onContinueParty,
+  existingParties,
+  disabled,
+  error,
+}) {
+  const [step, setStep] = useState("bundesland"); // "bundesland" | "party"
+  const [selectedBundesland, setSelectedBundesland] = useState(null);
+  const [name, setName] = useState("");
+  const [ideology, setIdeology] = useState("green");
+
   const statLabel = {
     unemployment_rate: "Arbeitslosigkeit",
     gdp_growth: "BIP-Wachstum",
@@ -95,172 +114,149 @@ function BundeslandSelectionDialog({ bundeslaender, onSelect, onClose, disabled 
     co2_emissions: "CO2-Emissionen",
     renewable_share: "Erneuerbare",
   };
-  return (
-    <div className="modal-overlay">
-      <div className="modal-content">
-        <h2>Bundesland wählen</h2>
-        <div className="scenarios-list">
-          {bundeslaender.map((b) => (
-            <div key={b.key} className="scenario-card bundesland-card">
-              <div className="bundesland-card-header">
-                <BundeslandBadge bundeslandKey={b.key} size={48} />
-                <h3>{b.name}</h3>
-              </div>
-              <p>{b.description}</p>
-              <ul className="campaign-effects">
-                {Object.entries(b.starting_statistics).map(([key, value]) => (
-                  <li key={key}>
-                    {statLabel[key] ?? key}: {value.toFixed(1)}
-                  </li>
-                ))}
-              </ul>
-              <button onClick={() => onSelect(b.key)} disabled={disabled} className="button-primary">
-                Dieses Bundesland spielen
-              </button>
-            </div>
-          ))}
-        </div>
-        <button onClick={onClose} disabled={disabled} className="button-secondary">
-          Abbrechen
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function GameStartMenu({
-  onNewParty,
-  onStartClassic,
-  onContinueParty,
-  onShowScenarios,
-  onShowBundeslaender,
-  existingParties,
-  disabled,
-}) {
-  const ideologyEmoji = { green: "🟢", red: "🔴", blue: "🔵" };
-  return (
-    <div className="modal-content game-start-menu">
-      <span className="masthead__kicker">Landtag-Simulation &middot; MVP</span>
-      <h2>Neue Partie starten</h2>
-      <p>Wähle einen Modus zum Starten:</p>
-      <button className="button-primary" onClick={onNewParty} disabled={disabled}>
-        🟢 Neue Partei gründen
-      </button>
-      <button className="button-secondary" onClick={onShowScenarios} disabled={disabled}>
-        🎯 Szenario spielen
-      </button>
-      <button className="button-secondary" onClick={onShowBundeslaender} disabled={disabled}>
-        🗺️ Bundesland wählen
-      </button>
-      <button className="button-secondary" onClick={onStartClassic} disabled={disabled}>
-        ▶ Klassische Partie
-      </button>
-
-      {existingParties.length > 0 && (
-        <div className="existing-parties">
-          <h3>Weiter mit einer bestehenden Partei</h3>
-          <ul className="existing-parties-list">
-            {existingParties.map((p) => (
-              <li key={p.id} className="existing-party-row">
-                <span className="existing-party-info">
-                  {ideologyEmoji[p.ideology] ?? ""} <strong>{p.name}</strong>
-                  <span className="existing-party-meta">
-                    {" "}Ruf {p.reputation.toFixed(0)} &middot; {p.terms_won}/{p.terms_played} Legislaturen gewonnen
-                  </span>
-                </span>
-                <button
-                  className="button-secondary"
-                  onClick={() => onContinueParty(p.id)}
-                  disabled={disabled}
-                >
-                  Weiter
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Party-Gründungs-Dialog mit Name-Input und Ideologie-Wahl + Party-Beispiele
-function PartyCreationDialog({
-  onClose,
-  onConfirm,
-  disabled,
-  name,
-  setName,
-  ideology,
-  setIdeology,
-  error
-}) {
-  // Beispiel-Parteien je Ideologie
   const partyExamples = {
     green: ["die-grünen", "ökobewegung", "naturfreunde"],
     red: ["spd", "linke", "arbeiterpartei"],
     blue: ["cdu", "fwirtschaft", "unternehmerbund"],
   };
-
   const ideologies = [
     { key: "green", label: "🟢 Grün", desc: "+Umwelt, -Wirtschaft" },
     { key: "red", label: "🔴 Rot", desc: "+Arbeit, -Konservativ" },
     { key: "blue", label: "🔵 Blau", desc: "+Wirtschaft, -Umwelt" },
   ];
+  const ideologyEmoji = { green: "🟢", red: "🔴", blue: "🔵" };
 
   return (
-    <div className="modal-overlay">
-      <div className="modal-content">
-        <h2>Neue Partei gründen</h2>
-        {error && <p className="error">{error}</p>}
+    <div className="modal-content wizard-card">
+      <span className="masthead__kicker">Landtag-Simulation &middot; MVP</span>
 
-        <label>
-          Parteiname:
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="z.B. Die Grünen"
-            disabled={disabled}
-          />
-        </label>
-
-        <label>Ideologie (Effekte auf Wählergruppen):</label>
-        <div className="ideology-buttons">
-          {ideologies.map((id) => {
-            const examples = partyExamples[id.key] || [];
-            return (
-              <button
-                key={id.key}
-                className={`ideology-button ${ideology === id.key ? "selected" : ""}`}
-                onClick={() => setIdeology(id.key)}
-                disabled={disabled}
-              >
-                <div className="ideology-label">{id.label}</div>
-                <div className="ideology-desc">{id.desc}</div>
-                <div className="ideology-examples">
-                  {examples.map((partyKey) => {
-                    const party = PARTY_ICONS[partyKey];
-                    return party ? (
-                      <span key={partyKey} title={party.name} className="party-icon">
-                        {party.icon}
-                      </span>
-                    ) : null;
-                  })}
+      {step === "bundesland" && (
+        <>
+          <h2>Schritt 1 von 2 &middot; Bundesland wählen</h2>
+          <div className="scenarios-list">
+            {bundeslaender.map((b) => (
+              <div key={b.key} className="scenario-card bundesland-card">
+                <div className="bundesland-card-header">
+                  <BundeslandBadge bundeslandKey={b.key} size={48} />
+                  <h3>{b.name}</h3>
                 </div>
-              </button>
-            );
-          })}
-        </div>
+                <p>{b.description}</p>
+                <ul className="campaign-effects">
+                  {Object.entries(b.starting_statistics).map(([key, value]) => (
+                    <li key={key}>
+                      {statLabel[key] ?? key}: {value.toFixed(1)}
+                    </li>
+                  ))}
+                </ul>
+                <button
+                  onClick={() => {
+                    setSelectedBundesland(b);
+                    setStep("party");
+                  }}
+                  disabled={disabled}
+                  className="button-primary"
+                >
+                  {b.name} wählen
+                </button>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
-        <div className="button-row">
-          <button onClick={onConfirm} disabled={disabled || !name.trim()}>
-            Partei gründen
-          </button>
-          <button onClick={onClose} disabled={disabled} className="button-secondary">
-            Abbrechen
-          </button>
-        </div>
+      {step === "party" && selectedBundesland && (
+        <>
+          <h2>Schritt 2 von 2 &middot; Partei gründen</h2>
+          <p className="wizard-context">
+            Bundesland: <strong>{selectedBundesland.name}</strong>{" "}
+            <button className="link-button" onClick={() => setStep("bundesland")} disabled={disabled}>
+              ändern
+            </button>
+          </p>
+          {error && <p className="error">{error}</p>}
+
+          <label>
+            Parteiname:
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="z.B. Die Grünen"
+              disabled={disabled}
+            />
+          </label>
+
+          <label>Ideologie (Effekte auf Wählergruppen):</label>
+          <div className="ideology-buttons">
+            {ideologies.map((id) => {
+              const examples = partyExamples[id.key] || [];
+              return (
+                <button
+                  key={id.key}
+                  className={`ideology-button ${ideology === id.key ? "selected" : ""}`}
+                  onClick={() => setIdeology(id.key)}
+                  disabled={disabled}
+                >
+                  <div className="ideology-label">{id.label}</div>
+                  <div className="ideology-desc">{id.desc}</div>
+                  <div className="ideology-examples">
+                    {examples.map((partyKey) => {
+                      const party = PARTY_ICONS[partyKey];
+                      return party ? (
+                        <span key={partyKey} title={party.name} className="party-icon">
+                          {party.icon}
+                        </span>
+                      ) : null;
+                    })}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="button-row">
+            <button
+              onClick={() => onCreateParty(name, ideology, selectedBundesland.key)}
+              disabled={disabled || !name.trim()}
+            >
+              Partei gründen &amp; loslegen
+            </button>
+            <button onClick={() => setStep("bundesland")} disabled={disabled} className="button-secondary">
+              Zurück
+            </button>
+          </div>
+        </>
+      )}
+
+      <div className="wizard-secondary">
+        <p className="wizard-secondary__label">Oder:</p>
+        <button className="link-button" onClick={onShowScenarios} disabled={disabled}>
+          🎯 Szenario spielen
+        </button>
+        <button className="link-button" onClick={onStartClassic} disabled={disabled}>
+          ▶ Klassische Partie (Niedersachsen, ohne Partei)
+        </button>
+
+        {existingParties.length > 0 && (
+          <div className="existing-parties">
+            <h3>Weiter mit einer bestehenden Partei</h3>
+            <ul className="existing-parties-list">
+              {existingParties.map((p) => (
+                <li key={p.id} className="existing-party-row">
+                  <span className="existing-party-info">
+                    {ideologyEmoji[p.ideology] ?? ""} <strong>{p.name}</strong>
+                    <span className="existing-party-meta">
+                      {" "}Ruf {p.reputation.toFixed(0)} &middot; {p.terms_won}/{p.terms_played} Legislaturen gewonnen
+                    </span>
+                  </span>
+                  <button className="button-secondary" onClick={() => onContinueParty(p.id)} disabled={disabled}>
+                    Weiter
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -817,11 +813,11 @@ export default function App() {
   // Verlaufsansicht (siehe HISTORY_LIMIT oben): ein Eintrag pro Runde
   // (advance/fast-forward) bzw. pro aufgeloestem Dilemma, neueste zuerst.
   const [history, setHistory] = useState([]);
-  // B23 "Party-Gründung (Persistente Meta-Ebene)": UI-State für Partei-Gründungs-Dialog
+  // B23 "Party-Gründung (Persistente Meta-Ebene)": UI-State für den Ersteinstieg.
+  // UX-Onboarding-Redesign (2026-09-13): Partei-Formular-State lebt jetzt IM
+  // NewGameWizard (nicht mehr hier) -- App.jsx muss nur noch wissen, ob
+  // ueberhaupt der Ersteinstieg gezeigt wird.
   const [showGameStart, setShowGameStart] = useState(true);
-  const [showPartyCreation, setShowPartyCreation] = useState(false);
-  const [partyName, setPartyName] = useState("");
-  const [partyIdeology, setPartyIdeology] = useState("green");
   // B20 "Party-Legacy": bestehende Parteien fuer "Weiter mit Partei X" im Startmenue
   const [existingParties, setExistingParties] = useState([]);
   // B24 "Scenario Mode": vordefinierte Spielmodi mit Preset-Bedingungen
@@ -829,7 +825,6 @@ export default function App() {
   const [showScenarioSelection, setShowScenarioSelection] = useState(false);
   // B27 "Bundes-Skalierung" (M7): spielbare Bundeslaender mit eigener Baseline
   const [bundeslaender, setBundeslaender] = useState([]);
-  const [showBundeslandSelection, setShowBundeslandSelection] = useState(false);
   // Policy-Erweiterungsstate: speichert, welche Policies expandiert sind (Key -> true/false)
   const [expandedPolicies, setExpandedPolicies] = useState({});
 
@@ -983,20 +978,22 @@ export default function App() {
     }
   }
 
-  async function handleCreateParty() {
-    if (!partyName.trim()) {
+  // UX-Onboarding-Redesign (2026-09-13): nimmt Name/Ideologie/Bundesland
+  // jetzt als Argumente statt aus App-State zu lesen -- der NewGameWizard
+  // haelt seinen Formular-State selbst (analog zu den anderen
+  // handleStart*-Funktionen, die auch direkt einen Parameter bekommen).
+  async function handleCreateParty(name, ideology, bundeslandKey) {
+    if (!name.trim()) {
       setError("Parteiname erforderlich");
       return;
     }
     setError(null);
     setLoading(true);
     try {
-      const created = await api.createPartySession(partyName, partyIdeology);
+      const created = await api.createPartySession(name, ideology, bundeslandKey);
       const state = await api.getSession(created.session_id);
       setSession(state);
       setShowGameStart(false);
-      setShowPartyCreation(false);
-      setPartyName("");
       setEvents([]);
       setAttributions([]);
       setReports([]);
@@ -1047,32 +1044,6 @@ export default function App() {
       setSession(state);
       setShowGameStart(false);
       setShowScenarioSelection(false);
-      setEvents([]);
-      setAttributions([]);
-      setReports([]);
-      setElectionResult(null);
-      setTermSummary(null);
-      setSelectedPolicies([]);
-      setSelectedRepeals([]);
-      setHistory([]);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // B27 "Bundes-Skalierung": neue Session mit der Statistik-Baseline eines
-  // bestimmten Bundeslands starten (analog zu handleStartScenario).
-  async function handleStartBundesland(bundeslandKey) {
-    setError(null);
-    setLoading(true);
-    try {
-      const created = await api.createSessionFromBundesland(bundeslandKey);
-      const state = await api.getSession(created.session_id);
-      setSession(state);
-      setShowGameStart(false);
-      setShowBundeslandSelection(false);
       setEvents([]);
       setAttributions([]);
       setReports([]);
@@ -1345,18 +1316,20 @@ export default function App() {
 
       {!session && showGameStart && (
         <>
-          {/* Game-Director-Review (2026-09-12): das Start-Menue schwebte
-              vorher ohne Backdrop ueber leerer Seite -- jetzt im selben
-              .modal-overlay-Muster wie alle anderen Dialoge. */}
+          {/* UX-Onboarding-Redesign (2026-09-13): gefuehrter Assistent
+              Bundesland -> Partei -> Start statt vier gleichrangiger
+              Menu-Buttons, siehe NewGameWizard. Weiterhin im .modal-overlay-
+              Muster (Backdrop) wie alle anderen Dialoge. */}
           <div className="modal-overlay">
-            <GameStartMenu
-              onNewParty={() => setShowPartyCreation(true)}
+            <NewGameWizard
+              bundeslaender={bundeslaender}
+              onCreateParty={handleCreateParty}
+              onShowScenarios={() => setShowScenarioSelection(true)}
               onStartClassic={handleStart}
               onContinueParty={handleContinueParty}
-              onShowScenarios={() => setShowScenarioSelection(true)}
-              onShowBundeslaender={() => setShowBundeslandSelection(true)}
               existingParties={existingParties}
               disabled={loading}
+              error={error}
             />
           </div>
           {showScenarioSelection && (
@@ -1365,30 +1338,6 @@ export default function App() {
               onSelect={handleStartScenario}
               onClose={() => setShowScenarioSelection(false)}
               disabled={loading}
-            />
-          )}
-          {showBundeslandSelection && (
-            <BundeslandSelectionDialog
-              bundeslaender={bundeslaender}
-              onSelect={handleStartBundesland}
-              onClose={() => setShowBundeslandSelection(false)}
-              disabled={loading}
-            />
-          )}
-          {showPartyCreation && (
-            <PartyCreationDialog
-              onClose={() => {
-                setShowPartyCreation(false);
-                setPartyName("");
-                setError(null);
-              }}
-              onConfirm={handleCreateParty}
-              disabled={loading}
-              name={partyName}
-              setName={setPartyName}
-              ideology={partyIdeology}
-              setIdeology={setPartyIdeology}
-              error={error}
             />
           )}
           {/* M6 Phase 2 "Advanced Opposition": Koalitions-Dialog */}
@@ -1403,7 +1352,7 @@ export default function App() {
         </>
       )}
 
-      {error && !showPartyCreation && <p className="error">Fehler: {error}</p>}
+      {error && <p className="error">Fehler: {error}</p>}
 
       {session && (
         <>

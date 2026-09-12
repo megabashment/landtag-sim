@@ -771,7 +771,7 @@ button:disabled {
   justify-content: space-between;
   gap: 0.75rem;
   padding: 0.5rem 0.25rem;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--rule);
 }
 
 .existing-party-meta {
@@ -852,37 +852,75 @@ button:disabled {
   background: #d0d0d0;
 }
 
-/* B23 "Party-Gründung (Persistente Meta-Ebene)" Phase 2: Game-Start-Menu.
-   Game-Director-Review (2026-09-12): erbt jetzt Papier/Tinte/Regel-Farben
-   von .modal-content (siehe dort) statt eigener weiss/rot-Palette --
-   nur noch Layout-Ergaenzungen (Breite, zentrierter Text, Button-Stapel). */
-.game-start-menu {
-  text-align: center;
-  min-width: 300px;
-  max-width: 420px;
+/* UX-Onboarding-Redesign (2026-09-13): gefuehrter 2-Schritt-Assistent
+   (Bundesland -> Partei -> Start) statt des vorherigen 4-Buttons-Menus
+   (B23 Phase 2). Erbt Papier/Tinte/Regel-Farben von .modal-content. */
+.wizard-card {
+  min-width: 320px;
+  max-width: 480px;
 }
 
-.game-start-menu .masthead__kicker {
+.wizard-card .masthead__kicker {
   display: block;
   margin-bottom: 0.4rem;
 }
 
-.game-start-menu h2 {
+.wizard-card h2 {
   margin-top: 0;
-  font-size: 28px;
+  font-size: 22px;
 }
 
-.game-start-menu p {
-  margin-bottom: 20px;
+.wizard-context {
+  margin: -0.5rem 0 1rem 0;
+  color: var(--ink-dim);
+  font-size: 0.9rem;
+}
+
+/* Schlichter Text-Link statt vollflaechigem Button -- fuer Zweitoptionen,
+   die bewusst weniger Gewicht als der Hauptpfad (Bundesland -> Partei)
+   bekommen sollen, siehe .wizard-secondary. */
+.link-button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #1976d2;
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: inherit;
+  font-family: inherit;
+}
+
+.link-button:hover {
+  color: #0d47a1;
+}
+
+.link-button:disabled {
+  color: var(--ink-dim);
+  cursor: not-allowed;
+  text-decoration: none;
+}
+
+.wizard-secondary {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--rule);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.wizard-secondary__label {
+  margin: 0;
+  font-size: 0.7rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
   color: var(--ink-dim);
 }
 
-.game-start-menu button {
-  display: block;
+.wizard-secondary .existing-parties {
   width: 100%;
-  margin: 10px 0;
-  padding: 12px;
-  font-size: 16px;
+  text-align: left;
 }
 
 /* Modal Overlay */
