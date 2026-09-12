@@ -217,6 +217,59 @@ function PartyCreationDialog({
   );
 }
 
+// M6 Phase 2 "Advanced Opposition": Koalitions-Dialog nach Wahlverlust
+// Spieler kann Koalition mit Opposition akzeptieren um in Regierung zu bleiben
+function CoalitionDialog({ electionResult, onAccept, onDecline, disabled }) {
+  if (!electionResult || electionResult.won || electionResult.coalition_viability < 30) {
+    return null; // Nicht anzeigen wenn kein Verlust oder koalition nicht möglich
+  }
+
+  const viability = electionResult.coalition_viability.toFixed(1);
+  const coalitionPossible = electionResult.coalition_viability >= 30;
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal-content coalition-dialog">
+        <h2>🤝 Koalitionsangebot</h2>
+        <p>
+          Du hast die Wahl verloren. Die Opposition ist bereit zur Zusammenarbeit!
+        </p>
+        <div className="coalition-info">
+          <div className="coalition-stat">
+            <span className="label">Koalitionsviabilität:</span>
+            <span className="value">{viability}%</span>
+          </div>
+          <div className="coalition-stat">
+            <span className="label">Zustand:</span>
+            <span className={`status ${coalitionPossible ? "possible" : "impossible"}`}>
+              {coalitionPossible ? "✓ Möglich" : "✗ Nicht möglich"}
+            </span>
+          </div>
+        </div>
+
+        <p className="coalition-text">
+          {coalitionPossible
+            ? "Die Opposition ist stark genug, um eine stabile Koalition zu bilden. Mit ihrer Unterstützung kannst du die Regierung fortsetzen."
+            : "Die Opposition ist zu schwach. Eine Koalition ist nicht tragfähig."}
+        </p>
+
+        <div className="button-row">
+          <button
+            className="button-primary"
+            onClick={onAccept}
+            disabled={disabled || !coalitionPossible}
+          >
+            💪 Koalition akzeptieren
+          </button>
+          <button className="button-secondary" onClick={onDecline} disabled={disabled}>
+            ➡️ In Opposition gehen
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Mehrparteiensystem (Medium-Scope): Naeherung der aktuellen Zustimmung aus
 // den Waehlergruppen (nach population_share gewichtet) -- keine exakte
 // Kopie der Ideologie-/Ruf-Modifikatoren der Sim-Engine, nur fuer die
@@ -509,6 +562,8 @@ export default function App() {
   // nur in Runden ohne Ereignis/Dilemma.
   const [reports, setReports] = useState([]);
   const [electionResult, setElectionResult] = useState(null);
+  // M6 Phase 2 "Advanced Opposition": flag zur Kontrolle der Koalitions-Dialog-Anzeige
+  const [showCoalitionDialog, setShowCoalitionDialog] = useState(false);
   // B1 "Legislatur-Bogen & Amtszeit-Debrief" (BACKLOG.md): Bilanz der gerade
   // abgelaufenen Legislaturperiode, kommt nur am Wahl-Turn im
   // AdvanceTurnResponse mit (sonst null).
@@ -749,8 +804,17 @@ export default function App() {
       setSelectedRepeals([]);
       setSelectedCampaign(null);
 
-      // Wahlverlust-Dialog (Opposition-Option)
-      if (result.election_result && !result.election_result.won && !result.state.opposition_mode) {
+      // M6 Phase 2 "Advanced Opposition": Coalition-Dialog bei Wahlverlust
+      // wenn coalition_viability >= 30
+      if (
+        result.election_result &&
+        !result.election_result.won &&
+        !result.state.opposition_mode &&
+        result.election_result.coalition_viability >= 30
+      ) {
+        setShowCoalitionDialog(true);
+      } else if (result.election_result && !result.election_result.won && !result.state.opposition_mode) {
+        // Fallback: Wahlverlust ohne Koalition-Option
         setShowOppositionChoice(true);
       }
 
@@ -815,6 +879,39 @@ export default function App() {
       setHistory((prev) => [...skippedEntries.reverse(), ...prev].slice(0, HISTORY_LIMIT));
     } catch (e) {
       setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // M6 Phase 2 "Advanced Opposition": Koalitionsangebot Handling
+  async function handleAcceptCoalition() {
+    if (!session) return;
+    setError(null);
+    setLoading(true);
+    try {
+      const result = await api.respondToElection(session.session_id, { accept_coalition: true });
+      setSession({ ...session, role: result.role });
+      setShowCoalitionDialog(false);
+      setError(result.message);
+    } catch (e) {
+      setError(`Koalition fehlgeschlagen: ${e.message}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleDeclineCoalition() {
+    if (!session) return;
+    setError(null);
+    setLoading(true);
+    try {
+      const result = await api.respondToElection(session.session_id, { accept_coalition: false });
+      setSession({ ...session, role: result.role });
+      setShowCoalitionDialog(false);
+      setError(result.message);
+    } catch (e) {
+      setError(`Opposition-Wechsel fehlgeschlagen: ${e.message}`);
     } finally {
       setLoading(false);
     }
@@ -964,6 +1061,15 @@ export default function App() {
               ideology={partyIdeology}
               setIdeology={setPartyIdeology}
               error={error}
+            />
+          )}
+          {/* M6 Phase 2 "Advanced Opposition": Koalitions-Dialog */}
+          {showCoalitionDialog && (
+            <CoalitionDialog
+              electionResult={electionResult}
+              onAccept={handleAcceptCoalition}
+              onDecline={handleDeclineCoalition}
+              disabled={loading}
             />
           )}
         </>

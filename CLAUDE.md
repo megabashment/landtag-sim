@@ -1,6 +1,6 @@
 # CLAUDE.md — Projektgedächtnis für Landtag-Sim
 
-**Status: M5 Phase 2 complete (Opposition-Loop MVP + B20/B23 + Mehrparteiensystem, 2026-09-11).** Spiel lauffähig und end-to-end testbar.
+**Status: M6 Phase 2 complete (B24 Scenario-Modi + Advanced Opposition Coalition, 2026-09-12).** Spiel lauffähig mit Szenario-Support und Koalitions-Verhandlungen nach Wahlverlust.
 
 **Schnelleinstieg:** Für abgeschlossene Phasen (M1-M4), Recherche-Learnings und historische Issues → **`ARCHIVE.md`**. Für Detailarchitkur → `docs/architecture.md`.
 
@@ -92,26 +92,30 @@ landtag-sim/
 
 ---
 
-## Aktueller Stand (M5 Phase 2)
+## Aktueller Stand (M6 Phase 2)
 
-**Test-Suite (2026-09-11):**
-- **Sim-Engine:** 123 Tests ✓ (14 neu: B20/Mehrparteiensystem)
-- **Backend-API:** 60 Tests ✓ (5 neu in test_party_legacy.py)
-- **Frontend:** Build+Lint ✓, multi-party Sonntagsfrage live im Browser verifiziert
+**Test-Suite (2026-09-12):**
+- **Sim-Engine:** 123 Tests ✓
+- **Backend-API:** 63 Tests ✓ (3 neue: Scenario + Coalition)
+- **Frontend:** Build+Lint ✓, Szenario-Auswahl + Koalitions-Dialog live verifiziert
 - **Balance-Runner:** "Keine vermutlich dominante Policy" (consistent)
 
-**Implementiert (M5 Phase 2):**
-- `VoterGroup.ideology_preference` / `ideology_dislike` (green/red/blue) — 6 Sample-Gruppen mit Affinitäten
-- `Party` table + Party-Gründungs-Dialog (POST /sessions/new-party)
-- `party_reputation` (0-100, 50 neutral) → ±10% Approval-Multiplikator
-- Win/Loss → ±6/-8 Ruf, Legislaturen in `Party.extra_data["terms"]` geloggt
-- `GET /parties` (Party-Profile mit terms_played/terms_won)
-- `POST /sessions/from-party/{id}` (neue Legislatur mit aufgebautem Ruf)
-- `RivalParty` + 3 feste AI-Konkurrenten (Klima-Liste/grün, SozialAllianz/rot, Wirtschaftsunion/blau)
-- **Plurality-Wahl** mit Rivalen (höchster Anteil gewinnt), **Threshold** ohne Rivalen
-- Multi-Party Sonntagsfrage (4-Balken, Farben nach Ideologie)
-- Standings in Wahlergebnis (normalisiert auf 100%, sortiert)
-- "Weiter mit Partei X" im Start-Menü
+**Implementiert (M6 Phase 2):**
+
+### B24 Scenario-Modi
+- `ScenarioDefinition` Model mit `starting_statistics_override`
+- `GET /scenarios` — Liste vordefinierter Spielmodi (5 Sample-Szenarien)
+- `POST /sessions/new-scenario/{scenario_id}` — Session mit Szenario-Startbedingungen
+- Frontend Szenario-Auswahl im Start-Menu mit Beschreibungen
+- Scenario-Statistik-Overrides werden auf Jitter angewendet
+
+### Advanced Opposition (Coalition)
+- `ElectionResult.coalition_viability` [0-100] — Viabilität Regierungs-Opposition-Koalition
+- Berechnung basiert auf Opposition-Zufriedenheit aus Sim-Engine
+- `POST /sessions/{id}/respond-to-election` — Coalition Accept/Decline Endpoint
+- Coalition nur wenn viability ≥ 30% und vom Spieler akzeptiert
+- UI-Dialog mit Koalitionsviabilität, Annahme hält GOVERNMENT-Role, Ablehnung → OPPOSITION
+- Frontend Koalitions-Dialog mit Styling, wird bei Wahlverlust (viability ≥30) gezeigt
 
 ---
 
@@ -164,13 +168,16 @@ cd ../sim && python -m pytest tests/ -q
 
 ---
 
-## Nächste Sprints (M6+)
+## Nächste Sprints (M7+)
 
-- **B24 Scenario-Modi** (Kampagnen, Preset-Welten)
-- **Advanced Opposition** (echte Koalitionsverhandlungen, Parliament-Majority)
-- **Bundes/EU-Skalierung** (regionale Variation, Föderalismus)
-- **Content-Ausbau** (mehr Dilemmas, Events, Policies)
-- **Playtesting & Balance-Tuning** (Spieler-Feedback-Integration)
+**M6 abgeschlossen — B24 + Advanced Opposition live**
+
+Kommende Prioritäten:
+- **Content-Ausbau** (mehr Dilemmas, Events, Policies für Variety)
+- **Bundes/EU-Skalierung** (regionale Variation, Föderalismus, mehrere Bundesländer)
+- **Opposition-Gameplay** (Opposition-Kampagnen verbessern, Koalitions-Stabilität)
+- **Playtesting & Balance** (Spieler-Feedback-Integration, Balance-Tuning)
+- **Advanced UI** (bessere Visualisierung von Coalition-Optionen, Party-History)
 
 ---
 

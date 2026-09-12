@@ -1173,3 +1173,61 @@ button:disabled {
   font-size: 0.9rem;
   color: var(--ink-dim);
 }
+
+/* M6 Phase 2 "Advanced Opposition": Koalitions-Dialog */
+.coalition-dialog {
+  min-width: 400px;
+  max-width: 500px;
+}
+
+.coalition-dialog h2 {
+  color: #c41c3b;
+  margin-bottom: 1rem;
+}
+
+.coalition-dialog p {
+  margin: 0.75rem 0;
+  line-height: 1.5;
+}
+
+.coalition-dialog .coalition-info {
+  background: #f9f9f9;
+  border-left: 4px solid #c41c3b;
+  padding: 1rem;
+  margin: 1rem 0;
+  border-radius: 2px;
+}
+
+.coalition-stat {
+  display: flex;
+  justify-content: space-between;
+  margin: 0.5rem 0;
+  font-size: 0.95rem;
+}
+
+.coalition-stat .label {
+  font-weight: 600;
+}
+
+.coalition-stat .value {
+  color: #c41c3b;
+  font-weight: bold;
+}
+
+.coalition-stat .status.possible {
+  color: #2e7d32;
+  font-weight: bold;
+}
+
+.coalition-stat .status.impossible {
+  color: #d32f2f;
+  font-weight: bold;
+}
+
+.coalition-text {
+  font-size: 0.9rem;
+  color: var(--ink-dim);
+  border-left: 2px solid #ccc;
+  padding-left: 1rem;
+  margin: 1rem 0;
+}

@@ -66,4 +66,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ option_key: optionKey }),
     }),
+  // M6 Phase 2 "Advanced Opposition": Spieler entscheidet nach Wahlverlust
+  // ob Koalition mit Opposition akzeptiert oder abgelehnt wird.
+  respondToElection: (id, body) =>
+    request(`/sessions/${id}/respond-to-election`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 };
