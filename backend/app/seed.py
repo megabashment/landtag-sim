@@ -32,6 +32,35 @@ STATISTIC_META = {
     "renewable_share": ("Anteil erneuerbare Energien", "%", "umwelt"),
 }
 
+# Bugfix (2026-09-13, Nutzer-Feedback "Policy-Schalter nicht klickbar"):
+# landtag_sim.models.Policy hat KEIN category-Feld -- ensure_policy_catalog()
+# schrieb bisher fuer JEDE Policy hart "allgemein" in die DB. Frontend
+# (App.jsx) filtert die Policy-Karten aber nach genau drei Werten:
+# "economy" | "social" | "environment" (siehe .policies-grid-Rendering). Da
+# "allgemein" gegen keinen davon matcht, war JEDE Kategorie-Box im Policy-
+# Katalog permanent leer -- keine einzige Policy war jemals anwaehlbar. Diese
+# Zuordnung ist analog zu STATISTIC_META oben die kanonische Quelle (nicht im
+# sim-Package, weil "Kategorie" reine Anzeige-Metadaten sind, siehe dortiger
+# Kommentar an Policy.description). Kategorie je nach dominantem Effekt
+# vergeben, konsistent mit engine.py::_STAT_CATEGORY (unemployment_rate/
+# gdp_growth -> economy, education/healthcare -> social, co2/renewable ->
+# environment).
+POLICY_CATEGORY = {
+    "erneuerbare_foerderung": "environment",
+    "bildungsoffensive": "social",
+    "steuersenkung_mittelstand": "economy",
+    "gesundheitsreform": "social",
+    "elektronische_krankenschreibung": "social",
+    "telemedizin_foerderung": "social",
+    "digitale_patientenakte": "social",
+    "solar_dachanlagen": "environment",
+    "windkraft_kleinanlagen": "environment",
+    "vermoegensteuer": "economy",
+    "digitalpakt_schulen": "social",
+    "gruener_wasserstoff": "environment",
+    "arbeitsmarkt_sofortprogramm": "economy",
+}
+
 
 def ensure_niedersachsen(db: Session) -> AdminUnit:
     existing = db.exec(select(AdminUnit).where(AdminUnit.external_code == NIEDERSACHSEN_CODE)).first()
@@ -67,14 +96,24 @@ def ensure_bundesland(db: Session, bundesland_key: str) -> AdminUnit:
 
 def ensure_policy_catalog(db: Session) -> None:
     for policy in SAMPLE_POLICIES:
-        if db.get(PolicyDefinition, policy.key):
+        category = POLICY_CATEGORY.get(policy.key, "economy")
+        existing = db.get(PolicyDefinition, policy.key)
+        if existing:
+            # Selbstheilend fuer bereits laufende DBs: die alte "allgemein"-
+            # Kategorie (siehe Bugfix-Kommentar bei POLICY_CATEGORY) muss
+            # HIER nachgezogen werden, sonst bleibt eine schon existierende
+            # PolicyDefinition-Zeile dauerhaft falsch (create_all migriert
+            # keine bestehenden Zeilen, siehe mistakes.md Postgres-Owner-Fix).
+            if existing.category != category:
+                existing.category = category
+                db.add(existing)
             continue
         db.add(
             PolicyDefinition(
                 key=policy.key,
                 name=policy.name,
                 description=policy.description or policy.name,
-                category="allgemein",
+                category=category,
                 one_time_cost=policy.one_time_cost,
                 upkeep_cost=policy.upkeep_cost,
                 capital_cost=policy.capital_cost,

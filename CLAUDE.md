@@ -245,6 +245,20 @@ aber nicht mehr gleichrangig.
   gründen → Session läuft mit korrekter Baseline) -- nicht nur Code gelesen.
 - 3 neue Backend-Tests (`test_bundeslaender.py`).
 
+### Kritischer Bugfix: Policy-Katalog komplett unklickbar (2026-09-13, Nutzer-Screenshot)
+
+`ensure_policy_catalog()` schrieb für JEDE Policy hart `category="allgemein"`
+-- das Frontend filtert die Policy-Karten aber nach `"economy"`/`"social"`/
+`"environment"`. Dadurch war **jede** der drei Kategorie-Boxen (Wirtschaft/
+Soziales/Umwelt) im ganzen Spiel dauerhaft leer, keine einzige Policy war
+je anwählbar -- ein Kernmechanik-Bug seit Einführung der kategorisierten
+Katalog-UI, unbemerkt weil kein Test `policy["category"]` je gegen die
+Frontend-Filterwerte prüfte. Fix: `POLICY_CATEGORY`-Dict in `seed.py`
+(analog `STATISTIC_META`) + `ensure_policy_catalog()` aktualisiert jetzt
+auch bereits existierende Zeilen (selbstheilend für laufende DBs). Live
+per Chrome DevTools MCP verifiziert (Policy anklicken → Checkbox + roter
+Auswahl-Rahmen). Details + Lehre: siehe `mistakes.md`.
+
 ---
 
 **Für tiefere Doku:** `docs/architecture.md` (Game-Director-Review), `docs/game-design-roadmap.md` (P0-P2 Roadmap), `ARCHIVE.md` (historische Learnings).

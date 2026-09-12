@@ -122,6 +122,57 @@ def test_policy_catalog_exposes_income_per_turn_for_vermoegensteuer(client):
     assert vermoegensteuer["income_per_turn"] == 20.0
 
 
+def test_policy_catalog_has_real_categories_not_allgemein(client):
+    """Regressionstest (2026-09-13, Nutzer-Feedback "Policy-Schalter nicht
+    klickbar"): ensure_policy_catalog() schrieb frueher fuer JEDE Policy hart
+    "allgemein" -- das Frontend filtert Policy-Karten aber nach genau
+    "economy"/"social"/"environment" (siehe App.jsx .policies-grid), wodurch
+    JEDE Kategorie-Box permanent leer war. Siehe seed.py::POLICY_CATEGORY."""
+    response = client.get("/policies")
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) > 0
+
+    valid_categories = {"economy", "social", "environment"}
+    for policy in body:
+        assert policy["category"] in valid_categories, (
+            f"Policy '{policy['key']}' hat ungueltige Kategorie '{policy['category']}' -- "
+            "matcht keine der drei Frontend-Filterwerte, waere im Katalog unsichtbar."
+        )
+
+    # Mindestens eine Policy je Kategorie, sonst waere eine der drei
+    # Kategorie-Boxen im Frontend trotzdem leer.
+    categories_present = {p["category"] for p in body}
+    assert valid_categories <= categories_present
+
+
+def test_policy_catalog_self_heals_existing_allgemein_rows(client):
+    """Regressionstest: ensure_policy_catalog() ueberspringt bereits
+    existierende PolicyDefinition-Zeilen normalerweise komplett -- eine
+    schon laufende DB (mit der alten "allgemein"-Kategorie) wuerde sonst
+    NIE repariert, selbst nach diesem Fix, weil create_all keine
+    bestehenden Zeilen migriert. ensure_policy_catalog() muss die Kategorie
+    deshalb aktualisieren, auch wenn die Zeile schon existiert."""
+    from app.db import engine
+    from app.models import PolicyDefinition
+    from app.seed import ensure_policy_catalog
+    from sqlmodel import Session
+
+    with Session(engine) as db:
+        row = db.get(PolicyDefinition, "vermoegensteuer")
+        assert row is not None
+        row.category = "allgemein"
+        db.add(row)
+        db.commit()
+
+    with Session(engine) as db:
+        ensure_policy_catalog(db)
+
+    with Session(engine) as db:
+        row = db.get(PolicyDefinition, "vermoegensteuer")
+        assert row.category == "economy"
+
+
 def test_enacting_vermoegensteuer_increases_budget_via_income_per_turn(client, session_id):
     before = client.get(f"/sessions/{session_id}").json()["budget"]
     response = client.post(f"/sessions/{session_id}/advance", json={"enact_policy_keys": ["vermoegensteuer"]})

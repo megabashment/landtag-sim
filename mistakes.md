@@ -690,3 +690,53 @@ gerendert und angesehen" -- bei jeder nicht-trivialen CSS-Aenderung lohnt
 sich ein echter Klicktest (hier: lokaler Dev-Server + Chrome DevTools MCP),
 bevor man es als erledigt meldet, gerade weil Light-/Dark-Mode-Kombination
 im Kopf leicht uebersehen wird.
+
+## Jede Policy hatte category="allgemein" -- der komplette Policy-Katalog war seit B14 unklickbar
+
+**Wo:** `backend/app/seed.py::ensure_policy_catalog`, gefunden durch
+Nutzer-Screenshot ("diese policy schalter sind nicht ausklappbar
+klickbar"), 2026-09-13.
+
+**Was:** `ensure_policy_catalog()` schrieb fuer JEDE Policy hart
+`category="allgemein"` in die `PolicyDefinition`-Zeile -- ein Wert, der nie
+per Parameter oder Mapping variierte. `landtag_sim.models.Policy` (sim-
+Package) hat gar kein `category`-Feld, es existierte also nirgends eine
+echte Quelle dafuer. Das Frontend (`App.jsx`, `.policies-grid`) filtert die
+Policy-Karten aber nach GENAU drei Werten: `"economy"`/`"social"`/
+`"environment"`. Da `"allgemein"` gegen keinen davon matcht, war JEDE der
+drei Kategorie-Boxen (Wirtschaft/Soziales/Umwelt) permanent leer -- nur die
+Box-Ueberschrift + eine Trennlinie waren sichtbar, keine einzige Policy war
+je anwaehlbar. Ein fundamentaler Kernmechanik-Bug, seit der kategorisierten
+Policy-Katalog-UI eingefuehrt wurde, ohne dass ein einziger Test das
+abgedeckt haette (kein Test pruefte je `policy["category"]` gegen die vom
+Frontend erwarteten Werte).
+
+**Warum unbemerkt:** `ensure_policy_catalog()` ueberspringt bereits
+existierende Zeilen komplett (`if db.get(...): continue`) -- wer den
+Docker-Stack schon laenger laufen hatte (ohne DB-Reset), sah je nach
+Historie ggf. andere/aeltere Werte. Reine Code-Read-Reviews sahen
+`category="allgemein"` isoliert und schlossen nicht automatisch auf "das
+matcht das Frontend-Filter-Enum nirgends" -- das fiel erst auf, als
+tatsaechlich jemand den Policy-Katalog im Browser anklicken wollte.
+
+**Fix:** `POLICY_CATEGORY`-Dict in `seed.py` (analog zu `STATISTIC_META`)
+mit echten `economy`/`social`/`environment`-Werten pro Policy-Key, aus dem
+dominanten Effekt abgeleitet (konsistent mit `engine.py::_STAT_CATEGORY`).
+`ensure_policy_catalog()` aktualisiert jetzt AUCH bereits existierende
+Zeilen (statt nur neue anzulegen), damit bereits laufende DBs sich beim
+naechsten Backend-Start selbst heilen. Test `test_policy_catalog_has_real_
+categories_not_allgemein` + `test_policy_catalog_self_heals_existing_
+allgemein_rows` in `test_repeal.py` verhindern eine Wiederholung.
+
+**Lehre:** Wenn ein Feld ueber viele Zeilen/Objekte hinweg IMMER denselben
+hart codierten Wert bekommt (kein Parameter, kein Mapping, keine
+Verzweigung), ist das ein starkes Signal, dass es entweder (a) wirklich
+irrelevant ist (dann ganz weg damit) oder (b) ein Platzhalter ist, der nie
+fertig implementiert wurde. Bei UI-Filterlogik ("zeige nur Items mit
+category X") IMMER gegenpruefen, ob die tatsaechlichen Backend-Werte
+ueberhaupt in der Menge liegen, die das Frontend erwartet -- ein Type-
+Checker/Schema sieht das nicht, weil beide Seiten `str` sind. Und:
+Kernmechanik-Screens (hier: der GESAMTE Policy-Katalog) sollten nicht
+monatelang ohne einen einzigen Klicktest bleiben, nur weil Unit-Tests
+gruen sind -- Unit-Tests pruefen hier nur, dass ein Endpoint 200
+zurueckgibt, nicht, dass sein Inhalt fuer die UI tatsaechlich NUTZBAR ist.
