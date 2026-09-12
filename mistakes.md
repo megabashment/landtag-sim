@@ -658,3 +658,35 @@ einfach `undefined` und die Bedingung `if (session.foo === "x")` ist
 schlicht immer falsch). Ein guter Verdachts-Trigger: jedes Feld, das nur
 in EINEM von mehreren strukturell aehnlichen Response-Schemas auftaucht,
 ist verdaechtig genug fuer eine gezielte Nachfrage/einen Test.
+
+## Hart codierte Kartenfarben (`#fafafa`/`#333`) unlesbar im Dark Mode, erst beim echten Klicktest sichtbar
+
+**Wo:** `frontend/src/App.css` (`.scenario-card`, `.campaign-effects`),
+Game-Director-UX-Review 2026-09-12.
+
+**Was:** Beim Retheming von `.modal-overlay`/`.modal-content` auf die
+`--paper`/`--ink`-Variablen (Onboarding-Screen ins "Amtsblatt"-Theme
+geholt) blieben zwei innere Elemente uebersehen: `.scenario-card`
+(Szenario-/Bundesland-Auswahl-Karten) hatte `background: #fafafa` hart
+codiert, `.campaign-effects` (Opposition-Kampagnen-Vorschau) `color: #333`.
+Beides sah in Isolation harmlos aus (`#333` auf hellem Hintergrund ist
+normalerweise lesbar) -- aber `--ink` wird im System-Dark-Mode zu einem
+HELLEN Creme-Ton (`#ece4d0`), waehrend die Karte weiterhin fast-weiss
+blieb: helle Schrift auf hellem Hintergrund, praktisch unlesbar. Rein
+statisches Code-Lesen (Diff anschauen, Farben im Kopf durchspielen) haette
+das NICHT zuverlaessig gezeigt -- der Bug wurde erst sichtbar, als der Dev-
+Server tatsaechlich im Browser (Chrome DevTools MCP, System-Dark-Mode)
+geoeffnet wurde und der Bundesland-Auswahl-Dialog fast unlesbar aussah.
+
+**Fix:** Beide auf `var(--paper)`/`var(--ink)` umgestellt.
+
+**Lehre:** Bei JEDEM Theme-/Farb-Refactor, das CSS-Variablen einfuehrt oder
+aendert, alle GESCHACHTELTEN Elemente mitpruefen, nicht nur den Container
+(ein themed Overlay um einen weiterhin hart codierten inneren Block sieht
+in EINEM Farbschema zufaellig noch ok aus, bricht aber im anderen). Und
+grundsaetzlicher: Farb-/Kontrast-Bugs sind ein Musterbeispiel dafuer, dass
+"Code angeschaut, sieht plausibel aus" NICHT dasselbe ist wie "tatsaechlich
+gerendert und angesehen" -- bei jeder nicht-trivialen CSS-Aenderung lohnt
+sich ein echter Klicktest (hier: lokaler Dev-Server + Chrome DevTools MCP),
+bevor man es als erledigt meldet, gerade weil Light-/Dark-Mode-Kombination
+im Kopf leicht uebersehen wird.

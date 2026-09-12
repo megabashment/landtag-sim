@@ -203,6 +203,28 @@ cd ../sim && python -m pytest tests/ -q
 Offene Priorität (M7 Phase 3):
 - **B29 Playtesting & Balance-Audit** (Balance-Runner-Feintuning pro State, `docs/balance-notes.md`, manueller 10-Game-Testlauf)
 
+## UX/Onboarding-Pass (Game-Director-Review, 2026-09-12)
+
+Vor dem geplanten Testerdurchlauf: Start-Menü/alle Dialoge (`.modal-content`,
+`.game-start-menu`, `.scenario-card`) liefen komplett aus dem "Amtsblatt"-
+Theme raus (hart codiert weiss/generisches Rot statt `--paper`/`--ink`) --
+jetzt konsistent umgestellt, inkl. Backdrop hinter dem Start-Menü, echtem
+`<title>`/Favicon (`frontend/public/favicon.svg`, selbst gezeichnet) und
+einem Platzhalter-Bundesland-Badge (`frontend/src/bundeslandData.js` +
+`BundeslandBadge` in `App.jsx`) im Header/Auswahl-Dialog für eine minimale
+räumliche Verortung. **Die Badges sind KEINE echten Landesgrenzen** --
+Umriss-Formsprache als Platzhalter, siehe Kommentar in `bundeslandData.js`
+für Wikimedia-Commons-Quellen (Public Domain/CC0) zum Nachziehen echter
+Umrisse. Per Chrome DevTools MCP live verifiziert (Dark Mode), dabei zwei
+zusätzliche Kontrast-Bugs gefunden+gefixt (`.scenario-card`/
+`.campaign-effects` hart codierte Farben unlesbar im Dark Mode) -- siehe
+mistakes.md.
+
+**Offen aus derselben Review, nicht umgesetzt:** die Sonntagsfrage-Karte
+(`.sonntagsfrage-overlay`) ist weiterhin ein separates, hell gehaltenes
+Element, das nicht ganz zum dunklen Ledger-Look passt -- kleinerer
+Folgepunkt für einen künftigen Visual-Pass, kein Blocker.
+
 ---
 
 **Für tiefere Doku:** `docs/architecture.md` (Game-Director-Review), `docs/game-design-roadmap.md` (P0-P2 Roadmap), `ARCHIVE.md` (historische Learnings).

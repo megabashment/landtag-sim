@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "./api";
 import { STAT_ICON_PATHS } from "./statIcons";
 import { PARTY_ICONS } from "./partyIcons";
+import { BUNDESLAND_SILHOUETTES, bundeslandKeyFromName } from "./bundeslandData";
 import "./App.css";
 
 // B14: kleines Statistik-Icon (game-icons.net, CC BY 3.0 -- siehe CREDITS.md).
@@ -12,6 +13,25 @@ function StatIcon({ statKey }) {
   return (
     <svg className="stat-icon" viewBox="0 0 512 512" aria-hidden="true">
       <path fill="currentColor" d={d} />
+    </svg>
+  );
+}
+
+// Game-Director-Review (2026-09-12): Platzhalter-Silhouette pro Bundesland
+// (siehe bundeslandData.js -- KEINE echten Landesgrenzen, nur Formsprache
+// zur Unterscheidung, bis echte Wikimedia-Commons-Umrisse eingebunden sind).
+function BundeslandBadge({ bundeslandKey, size = 40 }) {
+  const shape = BUNDESLAND_SILHOUETTES[bundeslandKey];
+  if (!shape) return null;
+  return (
+    <svg
+      className="bundesland-badge"
+      width={size}
+      height={size}
+      viewBox={shape.viewBox}
+      aria-hidden="true"
+    >
+      <path fill="currentColor" d={shape.path} />
     </svg>
   );
 }
@@ -81,8 +101,11 @@ function BundeslandSelectionDialog({ bundeslaender, onSelect, onClose, disabled 
         <h2>Bundesland wählen</h2>
         <div className="scenarios-list">
           {bundeslaender.map((b) => (
-            <div key={b.key} className="scenario-card">
-              <h3>{b.name}</h3>
+            <div key={b.key} className="scenario-card bundesland-card">
+              <div className="bundesland-card-header">
+                <BundeslandBadge bundeslandKey={b.key} size={48} />
+                <h3>{b.name}</h3>
+              </div>
               <p>{b.description}</p>
               <ul className="campaign-effects">
                 {Object.entries(b.starting_statistics).map(([key, value]) => (
@@ -116,8 +139,9 @@ function GameStartMenu({
 }) {
   const ideologyEmoji = { green: "🟢", red: "🔴", blue: "🔵" };
   return (
-    <div className="game-start-menu">
-      <h2>Landtag-Simulation</h2>
+    <div className="modal-content game-start-menu">
+      <span className="masthead__kicker">Landtag-Simulation &middot; MVP</span>
+      <h2>Neue Partie starten</h2>
       <p>Wähle einen Modus zum Starten:</p>
       <button className="button-primary" onClick={onNewParty} disabled={disabled}>
         🟢 Neue Partei gründen
@@ -1310,21 +1334,31 @@ export default function App() {
         <span className="masthead__kicker">Landtag-Simulation &middot; MVP</span>
         {/* B27 "Bundes-Skalierung" (M7): Bugfix -- admin_unit_name kommt jetzt
             aus der Session statt hart codiert "Niedersachsen" zu sein, sonst
-            zeigt der Header bei Bayern-/NRW-Partien den falschen Namen. */}
-        <h1>{session?.admin_unit_name ?? "Niedersachsen"}</h1>
+            zeigt der Header bei Bayern-/NRW-Partien den falschen Namen.
+            Game-Director-Review (2026-09-12): Bundesland-Badge fuer eine
+            minimale raeumliche Verortung neben dem reinen Textnamen. */}
+        <div className="masthead__title-row">
+          <BundeslandBadge bundeslandKey={bundeslandKeyFromName(session?.admin_unit_name)} size={44} />
+          <h1>{session?.admin_unit_name ?? "Niedersachsen"}</h1>
+        </div>
       </header>
 
       {!session && showGameStart && (
         <>
-          <GameStartMenu
-            onNewParty={() => setShowPartyCreation(true)}
-            onStartClassic={handleStart}
-            onContinueParty={handleContinueParty}
-            onShowScenarios={() => setShowScenarioSelection(true)}
-            onShowBundeslaender={() => setShowBundeslandSelection(true)}
-            existingParties={existingParties}
-            disabled={loading}
-          />
+          {/* Game-Director-Review (2026-09-12): das Start-Menue schwebte
+              vorher ohne Backdrop ueber leerer Seite -- jetzt im selben
+              .modal-overlay-Muster wie alle anderen Dialoge. */}
+          <div className="modal-overlay">
+            <GameStartMenu
+              onNewParty={() => setShowPartyCreation(true)}
+              onStartClassic={handleStart}
+              onContinueParty={handleContinueParty}
+              onShowScenarios={() => setShowScenarioSelection(true)}
+              onShowBundeslaender={() => setShowBundeslandSelection(true)}
+              existingParties={existingParties}
+              disabled={loading}
+            />
+          </div>
           {showScenarioSelection && (
             <ScenarioSelectionDialog
               scenarios={scenarios}

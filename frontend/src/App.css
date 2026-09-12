@@ -31,6 +31,37 @@
   margin-top: 0.3rem;
 }
 
+/* Game-Director-Review (2026-09-12): Bundesland-Badge neben dem Titel,
+   damit der Kopf nicht nur Text ist -- siehe bundeslandMaps.jsx. */
+.masthead__title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.masthead__title-row h1 {
+  margin-top: 0;
+}
+
+.bundesland-badge {
+  color: var(--ink-dim);
+  flex-shrink: 0;
+}
+
+.bundesland-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.bundesland-card-header h3 {
+  margin: 0;
+}
+
+.bundesland-card .bundesland-badge {
+  color: var(--ink);
+}
+
 /* --- Statusleiste (Phase 3) --------------------------------------------------
    Ledger-Felder auf Papier, durch 1px-Hairlines getrennt (der Leisten-
    Hintergrund scheint als Fuge durch). Rechts abgesetzt: der Wahltermin als
@@ -821,30 +852,29 @@ button:disabled {
   background: #d0d0d0;
 }
 
-/* B23 "Party-Gründung (Persistente Meta-Ebene)" Phase 2: Game-Start-Menu */
+/* B23 "Party-Gründung (Persistente Meta-Ebene)" Phase 2: Game-Start-Menu.
+   Game-Director-Review (2026-09-12): erbt jetzt Papier/Tinte/Regel-Farben
+   von .modal-content (siehe dort) statt eigener weiss/rot-Palette --
+   nur noch Layout-Ergaenzungen (Breite, zentrierter Text, Button-Stapel). */
 .game-start-menu {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  background: white;
-  border: 2px solid #333;
-  padding: 40px;
-  border-radius: 4px;
   text-align: center;
   min-width: 300px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  max-width: 420px;
+}
+
+.game-start-menu .masthead__kicker {
+  display: block;
+  margin-bottom: 0.4rem;
 }
 
 .game-start-menu h2 {
   margin-top: 0;
-  color: #d32f2f;
   font-size: 28px;
 }
 
 .game-start-menu p {
   margin-bottom: 20px;
-  color: #666;
+  color: var(--ink-dim);
 }
 
 .game-start-menu button {
@@ -856,13 +886,19 @@ button:disabled {
 }
 
 /* Modal Overlay */
+/* Game-Director-Review (2026-09-12): .modal-overlay/.modal-content waren
+   hart codiert (weiss/generisches Rot) und brachen aus dem "Amtsblatt"-
+   Theme aus (siehe .masthead/.statusbar oben) -- betraf JEDEN Dialog im
+   Spiel (Start-Menue, Partei-Gruendung, Szenario-/Bundesland-Auswahl,
+   Koalitions-/Party-Detail-Modal), nicht nur den Ersteinstieg. Jetzt auf
+   dieselben CSS-Variablen umgestellt wie der Rest der App. */
 .modal-overlay {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.55);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -870,17 +906,22 @@ button:disabled {
 }
 
 .modal-content {
-  background: white;
-  border: 2px solid #333;
+  background: var(--paper-raised);
+  color: var(--ink);
+  border: 1px solid var(--rule);
   padding: 30px;
-  border-radius: 4px;
+  border-radius: 3px;
   max-width: 400px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  max-height: 85vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  font-family: var(--body);
 }
 
 .modal-content h2 {
   margin-top: 0;
-  color: #d32f2f;
+  color: var(--ink);
+  font-family: var(--body);
 }
 
 .modal-content label {
@@ -888,15 +929,17 @@ button:disabled {
   margin-top: 15px;
   margin-bottom: 8px;
   font-weight: bold;
-  color: #333;
+  color: var(--ink);
 }
 
 .modal-content input[type="text"] {
   width: 100%;
   padding: 8px;
-  border: 1px solid #ccc;
+  border: 1px solid var(--rule);
   border-radius: 3px;
   font-size: 14px;
+  background: var(--paper);
+  color: var(--ink);
   box-sizing: border-box;
 }
 
@@ -909,22 +952,22 @@ button:disabled {
 
 .ideology-button {
   padding: 12px;
-  border: 2px solid #ddd;
-  border-radius: 4px;
-  background: #f9f9f9;
+  border: 2px solid var(--rule);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--ink);
   cursor: pointer;
   text-align: left;
   transition: all 0.2s;
 }
 
 .ideology-button:hover {
-  border-color: #999;
-  background: #f0f0f0;
+  border-color: var(--ink-dim);
 }
 
 .ideology-button.selected {
-  border-color: #d32f2f;
-  background: #fff3cd;
+  border-color: #1976d2;
+  background: var(--paper-raised);
 }
 
 .ideology-label {
@@ -934,7 +977,7 @@ button:disabled {
 
 .ideology-desc {
   font-size: 12px;
-  color: #666;
+  color: var(--ink-dim);
   margin-bottom: 8px;
 }
 
@@ -1159,7 +1202,7 @@ button:disabled {
   flex-direction: column;
   gap: 2px;
   font-size: 12px;
-  color: #333;
+  color: var(--ink);
 }
 
 .opposition-mode-banner {
@@ -1269,12 +1312,14 @@ button:disabled {
   padding: 1rem;
   border: 1px solid var(--rule);
   border-radius: 4px;
-  background: #fafafa;
+  background: var(--paper);
+  color: var(--ink);
 }
 
 .scenario-card h3 {
   margin: 0 0 0.5rem 0;
   font-size: 1rem;
+  color: var(--ink);
 }
 
 .scenario-card p {
