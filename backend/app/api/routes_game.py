@@ -11,6 +11,7 @@ from app.schemas.game import (
     AdvanceTurnRequest,
     AdvanceTurnResponse,
     AttributionOut,
+    CoalitionResponseRequest,
     CreateSessionResponse,
     DilemmaOptionOut,
     ElectionProjectionGroupOut,
@@ -872,6 +873,7 @@ def advance_session_turn(
             threshold=result.election_result.threshold,
             won=result.election_result.won,
             standings=[list(s) for s in result.election_result.standings],
+            coalition_viability=result.election_result.coalition_viability,
         )
         # Wahlmechanik (P0, siehe docs/game-design-roadmap.md): verlorene Wahl
         # beendet die Session (kein weiteres /advance moeglich, siehe Check
@@ -947,6 +949,54 @@ def advance_session_turn(
         term_summary=term_summary_out,
         reports=result.reports,
     )
+
+
+@router.post("/sessions/{session_id}/respond-to-election")
+def respond_to_election(
+    session_id: int, body: CoalitionResponseRequest, db: Session = Depends(get_session)
+) -> dict[str, str]:
+    """M6 Phase 2 "Advanced Opposition": Spieler-Entscheidung nach Wahlverlust.
+    Wenn coalition_viability >= 30 und accept_coalition=True, bleibt die Partie
+    im GOVERNMENT-Modus (kein Demote zu OPPOSITION). Sonst Standard-Demote."""
+    session = db.get(GameSession, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session nicht gefunden")
+
+    # Koalition ist nur möglich, wenn die letzte Wahl verloren wurde und
+    # coalition_viability ausreichend hoch ist. Der Client sollte die UI
+    # entsprechend disablen, aber wir validieren hier auch serverseitig.
+    if not session.election_result or session.election_result.get("won", False):
+        raise HTTPException(status_code=400, detail="Keine Wahlniederlage vorhanden")
+
+    coalition_viability = session.election_result.get("coalition_viability", 0.0)
+    if body.accept_coalition and coalition_viability < 30.0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Koalition nicht möglich: Viabilität {coalition_viability:.1f}% < 30%",
+        )
+
+    # Entscheidung in Session speichern (für künftige Geschichtsanzeige)
+    if session.extra_data is None:
+        session.extra_data = {}
+    session.extra_data["last_coalition_decision"] = {
+        "accepted": body.accept_coalition,
+        "viability": coalition_viability,
+    }
+
+    # Logik: Falls Koalition akzeptiert und möglich, bleibt GOVERNMENT.
+    # Sonst Demote zu OPPOSITION.
+    if body.accept_coalition and coalition_viability >= 30.0:
+        # Koalition akzeptiert: bleibe in Regierung
+        session.role = SessionRole.GOVERNMENT
+        message = f"Koalition akzeptiert! Zusammenarbeit mit Opposition ermöglicht Regierungsfortbestand."
+    else:
+        # Koalition abgelehnt oder nicht möglich: gehe in Opposition
+        session.role = SessionRole.OPPOSITION
+        message = f"Opposition übernommen. Versuche, die nächste Wahl zu gewinnen."
+
+    db.add(session)
+    db.commit()
+    return {"message": message, "role": session.role.value}
 
 
 @router.post("/sessions/{session_id}/resolve-dilemma", response_model=ResolveDilemmaResponse)

@@ -314,6 +314,10 @@ class ElectionResult:
     (mind. eine Rivalen-Partei im Spiel), zaehlt die PLURALITAET -- won=True,
     wenn der Spieler-Stimmenanteil der hoechste ist. Ohne Rivalen faellt es
     auf das alte Schwellen-Kriterium zurueck (approval >= threshold).
+
+    M6 Phase 2 "Advanced Opposition": coalition_viability zeigt, wie gut
+    eine Koalition mit der Opposition möglich ist (0-100). Bei Wahlniederlagen
+    angeboten, wenn viability >= 30.
     """
 
     approval: float
@@ -322,6 +326,8 @@ class ElectionResult:
     # [(partei_name, stimmenanteil_prozent)] absteigend sortiert, inkl. Spieler.
     # Leer im klassischen Einzel-Partei-Modus.
     standings: list[tuple[str, float]] = field(default_factory=list)
+    # M6 "Advanced Opposition": Opposition-Koalitionsviabilität [0, 100]
+    coalition_viability: float = 0.0
 
 
 @dataclass

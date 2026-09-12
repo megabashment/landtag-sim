@@ -983,11 +983,18 @@ def advance_turn(
         else:
             standings = []
             won = approval >= ELECTION_APPROVAL_THRESHOLD
+
+        # M6 Phase 2 "Advanced Opposition": Koalitionsviabilität für UI
+        # berechnen. Bei Wahlniederlage kann Koalition angeboten werden,
+        # wenn opposition_viability >= 30.
+        coalition_viability = _calculate_coalition_viability(new_state, opposition_mode=True)
+
         election_result = ElectionResult(
             approval=approval,
             threshold=ELECTION_APPROVAL_THRESHOLD,
             won=won,
             standings=standings,
+            coalition_viability=coalition_viability,
         )
         # B1 (BACKLOG.md): Bilanz der gerade abgelaufenen Legislaturperiode
         # bauen -- BEVOR das Term-Tracking auf den naechsten Zyklus

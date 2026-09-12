@@ -226,6 +226,9 @@ class ElectionResultOut(BaseModel):
     # Mehrparteiensystem: [(partei_name, stimmenanteil_prozent)] absteigend.
     # Leer im klassischen Einzel-Partei-Modus (dann zaehlt approval>=threshold).
     standings: list[tuple[str, float]] = []
+    # M6 Phase 2 "Advanced Opposition": Koalitionsviabilität [0, 100]
+    # Bei Niederlage >= 30 kann Koalition angeboten werden
+    coalition_viability: float = 0.0
 
 
 class GoalResultOut(BaseModel):
@@ -317,3 +320,18 @@ class PreviewResponse(BaseModel):
     would_trigger_events: list[str]
     would_trigger_dilemma: bool
     satisfaction_delta_by_group: dict[str, float]
+
+
+class CoalitionResponseRequest(BaseModel):
+    """M6 Phase 2 "Advanced Opposition": Spieler-Entscheidung nach
+    Wahlverlust: Koalition mit Opposition akzeptieren oder ablehnen."""
+
+    accept_coalition: bool
+
+
+class CoalitionResponseOut(BaseModel):
+    """Bestätigung der Koalitionsentscheidung. Wenn akzeptiert und möglich,
+    bleibt der Spieler in der Regierung. Sonst wechsel in Opposition."""
+
+    accepted: bool
+    message: str  # "Koalition akzeptiert!" oder "Opposition bernommen"
