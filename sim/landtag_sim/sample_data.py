@@ -14,6 +14,7 @@ from __future__ import annotations
 import random
 
 from landtag_sim.models import (
+    BundeslandDefinition,
     DilemmaOption,
     DilemmaRule,
     EventRule,
@@ -66,7 +67,9 @@ STARTING_STATISTICS = {
 }
 
 
-def jittered_starting_statistics(rng: random.Random | None = None, spread: float = 0.05) -> dict[str, float]:
+def jittered_starting_statistics(
+    rng: random.Random | None = None, spread: float = 0.05, base: dict[str, float] | None = None
+) -> dict[str, float]:
     """P2-Punkt "Randomisierte Startbedingungen" (docs/game-design-roadmap.md):
     kleine Zufallsstreuung (Default +/-5%) um die Basiswerte, damit nicht
     jede Partie mit exakt identischen Zahlen startet.
@@ -75,9 +78,15 @@ def jittered_starting_statistics(rng: random.Random | None = None, spread: float
     create_session) -- build_initial_state() unten bleibt bewusst
     UNrandomisiert, damit Tests und der Balance-Runner
     (sim/landtag_sim/tools/balance_runner.py) reproduzierbar bleiben.
-    """
+
+    `base`: B27 "Bundes-Skalierung" (M7_SPRINT_PLAN.md) -- jitter um eine
+    ANDERE Baseline als STARTING_STATISTICS (z.B. BundeslandDefinition.
+    starting_statistics), damit jedes Bundesland um seine EIGENE Baseline
+    streut statt immer um Niedersachsen. Default bleibt STARTING_STATISTICS
+    (unveraendertes Verhalten fuer bestehende Aufrufer)."""
     rng = rng or random.Random()
-    return {key: value * (1 + rng.uniform(-spread, spread)) for key, value in STARTING_STATISTICS.items()}
+    source = base if base is not None else STARTING_STATISTICS
+    return {key: value * (1 + rng.uniform(-spread, spread)) for key, value in source.items()}
 
 SAMPLE_VOTER_GROUPS = [
     VoterGroup(
@@ -1478,6 +1487,77 @@ SAMPLE_SCENARIOS = [
         },
     ),
 ]
+
+
+# B27 "Bundes-Skalierung" (M7_SPRINT_PLAN.md): spielbare Bundeslaender neben
+# Niedersachsen, jedes mit einer eigenen Statistik-Baseline. Wie bei
+# education_spending/healthcare_quality oben (siehe STARTING_STATISTICS-
+# Kommentar) sind Bayern/NRW-Werte PLAUSIBEL anhand bekannter regional-
+# wirtschaftlicher Unterschiede gesetzt, nicht aus Amtsstatistik importiert
+# (kein data/sources/bayern_*.md o.ae. -- waere ein eigener Recherche-
+# Auftrag analog zu data/sources/niedersachsen_startwerte.md).
+SAMPLE_BUNDESLAENDER = [
+    BundeslandDefinition(
+        key="niedersachsen",
+        name="Niedersachsen",
+        external_code="DE-NI",
+        description="Der MVP-Standardstart: Mischung aus Agrarwirtschaft, Industrie und Kuestenregion.",
+        starting_statistics=dict(STARTING_STATISTICS),
+    ),
+    BundeslandDefinition(
+        key="bayern",
+        name="Bayern",
+        external_code="DE-BY",
+        description=(
+            "Starke Wirtschaft, niedrige Arbeitslosigkeit -- aber Fachkraeftemangel "
+            "und hohe Erwartungen an Bildung und Gesundheitsversorgung."
+        ),
+        starting_statistics={
+            # ACHTUNG: 3.6 * [0.95, 1.05] (Jitter-Band) = [3.42, 3.78], liegt damit
+            # KOMPLETT unter der fachkraeftezuwanderung-Dilemma-Schwelle (< 4.0) --
+            # anders als bei verkehrswende (siehe mistakes.md) ist das hier
+            # ABSICHTLICH: jede Bayern-Partie startet garantiert (nicht nur
+            # gelegentlich) mit dem Fachkraeftemangel-Dilemma, passend zur
+            # Beschreibung oben. Bewusst als Design-Feature dokumentiert, damit
+            # es nicht spaeter mit einem echten Jitter-Bug verwechselt wird.
+            "unemployment_rate": 3.6,  # deutlich unter Nds. -- traditionell niedrigste Quote der Flaechenlaender
+            "gdp_growth": 1.8,  # starke Industrie- und Dienstleistungsbasis
+            "education_spending": 48.0,  # ueberdurchschnittlich, aber noch ausbaufaehig
+            "healthcare_quality": 66.0,  # gut ausgebautes Versorgungsnetz
+            "co2_emissions": 92.0,  # weniger Schwerindustrie als NRW
+            "renewable_share": 38.0,  # Wasserkraft + Solar, aber Windkraft-Ausbau gebremst
+        },
+    ),
+    BundeslandDefinition(
+        key="nrw",
+        name="Nordrhein-Westfalen",
+        external_code="DE-NW",
+        description=(
+            "Bevoelkerungsreichstes Bundesland mit industriellem Erbe -- hoehere "
+            "Arbeitslosigkeit und Emissionen durch den laufenden Strukturwandel."
+        ),
+        starting_statistics={
+            "unemployment_rate": 7.2,  # Ruhrgebiet-Strukturwandel schlaegt durch
+            "gdp_growth": 0.9,  # schwaecher als Bayern, aber keine Rezession
+            "education_spending": 38.0,  # unter Nds.-Niveau, urbane Ballungsraeume
+            "healthcare_quality": 57.0,  # dichtes, aber unter Druck stehendes Klinik-Netz
+            # 98 statt naeher an 100+: houher haette den Jitter-Bereich (98*[0.95,1.05])
+            # zu nah an smogalarm(104)/klimaschutzgesetz(106)/verkehrswende(105) gebracht --
+            # dieselbe Falle wie bei verkehrswende selbst (siehe mistakes.md). NRWs
+            # Emissions-Nachteil kommt stattdessen ueber renewable_share (niedriger) und
+            # organisch ueber die Situation `abwanderung`, nicht per Zufalls-Jitter-Crisis.
+            "co2_emissions": 98.0,  # Schwerindustrie + Kohleausstieg noch im Gang, aber kein Tag-1-Alarm
+            "renewable_share": 28.0,  # hinter Bayern/Nds. zurueck, Ausbau laeuft an
+        },
+    ),
+]
+
+
+def get_bundesland_starting_statistics(bundesland: BundeslandDefinition) -> dict[str, float]:
+    """B27: Baseline-Statistiken eines Bundeslands -- im Unterschied zu
+    get_scenario_starting_statistics() kein Override auf STARTING_STATISTICS,
+    sondern die VOLLSTAENDIGE eigene Baseline des Bundeslands."""
+    return dict(bundesland.starting_statistics)
 
 
 def build_initial_state() -> SimState:

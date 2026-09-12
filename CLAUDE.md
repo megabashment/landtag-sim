@@ -1,6 +1,6 @@
 # CLAUDE.md — Projektgedächtnis für Landtag-Sim
 
-**Status: M7 Phase 1 in Arbeit (B25 Content-Ausbau + B26 Opposition-Kampagnen-UI, 2026-09-12).** Siehe `M7_SPRINT_PLAN.md` für den vollen Sprint (B25-B29); B27-B29 noch offen.
+**Status: M7 Phase 1+2 abgeschlossen (B25-B28, 2026-09-12).** Siehe `M7_SPRINT_PLAN.md` für den vollen Sprint; nur B29 (Playtesting & Balance-Audit) noch offen.
 
 **Schnelleinstieg:** Für abgeschlossene Phasen (M1-M4), Recherche-Learnings und historische Issues → **`ARCHIVE.md`**. Für Detailarchitkur → `docs/architecture.md`.
 
@@ -92,15 +92,31 @@ landtag-sim/
 
 ---
 
-## Aktueller Stand (M7 Phase 1)
+## Aktueller Stand (M7 Phase 1+2)
 
 **Test-Suite (2026-09-12):**
-- **Sim-Engine:** 131 Tests ✓ (8 neue: B25 Event-/Dilemma-Trigger)
-- **Backend-API:** 66 Tests ✓ (3 neue: `test_opposition.py`)
-- **Frontend:** Build+Lint ✓, Opposition-Kampagnen-Panel + StatusBar-Banner live verifiziert
-- **Balance-Runner:** "Keine vermutlich dominante Policy", alle 6 neuen Events + 5 neuen Dilemmas triggern organisch (kein NIE_AUSGELOEST)
+- **Sim-Engine:** 133 Tests ✓ (8 neue B25 Event-/Dilemma-Trigger, 2 neue B27 Bundesland-Tests)
+- **Backend-API:** 74 Tests ✓ (3 neue `test_opposition.py`, 5 neue `test_bundeslaender.py`, 3 neue Party-Detail-Tests)
+- **Frontend:** Build+Lint ✓ (Opposition-Kampagnen-Panel, Bundesland-Auswahl-Dialog, Party-Detail-Modal -- NICHT live im Browser durchgeklickt, da der laufende Docker-Container ein Volume-freies, ungebautes Image ist; fuer echte UI-Verifikation `docker compose up --build` oder `npm run dev` noetig)
+- **Balance-Runner:** "Keine vermutlich dominante Policy" fuer alle 3 States (Niedersachsen/Bayern/NRW), alle 6 neuen Events + 5 neuen Dilemmas triggern organisch (kein NIE_AUSGELOEST)
 
-**Implementiert (M7 Phase 1):**
+**Implementiert (M7 Phase 1+2):**
+
+### B27 Bundes-Skalierung
+- `BundeslandDefinition` (sim-seitig) + `SAMPLE_BUNDESLAENDER` (Niedersachsen/Bayern/NRW), jedes mit vollstaendiger eigener Statistik-Baseline (kein Override wie bei Scenario-Mode)
+- `jittered_starting_statistics(base=...)` -- jittert jetzt um eine BELIEBIGE Baseline, nicht mehr nur um Niedersachsen
+- `GET /bundeslaender`, `POST /sessions/new-bundesland/{key}`, `ensure_bundesland()` in `seed.py` (analog `ensure_niedersachsen`)
+- `balance_runner.py --state {niedersachsen|bayern|nrw}` -- Balance-Runner pro Bundesland
+- Frontend: `BundeslandSelectionDialog` im Start-Menu (zeigt Baseline-Statistiken vor Sessionstart)
+- Kein State-Wechsel INNERHALB einer laufenden Session (wie geplant, siehe M7_SPRINT_PLAN.md)
+- **Bugfixes unterwegs gefunden:** `SessionStateResponse` hatte `party_id`/`party_name`/`party_ideology`/`admin_unit_name` NIE (nur `CreateSessionResponse`) -- der Ideologie-Bonus-Badge (B23) zeigte sich dadurch nie, und der Header zeigte immer hart codiert "Niedersachsen". Beides jetzt in `SessionStateResponse` ergaenzt.
+
+### B28 Advanced UI
+- `GET /parties/{id}/detail` (`PartyDetailOut`/`TermDetailOut`): volle Term-Historie inkl. `reputation_delta`/`reputation_after` pro Legislaturperiode (neu in `Party.extra_data["terms"]`)
+- Frontend `PartyDetailModal`: Ruf-Verlauf als einfacher Balkengraph + Term-Tabelle, aufrufbar über "Details"-Button im neuen Partei-Feld der StatusBar
+- Session-Dauer-Info in StatusBar ("Legislatur N (Runde X von 16)")
+
+### B25 Event/Dilemma-Expansion
 
 ### B25 Event/Dilemma-Expansion
 - Events 8 → 14 (6 neue: `wirtschaftsboom`, `energiewende_erfolg`, `pflege_fruehwarnung`, `bildungssparzwang`, `jobmotor`, `energiewende_ausbau`)
@@ -182,12 +198,10 @@ cd ../sim && python -m pytest tests/ -q
 
 ## Nächste Sprints (M7+)
 
-**M6 abgeschlossen — B24 + Advanced Opposition live. M7 Phase 1 (B25+B26) abgeschlossen** (siehe `M7_SPRINT_PLAN.md`).
+**M6 abgeschlossen — B24 + Advanced Opposition live. M7 Phase 1+2 (B25-B28) abgeschlossen** (siehe `M7_SPRINT_PLAN.md`).
 
-Offene Prioritäten (M7 Phase 2+3):
-- **B27 Bundes/EU-Skalierung** (Bayern + NRW als weitere Bundesländer, State-Baseline)
-- **B28 Advanced UI** (Party-History-Modal, Coalition-Viz, Session-Dauer-Info)
-- **B29 Playtesting & Balance-Audit** (Balance-Runner pro State, `docs/balance-notes.md`)
+Offene Priorität (M7 Phase 3):
+- **B29 Playtesting & Balance-Audit** (Balance-Runner-Feintuning pro State, `docs/balance-notes.md`, manueller 10-Game-Testlauf)
 
 ---
 

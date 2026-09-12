@@ -618,3 +618,43 @@ Budgets oder ungeschuetzten Einzel-Calls flaky machen, auch wenn die neue
 Regel selbst nirgends im jeweiligen Testpfad erwaehnt wird -- nach JEDEM
 Content-Ausbau die volle Backend-Suite mehrfach hintereinander laufen
 lassen (siehe Lehre oben zu Zufallsrunden), nicht nur einmal gruen sehen.
+
+## `SessionStateResponse` fehlten party_id/party_name/party_ideology/admin_unit_name (B27/B28)
+
+**Wo:** `backend/app/schemas/game.py::SessionStateResponse`,
+`backend/app/api/routes_game.py::_build_state_response`, `frontend/src/App.jsx`,
+2026-09-12.
+
+**Was:** Beim Bau des Party-Detail-Modals (B28) und der Bundesland-Auswahl
+(B27) fiel auf: `party_id`, `party_name` und `party_ideology` existierten
+NUR in `CreateSessionResponse` (einmalig bei Session-Erstellung), nicht
+aber in `SessionStateResponse` (dem Rueckgabetyp von GET /sessions/{id}
+UND von jedem `/advance`-Response). Jeder bestehende Call-Pfad im Frontend
+(`handleCreateParty`, `handleStartScenario`, `handleStart`, ...) ruft nach
+dem Erstellen SOFORT `api.getSession(created.session_id)` auf und ersetzt
+den kompletten `session`-State mit dem Ergebnis (`setSession(state)`,
+kein Merge) -- `session.party_ideology` war dadurch ab dem allerersten
+Render IMMER `undefined`. Der Ideologie-Bonus-Badge in der Policy-Karte
+(B23 Phase 3, "🟢 Grün-Bonus" etc.) hat sich seitdem NIE angezeigt, obwohl
+die Bonus-Logik selbst korrekt war -- ein rein datentransport-bedingter
+Bug, kein Logikfehler. Derselbe Musterfehler bei `admin_unit`: der Header
+zeigte hart codiert `<h1>Niedersachsen</h1>`, weil auch der Bundesland-Name
+nie ueber `SessionStateResponse` transportiert wurde (erst relevant seit
+B27, vorher war es sowieso immer Niedersachsen).
+
+**Fix:** `SessionStateResponse` um `party_id`, `party_name`,
+`party_ideology`, `admin_unit_name` erweitert; `_build_state_response()`
+befuellt sie aus `session.party_id`/`session.admin_unit_id` per DB-Lookup
+(dieselben Daten, die `_load_state_for_session()` fuer die Sim-Engine
+sowieso schon laedt). Frontend-Header nutzt jetzt
+`session?.admin_unit_name ?? "Niedersachsen"` statt der Konstante.
+
+**Lehre:** Wenn ein Response-Schema fuer "Session erstellen" (einmalig) und
+"Session-Status abrufen" (wiederholt) GETRENNTE Pydantic-Modelle sind,
+regelmaessig gegenpruefen, ob Felder aus dem Create-Modell auch im
+Status-Modell existieren -- sonst "verschwindet" ein Feld nach dem ersten
+Refresh unbemerkt, weil kein Fehler geworfen wird (das Frontend liest
+einfach `undefined` und die Bedingung `if (session.foo === "x")` ist
+schlicht immer falsch). Ein guter Verdachts-Trigger: jedes Feld, das nur
+in EINEM von mehreren strukturell aehnlichen Response-Schemas auftaucht,
+ist verdaechtig genug fuer eine gezielte Nachfrage/einen Test.

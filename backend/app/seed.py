@@ -11,6 +11,7 @@ from sqlmodel import Session, select
 
 from app.models import AdminLevel, AdminUnit, DilemmaDefinition, EventDefinition, PolicyDefinition, StatisticDefinition
 from landtag_sim.sample_data import (
+    SAMPLE_BUNDESLAENDER,
     SAMPLE_DILEMMA_RULES,
     SAMPLE_EVENT_RULES,
     SAMPLE_POLICIES,
@@ -37,6 +38,27 @@ def ensure_niedersachsen(db: Session) -> AdminUnit:
     if existing:
         return existing
     unit = AdminUnit(name="Niedersachsen", level=AdminLevel.REGION, external_code=NIEDERSACHSEN_CODE)
+    db.add(unit)
+    db.commit()
+    db.refresh(unit)
+    return unit
+
+
+def ensure_bundesland(db: Session, bundesland_key: str) -> AdminUnit:
+    """B27 "Bundes-Skalierung" (M7_SPRINT_PLAN.md): analog zu
+    ensure_niedersachsen(), aber generisch fuer jedes SAMPLE_BUNDESLAENDER-
+    Bundesland. `ensure_niedersachsen()` bleibt als eigene Funktion bestehen
+    (viele bestehende Callsites), ist aber inhaltlich identisch mit
+    `ensure_bundesland(db, "niedersachsen")` -- beide finden/erzeugen
+    dieselbe AdminUnit-Zeile ueber denselben external_code."""
+    bundesland = next((b for b in SAMPLE_BUNDESLAENDER if b.key == bundesland_key), None)
+    if not bundesland:
+        raise ValueError(f"Unbekanntes Bundesland: {bundesland_key}")
+
+    existing = db.exec(select(AdminUnit).where(AdminUnit.external_code == bundesland.external_code)).first()
+    if existing:
+        return existing
+    unit = AdminUnit(name=bundesland.name, level=AdminLevel.REGION, external_code=bundesland.external_code)
     db.add(unit)
     db.commit()
     db.refresh(unit)

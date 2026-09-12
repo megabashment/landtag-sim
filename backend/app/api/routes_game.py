@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
 from app.db import get_session
-from app.models import EnactedPolicy, Faction, GameSession, Party, PolicyDefinition, ScenarioDefinition, VoterGroup
+from app.models import AdminUnit, EnactedPolicy, Faction, GameSession, Party, PolicyDefinition, ScenarioDefinition, VoterGroup
 from app.models import StatisticValue
 from app.models.game import SessionRole, SessionStatus
 from app.models.party import PartyIdeology
@@ -11,6 +11,7 @@ from app.schemas.game import (
     AdvanceTurnRequest,
     AdvanceTurnResponse,
     AttributionOut,
+    BundeslandOut,
     CoalitionResponseRequest,
     CreateSessionResponse,
     DilemmaOptionOut,
@@ -21,6 +22,7 @@ from app.schemas.game import (
     GoalResultOut,
     NewPartyRequest,
     OppositionCampaignOut,
+    PartyDetailOut,
     PartySummaryOut,
     PendingDilemmaOut,
     PolicyEffectOut,
@@ -32,10 +34,11 @@ from app.schemas.game import (
     RivalPartyOut,
     ScenarioOut,
     SessionStateResponse,
+    TermDetailOut,
     TermSummaryOut,
     UnlockConditionOut,
 )
-from app.seed import ensure_niedersachsen, run_all_seeds
+from app.seed import ensure_bundesland, ensure_niedersachsen, run_all_seeds
 from app.sim_bridge import (
     load_dilemma_rules,
     load_event_rules,
@@ -67,6 +70,7 @@ from landtag_sim.models import (
     UnmetPrerequisiteError,
 )
 from landtag_sim.sample_data import (
+    SAMPLE_BUNDESLAENDER,
     SAMPLE_FACTIONS,
     SAMPLE_VOTER_GROUPS,
     get_scenario_starting_statistics,
@@ -138,6 +142,24 @@ def list_opposition_campaigns() -> list[OppositionCampaignOut]:
             satisfaction_deltas=dict(c.satisfaction_deltas),
         )
         for c in campaigns
+    ]
+
+
+@router.get("/bundeslaender", response_model=list[BundeslandOut])
+def list_bundeslaender() -> list[BundeslandOut]:
+    """B27 "Bundes-Skalierung" (M7_SPRINT_PLAN.md): Liste aller spielbaren
+    Bundeslaender mit ihrer Statistik-Baseline. Wie /opposition-campaigns
+    NICHT DB-gestuetzt (reine Sim-Beispieldaten aus sample_data.py) --
+    die zugehoerige AdminUnit-Zeile wird erst bei der Session-Erstellung
+    per ensure_bundesland() angelegt."""
+    return [
+        BundeslandOut(
+            key=b.key,
+            name=b.name,
+            description=b.description,
+            starting_statistics=dict(b.starting_statistics),
+        )
+        for b in SAMPLE_BUNDESLAENDER
     ]
 
 
@@ -218,16 +240,24 @@ def _seed_session_world(
     db: Session,
     session_id: int,
     scenario_statistics_override: dict[str, float] | None = None,
+    base_statistics: dict[str, float] | None = None,
 ) -> None:
     """Seedet Startstatistiken (mit Jitter), Waehlergruppen (inkl. B23-
     Ideologie-Affinitaeten) und die Landtags-Sitzverteilung fuer eine frisch
     angelegte Session. Gemeinsam genutzt von create_session,
-    create_party_session und create_session_from_party.
+    create_party_session, create_session_from_party und (B27)
+    create_session_from_bundesland.
 
     B24 "Scenario Mode": falls scenario_statistics_override gesetzt,
     werden diese Werte ueber die Jitter-Werte fuer bestimmte Statistiken
-    gelegt."""
-    stats = jittered_starting_statistics()
+    gelegt.
+
+    B27 "Bundes-Skalierung": falls base_statistics gesetzt (z.B.
+    BundeslandDefinition.starting_statistics), wird DARUM gejittert statt um
+    STARTING_STATISTICS (Niedersachsen) -- jedes Bundesland streut um seine
+    EIGENE Baseline. scenario_statistics_override wirkt trotzdem weiterhin
+    zusaetzlich (Kombination bisher nicht genutzt, aber unterstuetzt)."""
+    stats = jittered_starting_statistics(base=base_statistics)
     if scenario_statistics_override:
         stats.update(scenario_statistics_override)
 
@@ -309,6 +339,41 @@ def list_parties(db: Session = Depends(get_session)) -> list[PartySummaryOut]:
     return out
 
 
+@router.get("/parties/{party_id}/detail", response_model=PartyDetailOut)
+def get_party_detail(party_id: int, db: Session = Depends(get_session)) -> PartyDetailOut:
+    """B28 "Advanced UI" (M7_SPRINT_PLAN.md): komplette Partei-Historie fuer
+    das Party-Detail-Modal (Ruf-ueber-Zeit-Graph + Term-Tabelle). Im
+    Unterschied zu list_parties() (nur Zaehlwerte) hier die volle
+    Term-Liste inkl. Ruf-Delta pro Legislaturperiode.
+
+    `.get(...)` statt direktem Dict-Unpacking fuer die Term-Eintraege:
+    Terms, die VOR B28 protokolliert wurden, haben noch keine
+    reputation_delta/reputation_after-Felder (siehe advance_session_turn) --
+    robust mit 0.0 statt eines 422/500 bei altem Datenbestand."""
+    party = db.get(Party, party_id)
+    if not party:
+        raise HTTPException(status_code=404, detail="Partei nicht gefunden")
+
+    terms_raw = (party.extra_data or {}).get("terms", [])
+    terms = [
+        TermDetailOut(
+            turn=t.get("turn", 0),
+            won=bool(t.get("won", False)),
+            approval=t.get("approval", 0.0),
+            reputation_delta=t.get("reputation_delta", 0.0),
+            reputation_after=t.get("reputation_after", party.reputation),
+        )
+        for t in terms_raw
+    ]
+    return PartyDetailOut(
+        id=party.id,
+        name=party.name,
+        ideology=party.ideology.value,
+        reputation=party.reputation,
+        terms=terms,
+    )
+
+
 @router.post("/sessions/new-scenario/{scenario_id}", response_model=CreateSessionResponse)
 def create_session_from_scenario(scenario_id: str, db: Session = Depends(get_session)) -> CreateSessionResponse:
     """B24 "Scenario Mode" (M6): startet eine neue Session mit einem
@@ -349,6 +414,47 @@ def create_session_from_scenario(scenario_id: str, db: Session = Depends(get_ses
         party_ideology=None,
         scenario_id=scenario.key,
         scenario_name=scenario.name,
+    )
+
+
+@router.post("/sessions/new-bundesland/{bundesland_key}", response_model=CreateSessionResponse)
+def create_session_from_bundesland(bundesland_key: str, db: Session = Depends(get_session)) -> CreateSessionResponse:
+    """B27 "Bundes-Skalierung" (M7_SPRINT_PLAN.md): startet eine neue Session
+    mit der Statistik-Baseline eines bestimmten Bundeslands statt des
+    Niedersachsen-Defaults. Kein State-Wechsel INNERHALB einer laufenden
+    Session (siehe M7_SPRINT_PLAN.md "Nicht in M7") -- die Session bleibt fuer
+    ihre gesamte Laufzeit bei diesem Bundesland."""
+    bundesland = next((b for b in SAMPLE_BUNDESLAENDER if b.key == bundesland_key), None)
+    if not bundesland:
+        raise HTTPException(status_code=404, detail=f"Unbekanntes Bundesland: {bundesland_key}")
+
+    run_all_seeds(db)
+    admin_unit = ensure_bundesland(db, bundesland_key)
+
+    session = GameSession(
+        admin_unit_id=admin_unit.id,
+        budget=1000.0,
+        current_turn=0,
+        rival_parties=seed_rival_parties(),
+    )
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+
+    # B27: um die EIGENE Baseline des Bundeslands jittern, nicht um
+    # Niedersachsen (siehe _seed_session_world/jittered_starting_statistics).
+    _seed_session_world(db, session.id, base_statistics=bundesland.starting_statistics)
+
+    return CreateSessionResponse(
+        session_id=session.id,
+        admin_unit=admin_unit.name,
+        turn=session.current_turn,
+        budget=session.budget,
+        party_id=None,
+        party_name=None,
+        party_ideology=None,
+        scenario_id=None,
+        scenario_name=None,
     )
 
 
@@ -472,6 +578,19 @@ def _election_projection_out(session: GameSession, sim_state) -> ElectionProject
 
 def _build_state_response(db: Session, session: GameSession) -> SessionStateResponse:
     sim_state = _load_state_for_session(db, session)
+    # B28 "Advanced UI" (M7_SPRINT_PLAN.md): party_id/party_name fuer den
+    # "Partei-Details"-Button im Frontend (verlinkt zu GET /parties/{id}/detail).
+    # party_ideology kommt bereits aus sim_state (siehe _load_state_for_session),
+    # war aber bisher NICHT im Response-Objekt -- Bugfix, siehe SessionStateResponse.
+    party_name = None
+    if session.party_id:
+        party_row = db.get(Party, session.party_id)
+        party_name = party_row.name if party_row else None
+
+    # B27 "Bundes-Skalierung": Bundesland-Name fuer den Header (Bugfix --
+    # war bisher nur einmalig in CreateSessionResponse verfuegbar).
+    admin_unit_row = db.get(AdminUnit, session.admin_unit_id)
+    admin_unit_name = admin_unit_row.name if admin_unit_row else None
     active_keys = [ep.policy_key for ep in db.exec(
         select(EnactedPolicy).where(EnactedPolicy.session_id == session.id, EnactedPolicy.repealed_turn == None)  # noqa: E711
     )]
@@ -514,6 +633,10 @@ def _build_state_response(db: Session, session: GameSession) -> SessionStateResp
         factions=factions,
         active_situations=active_situations,
         party_reputation=sim_state.party_reputation if session.party_id else None,
+        party_id=session.party_id,
+        party_name=party_name,
+        party_ideology=sim_state.party_ideology if session.party_id else None,
+        admin_unit_name=admin_unit_name,
         rival_parties=[
             RivalPartyOut(name=r.name, ideology=r.ideology, approval=round(r.approval, 1))
             for r in sim_state.rival_parties
@@ -923,6 +1046,7 @@ def advance_session_turn(
         if session.party_id:
             party = db.get(Party, session.party_id)
             if party:
+                reputation_before = party.reputation
                 if result.election_result.won:
                     party.reputation = min(100.0, party.reputation + REPUTATION_GAIN_ON_WIN)
                 else:
@@ -934,6 +1058,13 @@ def advance_session_turn(
                         "turn": new_state.turn,
                         "won": bool(result.election_result.won),
                         "approval": round(result.election_result.approval, 1),
+                        # B28 "Advanced UI" (M7_SPRINT_PLAN.md): tatsaechlich
+                        # angewendetes Ruf-Delta + Ruf NACH der Wahl speichern
+                        # (statt es spaeter aus den REPUTATION_*-Konstanten
+                        # zurueckzurechnen) -- bleibt auch dann historisch
+                        # korrekt, wenn diese Konstanten spaeter mal angepasst werden.
+                        "reputation_delta": round(party.reputation - reputation_before, 1),
+                        "reputation_after": round(party.reputation, 1),
                     }
                 )
                 data["terms"] = terms

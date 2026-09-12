@@ -2,7 +2,7 @@
 
 **Meilenstein M7:** Content-Expansion, Opposition-Verbesserungen, Bundesländer-Skalierung
 **Target:** 2026-09-15 bis 2026-10-15
-**Status:** Phase 1 abgeschlossen (B25 + B26, 2026-09-12). Phase 2+3 (B27-B29) offen.
+**Status:** Phase 1+2 abgeschlossen (B25-B28, 2026-09-12). Nur Phase 3 (B29) offen.
 
 ---
 
@@ -93,7 +93,7 @@ explizit, dass alle `satisfaction_deltas`-Keys echte Gruppennamen sind.
 
 ## **Phase 2 (Woche 3-4): Skalierung + UI**
 
-### B27: Bundes-Skalierung (Multi-State Support)
+### B27: Bundes-Skalierung (Multi-State Support) ✅ DONE (2026-09-12)
 **Ziel:** Bundesländer-Verwaltung, State-Switching in Session
 
 **Scope:**
@@ -125,6 +125,21 @@ explizit, dass alle `satisfaction_deltas`-Keys echte Gruppennamen sind.
 - State-Switch isolation (Sessions unabhängig)
 - Balance pro State (Balance-Runner mit Bayern/NRW)
 
+**Ergebnis:** `BundeslandDefinition` als sim-seitiges Dataclass (analog
+`ScenarioDefinition`), 3 States mit vollstaendiger eigener Baseline (kein
+Override). `jittered_starting_statistics()` bekam einen `base=`-Parameter,
+damit jedes Bundesland um seine EIGENE Baseline streut statt immer um
+Niedersachsen. `balance_runner.py --state` bestaetigt "keine dominante
+Policy" fuer alle 3 States. Dabei zwei Bugs in bestehendem Code gefunden +
+gefixt: `SessionStateResponse` hatte `party_id`/`party_name`/
+`party_ideology` nie (nur `CreateSessionResponse`) -- der B23-Ideologie-
+Bonus-Badge zeigte sich dadurch de facto nie im Frontend; und der Header
+zeigte immer hart codiert "Niedersachsen" statt des echten Bundeslands.
+Beides ergaenzt (`admin_unit_name`-Feld neu). Bayern startet DETERMINISTISCH
+(nicht zufaellig) mit dem `fachkraeftezuwanderung`-Dilemma pending (Baseline
+liegt komplett unter dessen Schwelle) -- bewusstes Design-Feature, siehe
+Kommentar in `sample_data.py`.
+
 **Nicht in M7:**
 - Bundes/EU-Ebene (zu komplex, M8+)
 - Cross-State-Effekte
@@ -132,7 +147,7 @@ explizit, dass alle `satisfaction_deltas`-Keys echte Gruppennamen sind.
 
 ---
 
-### B28: Advanced UI — Party-History + Coalition-Viz
+### B28: Advanced UI — Party-History + Coalition-Viz ✅ TEILWEISE DONE (2026-09-12)
 **Ziel:** Spieler-Orientierung verbessern, Meta-Progress sichtbar
 
 **Scope:**
@@ -160,6 +175,15 @@ explizit, dass alle `satisfaction_deltas`-Keys echte Gruppennamen sind.
 - Party-Detail API returns correct history
 - Frontend renders modal without crashes
 
+**Ergebnis:** Party-Detail-Modal (Ruf-Verlauf als Balkengraph + Term-Tabelle)
+und Session-Dauer-Info ("Legislatur N (Runde X von 16)") umgesetzt.
+Opposition-Satisfaction-Meter in der Sonntagsfrage war bereits VOR B28
+vorhanden (M5/M6-Arbeit, `oppositionProzent`-Balken in
+`SonntagsfragOverlay`) -- kein neuer Code noetig. **Nicht umgesetzt:**
+Coalition-History im Election-Result (ob eine Koalition akzeptiert/
+abgelehnt wurde, wird aktuell nirgends persistent protokolliert) -- als
+offener Rest fuer B29 oder einen spaeteren Sprint vermerkt.
+
 ---
 
 ## **Phase 3 (Woche 5): Validierung + Polish**
@@ -175,7 +199,7 @@ explizit, dass alle `satisfaction_deltas`-Keys echte Gruppennamen sind.
 - Bug-Report-Sammlung + Fix-Priorisierung
 
 **Impl:**
-- `balance_runner.py` erweitern: --state flag (niedersachsen|bayern|nrw)
+- ~~`balance_runner.py` erweitern: --state flag (niedersachsen|bayern|nrw)~~ **bereits in B27 erledigt**
 - Test-Suite: `test_balance_all_states.py` (neue Events/Dilemmas getestet)
 - Dokumentation: Balance-Notes in `docs/balance-notes.md` schreiben
 - Bug-Tracking: `KNOWN_ISSUES.md` aktualisieren

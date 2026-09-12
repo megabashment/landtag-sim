@@ -1581,6 +1581,43 @@ def test_sample_factions_are_well_formed():
             assert -1.0 <= stance <= 1.0
 
 
+# --- B27 "Bundes-Skalierung" (M7_SPRINT_PLAN.md) ---------------------------
+
+
+def test_sample_bundeslaender_are_well_formed():
+    from landtag_sim.sample_data import SAMPLE_BUNDESLAENDER
+
+    assert len(SAMPLE_BUNDESLAENDER) >= 3
+    keys = [b.key for b in SAMPLE_BUNDESLAENDER]
+    assert len(keys) == len(set(keys)), "Bundesland-Keys muessen eindeutig sein"
+    codes = [b.external_code for b in SAMPLE_BUNDESLAENDER]
+    assert len(codes) == len(set(codes)), "external_code (ISO 3166-2) muss eindeutig sein"
+
+    for b in SAMPLE_BUNDESLAENDER:
+        assert b.name.strip()
+        assert b.description.strip()
+        # Jedes Bundesland muss alle 6 Statistiken abdecken (kein Fallback auf
+        # STARTING_STATISTICS fuer fehlende Keys, siehe get_bundesland_starting_statistics).
+        assert set(b.starting_statistics) == set(STARTING_STATISTICS)
+        for value in b.starting_statistics.values():
+            assert value > 0 or value == b.starting_statistics.get("gdp_growth"), (
+                "Nur gdp_growth darf negativ sein, alle anderen Statistiken sind Prozent-/Index-Werte >= 0"
+            )
+
+
+def test_bundesland_baselines_are_jittered_independently():
+    """Regressionstest fuer den B27-Bugfix in jittered_starting_statistics():
+    `base=` muss tatsaechlich verwendet werden, nicht nur STARTING_STATISTICS
+    (Niedersachsen) ignorieren."""
+    from landtag_sim.sample_data import SAMPLE_BUNDESLAENDER
+
+    bayern = next(b for b in SAMPLE_BUNDESLAENDER if b.key == "bayern")
+    rng = random.Random(42)
+    jittered = jittered_starting_statistics(rng, base=bayern.starting_statistics)
+    for key, baseline in bayern.starting_statistics.items():
+        assert abs(jittered[key] - baseline) <= abs(baseline) * 0.06  # 5% Spread + Rundungstoleranz
+
+
 # M5 "Opposition-Loop" (BACKLOG.md B15): Koalitionsfaehigkeit als einheitliche Metrik
 
 def test_coalition_viability_government_positive_econ():

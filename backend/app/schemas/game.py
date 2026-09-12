@@ -9,6 +9,19 @@ class ScenarioOut(BaseModel):
     description: str
 
 
+class BundeslandOut(BaseModel):
+    """B27 "Bundes-Skalierung" (M7_SPRINT_PLAN.md): ein spielbares Bundesland
+    mit eigener Statistik-Baseline (siehe landtag_sim.models.BundeslandDefinition).
+    `starting_statistics` wird mitgeschickt, damit das Frontend die
+    Charakteristik VOR der Session-Erstellung anzeigen kann (analog zur
+    Effekt-Vorschau bei Policies)."""
+
+    key: str
+    name: str
+    description: str
+    starting_statistics: dict[str, float]
+
+
 class PartyOut(BaseModel):
     """B23 "Party-Gründung (Persistente Meta-Ebene)" (BACKLOG.md):
     eine Partei mit persistenter Ideologie über mehrere Sessions hinweg."""
@@ -39,6 +52,28 @@ class PartySummaryOut(BaseModel):
     reputation: float
     terms_played: int
     terms_won: int
+
+
+class TermDetailOut(BaseModel):
+    """B28 "Advanced UI" (M7_SPRINT_PLAN.md): eine einzelne, abgeschlossene
+    Legislaturperiode aus Party.extra_data["terms"]."""
+
+    turn: int  # Wahl-Turn, an dem diese Legislaturperiode endete
+    won: bool
+    approval: float
+    reputation_delta: float
+    reputation_after: float
+
+
+class PartyDetailOut(BaseModel):
+    """B28 "Advanced UI": vollstaendige Partei-Historie fuer das
+    Party-Detail-Modal (Ruf-ueber-Zeit-Graph + Term-Tabelle)."""
+
+    id: int
+    name: str
+    ideology: str
+    reputation: float
+    terms: list[TermDetailOut]
 
 
 class RivalPartyOut(BaseModel):
@@ -205,6 +240,21 @@ class SessionStateResponse(BaseModel):
     # B20 "Party-Legacy": aktueller Ruf der Partei (0-100, 50 neutral). None
     # im parteilosen klassischen Modus.
     party_reputation: float | None = None
+    # B28 "Advanced UI" (M7_SPRINT_PLAN.md): Bugfix -- diese drei Felder
+    # fehlten hier komplett (nur CreateSessionResponse hatte sie), obwohl
+    # das Frontend `session.party_ideology` schon seit B23 Phase 3 fuer den
+    # Ideologie-Bonus-Badge referenziert. Nach dem ersten GET /sessions/{id}
+    # (das IMMER SessionStateResponse liefert, nie CreateSessionResponse)
+    # war das Feld dadurch faktisch immer undefined -- der Bonus-Badge
+    # zeigte sich nie. Siehe mistakes.md.
+    party_id: int | None = None
+    party_name: str | None = None
+    party_ideology: str | None = None
+    # B27 "Bundes-Skalierung" (M7_SPRINT_PLAN.md): Bugfix -- admin_unit (Name
+    # des Bundeslands) war ebenfalls nur in CreateSessionResponse vorhanden,
+    # das Frontend zeigte deshalb IMMER hart codiert "Niedersachsen" im
+    # Header an, auch fuer Bayern-/NRW-Sessions.
+    admin_unit_name: str | None = None
     # Mehrparteiensystem: aktuelle Stimmenanteile der Rivalen-Parteien
     # (Sonntagsfrage). Leer im Einzel-Partei-Modus.
     rival_parties: list[RivalPartyOut] = []

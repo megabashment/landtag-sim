@@ -730,3 +730,23 @@ class ScenarioDefinition:
     # Optionale Scenarios-spezifische Ziele (zusätzlich zu SAMPLE_SCENARIO_GOALS)
     # Falls leer, werden die Standard-Goals verwendet
     scenario_goals: list[str] = field(default_factory=list)  # Goal-Keys
+
+
+@dataclass
+class BundeslandDefinition:
+    """B27 "Bundes-Skalierung" (M7_SPRINT_PLAN.md): ein spielbares Bundesland
+    mit eigener Statistik-Baseline (statt des im MVP hart codierten
+    Niedersachsen). Analog zu ScenarioDefinition, aber als PERMANENTE
+    Ausgangslage statt eines temporaeren Story-Presets -- jedes Bundesland
+    bekommt eine eigene AdminUnit-Zeile (siehe app/seed.py::ensure_bundesland)
+    und kann beliebig oft gespielt werden."""
+
+    key: str  # z.B. "bayern" (eindeutig, auch Routen-Segment)
+    name: str  # "Bayern" (UI-Label)
+    external_code: str  # ISO 3166-2, z.B. "DE-BY" (siehe AdminUnit.external_code)
+    description: str  # Kurzcharakteristik fuer die Bundesland-Auswahl im Start-Menu
+
+    # Vollstaendige Baseline-Statistiken (ersetzt STARTING_STATISTICS komplett,
+    # nicht nur ein Override wie bei ScenarioDefinition) -- jedes Bundesland
+    # hat einen eigenen wirtschaftlich/sozial/oekologisch plausiblen Ausgangspunkt.
+    starting_statistics: dict[str, float] = field(default_factory=dict)

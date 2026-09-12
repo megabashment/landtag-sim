@@ -62,7 +62,58 @@ function ScenarioSelectionDialog({ scenarios, onSelect, onClose, disabled }) {
   );
 }
 
-function GameStartMenu({ onNewParty, onStartClassic, onContinueParty, onShowScenarios, existingParties, disabled }) {
+// B27 "Bundes-Skalierung" (M7_SPRINT_PLAN.md): State-Auswahl im Start-Menu,
+// analog zu ScenarioSelectionDialog. Zeigt die Baseline-Statistiken direkt
+// im Katalog (siehe BundeslandOut.starting_statistics), damit der Unterschied
+// zwischen den Bundeslaendern schon VOR dem Start sichtbar ist.
+function BundeslandSelectionDialog({ bundeslaender, onSelect, onClose, disabled }) {
+  const statLabel = {
+    unemployment_rate: "Arbeitslosigkeit",
+    gdp_growth: "BIP-Wachstum",
+    education_spending: "Bildungsausgaben",
+    healthcare_quality: "Gesundheitsversorgung",
+    co2_emissions: "CO2-Emissionen",
+    renewable_share: "Erneuerbare",
+  };
+  return (
+    <div className="modal-overlay">
+      <div className="modal-content">
+        <h2>Bundesland wählen</h2>
+        <div className="scenarios-list">
+          {bundeslaender.map((b) => (
+            <div key={b.key} className="scenario-card">
+              <h3>{b.name}</h3>
+              <p>{b.description}</p>
+              <ul className="campaign-effects">
+                {Object.entries(b.starting_statistics).map(([key, value]) => (
+                  <li key={key}>
+                    {statLabel[key] ?? key}: {value.toFixed(1)}
+                  </li>
+                ))}
+              </ul>
+              <button onClick={() => onSelect(b.key)} disabled={disabled} className="button-primary">
+                Dieses Bundesland spielen
+              </button>
+            </div>
+          ))}
+        </div>
+        <button onClick={onClose} disabled={disabled} className="button-secondary">
+          Abbrechen
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function GameStartMenu({
+  onNewParty,
+  onStartClassic,
+  onContinueParty,
+  onShowScenarios,
+  onShowBundeslaender,
+  existingParties,
+  disabled,
+}) {
   const ideologyEmoji = { green: "🟢", red: "🔴", blue: "🔵" };
   return (
     <div className="game-start-menu">
@@ -73,6 +124,9 @@ function GameStartMenu({ onNewParty, onStartClassic, onContinueParty, onShowScen
       </button>
       <button className="button-secondary" onClick={onShowScenarios} disabled={disabled}>
         🎯 Szenario spielen
+      </button>
+      <button className="button-secondary" onClick={onShowBundeslaender} disabled={disabled}>
+        🗺️ Bundesland wählen
       </button>
       <button className="button-secondary" onClick={onStartClassic} disabled={disabled}>
         ▶ Klassische Partie
@@ -190,6 +244,99 @@ function PartyCreationDialog({
 
 // M6 Phase 2 "Advanced Opposition": Koalitions-Dialog nach Wahlverlust
 // Spieler kann Koalition mit Opposition akzeptieren um in Regierung zu bleiben
+// B28 "Advanced UI" (M7_SPRINT_PLAN.md): Party-Detail-Modal mit Ruf-Verlauf
+// (einfacher Balken-Graph, kein Chart-Package noetig) und Term-Tabelle.
+// Holt die Daten selbst nach (GET /parties/{id}/detail), damit der Aufrufer
+// nur die partyId durchreichen muss.
+function PartyDetailModal({ partyId, onClose }) {
+  const [detail, setDetail] = useState(null);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getPartyDetail(partyId)
+      .then((result) => {
+        if (!cancelled) setDetail(result);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e.message);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [partyId]);
+
+  const ideologyEmoji = { green: "🟢", red: "🔴", blue: "🔵" };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal-content party-detail-modal">
+        <h2>Partei-Historie{detail ? `: ${detail.name}` : ""}</h2>
+        {error && <p className="error">Fehler: {error}</p>}
+        {!detail && !error && <p>Lade…</p>}
+        {detail && (
+          <>
+            <p>
+              {ideologyEmoji[detail.ideology] ?? ""} {detail.ideology} &middot; Aktueller Ruf:{" "}
+              <strong>{detail.reputation.toFixed(0)}</strong>
+            </p>
+            {detail.terms.length === 0 ? (
+              <p className="hint">Noch keine abgeschlossene Legislaturperiode.</p>
+            ) : (
+              <>
+                <div className="party-history-graph" aria-label="Ruf über Zeit">
+                  {detail.terms.map((t, i) => (
+                    <div
+                      key={i}
+                      className="party-history-bar-container"
+                      title={`Legislatur ${i + 1} (Runde ${t.turn}): Ruf ${t.reputation_after}`}
+                    >
+                      <div
+                        className={`party-history-bar ${t.won ? "won" : "lost"}`}
+                        style={{ height: `${Math.max(2, t.reputation_after)}%` }}
+                      />
+                      <span className="party-history-bar-label">{i + 1}</span>
+                    </div>
+                  ))}
+                </div>
+                <table className="party-history-table">
+                  <thead>
+                    <tr>
+                      <th>Legislatur</th>
+                      <th>Ergebnis</th>
+                      <th>Zustimmung</th>
+                      <th>Ruf-Δ</th>
+                      <th>Ruf danach</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detail.terms.map((t, i) => (
+                      <tr key={i}>
+                        <td>{i + 1}</td>
+                        <td>{t.won ? "✅ Gewonnen" : "❌ Verloren"}</td>
+                        <td>{t.approval.toFixed(1)}%</td>
+                        <td>
+                          {t.reputation_delta > 0 ? "+" : ""}
+                          {t.reputation_delta.toFixed(1)}
+                        </td>
+                        <td>{t.reputation_after.toFixed(1)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            )}
+          </>
+        )}
+        <button onClick={onClose} className="button-secondary">
+          Schließen
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function CoalitionDialog({ electionResult, onAccept, onDecline, disabled }) {
   if (!electionResult || electionResult.won || electionResult.coalition_viability < 30) {
     return null; // Nicht anzeigen wenn kein Verlust oder koalition nicht möglich
@@ -370,7 +517,7 @@ function SonntagsfragOverlay({ session }) {
 // Legislatur-Band (16 Runden), das den Wahltermin von einer abstrakten Zahl
 // in einen sichtbaren Bogen der Amtszeit uebersetzt (L10 "take players on a
 // journey"). Die uebrigen Panels folgen in spaeteren Phasen.
-function StatusBar({ session, events }) {
+function StatusBar({ session, events, onShowPartyDetail }) {
   const toElection = session.turns_until_election;
   const elapsed = Math.max(0, Math.min(ELECTION_CYCLE, ELECTION_CYCLE - toElection));
   const urgent = toElection <= 3;
@@ -426,7 +573,29 @@ function StatusBar({ session, events }) {
             {roleLabel} &middot; {statusLabel}
           </span>
         </div>
+        {/* B28 "Advanced UI" (M7_SPRINT_PLAN.md): Partei-Ruf + Detail-Button,
+            nur sichtbar in Party-Sessions (session.party_id gesetzt). */}
+        {session.party_id && (
+          <div className="field field--party">
+            <span className="field__label">Partei</span>
+            <span className="field__value">
+              {session.party_name} &middot; Ruf {session.party_reputation?.toFixed(0)}
+              <button className="party-detail-btn" onClick={onShowPartyDetail} type="button">
+                Details
+              </button>
+            </span>
+          </div>
+        )}
       </div>
+
+      {/* B28: Session-Dauer-Info -- wie viele Legislaturperioden diese
+          Session schon durchlaufen hat (session.turn laeuft ueber mehrere
+          Wahl-Zyklen weiter, waehrend turns_until_election pro Zyklus
+          zurueckgesetzt wird, siehe engine.py::advance_turn). */}
+      <p className="term-session-info hint">
+        Legislatur {Math.floor(session.turn / ELECTION_CYCLE) + 1}
+        {session.status === "active" ? ` (Runde ${elapsed + 1} von ${ELECTION_CYCLE})` : ""}
+      </p>
 
       {/* B26 "Opposition-Kampagnen UI Verbesserung" (M7_SPRINT_PLAN.md):
           sichtbarer Hinweis, dass gerade Opposition statt Regierung gespielt
@@ -612,6 +781,8 @@ export default function App() {
   const [electionResult, setElectionResult] = useState(null);
   // M6 Phase 2 "Advanced Opposition": flag zur Kontrolle der Koalitions-Dialog-Anzeige
   const [showCoalitionDialog, setShowCoalitionDialog] = useState(false);
+  // B28 "Advanced UI" (M7): Party-Detail-Modal (Ruf-Verlauf + Term-Liste)
+  const [showPartyDetail, setShowPartyDetail] = useState(false);
   // B1 "Legislatur-Bogen & Amtszeit-Debrief" (BACKLOG.md): Bilanz der gerade
   // abgelaufenen Legislaturperiode, kommt nur am Wahl-Turn im
   // AdvanceTurnResponse mit (sonst null).
@@ -632,6 +803,9 @@ export default function App() {
   // B24 "Scenario Mode": vordefinierte Spielmodi mit Preset-Bedingungen
   const [scenarios, setScenarios] = useState([]);
   const [showScenarioSelection, setShowScenarioSelection] = useState(false);
+  // B27 "Bundes-Skalierung" (M7): spielbare Bundeslaender mit eigener Baseline
+  const [bundeslaender, setBundeslaender] = useState([]);
+  const [showBundeslandSelection, setShowBundeslandSelection] = useState(false);
   // Policy-Erweiterungsstate: speichert, welche Policies expandiert sind (Key -> true/false)
   const [expandedPolicies, setExpandedPolicies] = useState({});
 
@@ -698,6 +872,23 @@ export default function App() {
       })
       .catch(() => {
         if (!cancelled) setScenarios([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
+
+  // B27 "Bundes-Skalierung": spielbare Bundeslaender beim Start laden
+  useEffect(() => {
+    if (session) return;
+    let cancelled = false;
+    api
+      .listBundeslaender()
+      .then((result) => {
+        if (!cancelled) setBundeslaender(result);
+      })
+      .catch(() => {
+        if (!cancelled) setBundeslaender([]);
       });
     return () => {
       cancelled = true;
@@ -832,6 +1023,32 @@ export default function App() {
       setSession(state);
       setShowGameStart(false);
       setShowScenarioSelection(false);
+      setEvents([]);
+      setAttributions([]);
+      setReports([]);
+      setElectionResult(null);
+      setTermSummary(null);
+      setSelectedPolicies([]);
+      setSelectedRepeals([]);
+      setHistory([]);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // B27 "Bundes-Skalierung": neue Session mit der Statistik-Baseline eines
+  // bestimmten Bundeslands starten (analog zu handleStartScenario).
+  async function handleStartBundesland(bundeslandKey) {
+    setError(null);
+    setLoading(true);
+    try {
+      const created = await api.createSessionFromBundesland(bundeslandKey);
+      const state = await api.getSession(created.session_id);
+      setSession(state);
+      setShowGameStart(false);
+      setShowBundeslandSelection(false);
       setEvents([]);
       setAttributions([]);
       setReports([]);
@@ -1091,7 +1308,10 @@ export default function App() {
     <main className="layout">
       <header className="masthead">
         <span className="masthead__kicker">Landtag-Simulation &middot; MVP</span>
-        <h1>Niedersachsen</h1>
+        {/* B27 "Bundes-Skalierung" (M7): Bugfix -- admin_unit_name kommt jetzt
+            aus der Session statt hart codiert "Niedersachsen" zu sein, sonst
+            zeigt der Header bei Bayern-/NRW-Partien den falschen Namen. */}
+        <h1>{session?.admin_unit_name ?? "Niedersachsen"}</h1>
       </header>
 
       {!session && showGameStart && (
@@ -1101,6 +1321,7 @@ export default function App() {
             onStartClassic={handleStart}
             onContinueParty={handleContinueParty}
             onShowScenarios={() => setShowScenarioSelection(true)}
+            onShowBundeslaender={() => setShowBundeslandSelection(true)}
             existingParties={existingParties}
             disabled={loading}
           />
@@ -1109,6 +1330,14 @@ export default function App() {
               scenarios={scenarios}
               onSelect={handleStartScenario}
               onClose={() => setShowScenarioSelection(false)}
+              disabled={loading}
+            />
+          )}
+          {showBundeslandSelection && (
+            <BundeslandSelectionDialog
+              bundeslaender={bundeslaender}
+              onSelect={handleStartBundesland}
+              onClose={() => setShowBundeslandSelection(false)}
               disabled={loading}
             />
           )}
@@ -1144,7 +1373,12 @@ export default function App() {
 
       {session && (
         <>
-          <StatusBar session={session} events={events} />
+          <StatusBar session={session} events={events} onShowPartyDetail={() => setShowPartyDetail(true)} />
+          {/* B28 "Advanced UI" (M7_SPRINT_PLAN.md): Party-Detail-Modal mit
+              Ruf-Verlauf + Term-Liste, nur wenn die Session eine Partei hat. */}
+          {showPartyDetail && session.party_id && (
+            <PartyDetailModal partyId={session.party_id} onClose={() => setShowPartyDetail(false)} />
+          )}
           <SonntagsfragOverlay session={session} />
 
           {dilemmaPending && (

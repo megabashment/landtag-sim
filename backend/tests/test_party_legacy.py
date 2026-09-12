@@ -96,6 +96,61 @@ def test_from_party_starts_new_legislature_with_existing_reputation(client):
     assert len(state["rival_parties"]) == 3
 
 
+def test_party_detail_reports_full_term_history(client):
+    """B28 "Advanced UI" (M7_SPRINT_PLAN.md): GET /parties/{id}/detail liefert
+    die komplette Term-Historie inkl. reputation_delta/reputation_after --
+    nicht nur die Zaehlwerte wie GET /parties."""
+    body = _new_party(client, name="Detailpartei", ideology="blue")
+    sid = body["session_id"]
+    party_id = body["party_id"]
+
+    with Session(engine) as db:
+        session = db.get(GameSession, sid)
+        session.turns_until_election = 1
+        db.add(session)
+        for vg in db.exec(select(VoterGroup).where(VoterGroup.session_id == sid)):
+            vg.satisfaction = 60.0
+            db.add(vg)
+        db.commit()
+
+    resp = client.post(f"/sessions/{sid}/advance", json={"enact_policy_keys": []}).json()
+    won = resp["election_result"]["won"]
+
+    detail = client.get(f"/parties/{party_id}/detail")
+    assert detail.status_code == 200
+    body = detail.json()
+    assert body["id"] == party_id
+    assert body["name"] == "Detailpartei"
+    assert body["ideology"] == "blue"
+    assert len(body["terms"]) == 1
+
+    term = body["terms"][0]
+    assert term["turn"] == 1  # turns_until_election wurde oben auf 1 gesetzt
+    assert term["won"] == won
+    if won:
+        assert term["reputation_delta"] == 6.0
+        assert term["reputation_after"] == 56.0
+    else:
+        assert term["reputation_delta"] == -8.0
+        assert term["reputation_after"] == 42.0
+    assert body["reputation"] == term["reputation_after"]
+
+
+def test_party_detail_of_fresh_party_has_empty_terms(client):
+    """Eine frisch gegruendete Partei (noch keine abgeschlossene
+    Legislaturperiode) hat eine leere Term-Liste, aber existiert (kein 404)."""
+    body = _new_party(client, name="Frischling", ideology="red")
+    detail = client.get(f"/parties/{body['party_id']}/detail")
+    assert detail.status_code == 200
+    assert detail.json()["terms"] == []
+    assert detail.json()["reputation"] == 50.0
+
+
+def test_party_detail_unknown_id_returns_404(client):
+    resp = client.get("/parties/999999/detail")
+    assert resp.status_code == 404
+
+
 def test_from_party_unknown_id_returns_404(client):
     resp = client.post("/sessions/from-party/999999")
     assert resp.status_code == 404

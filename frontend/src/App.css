@@ -1173,6 +1173,88 @@ button:disabled {
   font-weight: bold;
 }
 
+/* B28 "Advanced UI" (M7_SPRINT_PLAN.md) */
+.field--party .field__value {
+  font-family: var(--body);
+  font-size: 0.95rem;
+}
+
+.party-detail-btn {
+  margin-left: 0.5rem;
+  padding: 2px 10px;
+  font-size: 0.8rem;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.party-detail-btn:hover {
+  border-color: #1976d2;
+  color: #1976d2;
+}
+
+.term-session-info {
+  margin: 4px 0 0 0;
+}
+
+.party-detail-modal {
+  max-width: 480px;
+}
+
+.party-history-graph {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 120px;
+  margin: 1rem 0;
+  padding: 0 4px;
+  border-bottom: 1px solid #e8e8e8;
+}
+
+.party-history-bar-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 1;
+  height: 100%;
+  gap: 4px;
+}
+
+.party-history-bar {
+  width: 100%;
+  max-width: 28px;
+  border-radius: 2px 2px 0 0;
+  transition: height 0.2s;
+}
+
+.party-history-bar.won {
+  background: #4caf50;
+}
+
+.party-history-bar.lost {
+  background: #d32f2f;
+}
+
+.party-history-bar-label {
+  font-size: 11px;
+  color: #666;
+}
+
+.party-history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.party-history-table th,
+.party-history-table td {
+  padding: 4px 8px;
+  text-align: left;
+  border-bottom: 1px solid #f0f0f0;
+}
+
 /* B24 "Scenario Mode": Szenario-Auswahl-Dialog */
 .scenarios-list {
   display: flex;

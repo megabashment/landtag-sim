@@ -47,6 +47,7 @@ import sys
 from landtag_sim.engine import advance_turn, resolve_dilemma
 from landtag_sim.models import InsufficientCapitalError, PolicyLockedError, UnmetPrerequisiteError
 from landtag_sim.sample_data import (
+    SAMPLE_BUNDESLAENDER,
     SAMPLE_DILEMMA_RULES,
     SAMPLE_EVENT_RULES,
     SAMPLE_POLICIES,
@@ -78,8 +79,14 @@ def _advance_and_autoresolve(state, turns_new_keys):
     return result, dilemma_fired
 
 
-def run_scenario(policy_keys: tuple[str, ...], turns: int) -> dict:
+def run_scenario(policy_keys: tuple[str, ...], turns: int, base_statistics: dict[str, float] | None = None) -> dict:
     state = build_initial_state()
+    # B27 "Bundes-Skalierung" (M7_SPRINT_PLAN.md): --state laesst den Runner
+    # mit der Baseline eines anderen Bundeslands starten statt Niedersachsen
+    # (build_initial_state() bleibt UNveraendert/unjittert -- siehe dort --
+    # nur die Statistik-Basis wird ausgetauscht).
+    if base_statistics is not None:
+        state.statistics = dict(base_statistics)
 
     # Political-Capital- und Voraussetzungs-Pruefung passieren in advance_turn
     # selbst (bei Turn 0, wenn die Policies eingefuehrt werden). Schlaegt eine
@@ -203,7 +210,7 @@ def all_policy_combinations(policies: list | None = None) -> list[tuple[str, ...
 # ---------------------------------------------------------------------------
 
 
-def _seeded_initial_state(seed: int):
+def _seeded_initial_state(seed: int, base_statistics: dict[str, float] | None = None):
     """Startzustand mit reproduzierbar gejitterten Startwerten (ein Seed = ein
     Satz Startbedingungen). Bewusst gejittert statt der kanonischen
     STARTING_STATISTICS: verschiedene Seeds ueberschreiten die Trigger-
@@ -217,7 +224,7 @@ def _seeded_initial_state(seed: int):
     denselben Runden. Fuer die Telemetrie reicht das -- es geht um "triggert
     ueberhaupt / wie oft relativ", nicht um exakte Wahrscheinlichkeiten."""
     state = build_initial_state()
-    state.statistics = jittered_starting_statistics(random.Random(seed))
+    state.statistics = jittered_starting_statistics(random.Random(seed), base=base_statistics)
     return state
 
 
@@ -231,6 +238,7 @@ def collect_trigger_counts(
     situation_rules: list | None = None,
     report_rules: list | None = None,
     combos: list[tuple[str, ...]] | None = None,
+    base_statistics: dict[str, float] | None = None,
 ) -> dict:
     """Spielt alle (voraussetzungs-gueltigen) Policy-Kombinationen ueber
     `seeds` gejitterte Startbedingungen und `turns` Runden durch und zaehlt,
@@ -286,7 +294,7 @@ def collect_trigger_counts(
 
     for seed in range(seeds):
         for combo in combos:
-            state = _seeded_initial_state(seed)
+            state = _seeded_initial_state(seed, base_statistics=base_statistics)
             try:
                 state = _advance(state, list(combo))  # Runde 0: Kombination einfuehren
             except (InsufficientCapitalError, UnmetPrerequisiteError, PolicyLockedError):
@@ -399,9 +407,24 @@ def main() -> None:
         default=5,
         help="B6-Trigger-Telemetrie: Anzahl gejitterter Startbedingungen (mehr = breiteres Trigger-Bild)",
     )
+    # B27 "Bundes-Skalierung" (M7_SPRINT_PLAN.md): --state laesst den Runner
+    # mit der Baseline eines anderen Bundeslands statt Niedersachsen laufen
+    # (Balance-Pruefung "keine dominante Policy" muss auch fuer Bayern/NRW gelten).
+    parser.add_argument(
+        "--state",
+        type=str,
+        default="niedersachsen",
+        choices=[b.key for b in SAMPLE_BUNDESLAENDER],
+        help="Bundesland-Baseline fuer den Lauf (Default: niedersachsen)",
+    )
     args = parser.parse_args()
 
-    rows = [run_scenario(combo, args.turns) for combo in all_policy_combinations()]
+    bundesland = next(b for b in SAMPLE_BUNDESLAENDER if b.key == args.state)
+    if args.state != "niedersachsen":
+        print(f"=== Bundesland: {bundesland.name} ===\n")
+    base_statistics = bundesland.starting_statistics
+
+    rows = [run_scenario(combo, args.turns, base_statistics=base_statistics) for combo in all_policy_combinations()]
 
     header = [
         "policies", "min_budget", "end_satisfaction", "satisfaction_swing",
@@ -426,7 +449,7 @@ def main() -> None:
 
     # B6: Trigger-Telemetrie ueber alle Kombinationen x Seeds (eigener,
     # vollstaendiger Lauf inkl. Situations -- siehe collect_trigger_counts).
-    telemetry = collect_trigger_counts(args.turns, args.seeds)
+    telemetry = collect_trigger_counts(args.turns, args.seeds, base_statistics=base_statistics)
     _print_trigger_telemetry(telemetry)
 
     if args.csv:

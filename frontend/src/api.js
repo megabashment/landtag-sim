@@ -32,13 +32,19 @@ export const api = {
   listParties: () => request("/parties"),
   createSessionFromParty: (partyId) =>
     request(`/sessions/from-party/${partyId}`, { method: "POST" }),
+  // B28 "Advanced UI" (M7): volle Partei-Historie fuers Party-Detail-Modal
+  getPartyDetail: (partyId) => request(`/parties/${partyId}/detail`),
   // B24 "Scenario Mode" (M6): vordefinierte Spielmodi mit Preset-Bedingungen
   listScenarios: () => request("/scenarios"),
+  createSessionFromScenario: (scenarioId) =>
+    request(`/sessions/new-scenario/${scenarioId}`, { method: "POST" }),
+  // B27 "Bundes-Skalierung" (M7): spielbare Bundeslaender mit eigener Baseline
+  listBundeslaender: () => request("/bundeslaender"),
+  createSessionFromBundesland: (bundeslandKey) =>
+    request(`/sessions/new-bundesland/${bundeslandKey}`, { method: "POST" }),
   // B26 "Opposition-Kampagnen UI Verbesserung" (M7): echter Katalog statt
   // der bisher unbenutzten hart codierten _OPPOSITION_CAMPAIGNS-Konstante.
   listOppositionCampaigns: () => request("/opposition-campaigns"),
-  createSessionFromScenario: (scenarioId) =>
-    request(`/sessions/new-scenario/${scenarioId}`, { method: "POST" }),
   getSession: (id) => request(`/sessions/${id}`),
   // repealPolicyKeys: Democracy-4-Vorbild "Policy-Repeal" (siehe
   // landtag_sim.engine.py::advance_turn) -- Policies, die diese Runde
