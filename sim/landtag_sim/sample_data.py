@@ -570,6 +570,89 @@ SAMPLE_EVENT_RULES = [
             PolicyEffect(statistic_key="gdp_growth", magnitude=-0.35, delay_turns=0, inertia=1),
         ],
     ),
+    # B25 "Event/Dilemma-Expansion" (M7_SPRINT_PLAN.md): sechs neue Events,
+    # bewusst als Zwischenstufen VOR bzw. NACH bereits vorhandenen Schwellen
+    # gesetzt (gleiches Muster wie hohe_arbeitslosigkeit(8) vor
+    # arbeitsmarktkrise(9)) -- so bleiben sie ueber die bestehenden
+    # SAMPLE_POLICIES organisch erreichbar, ohne die bereits kalibrierten
+    # Schwellen zu verschieben.
+    EventRule(
+        key="wirtschaftsboom",
+        statistic_key="gdp_growth",
+        operator=">",
+        # nur mit steuersenkung_mittelstand (+1.0 auf Basis 1.2) ueberhaupt
+        # erreichbar -- seltenes, aber verdientes positives Signal.
+        threshold=1.8,
+        template_text=(
+            "Investoren melden neue Gewerbeansiedlungen: das Wachstum klettert "
+            "auf {value:.1f}%."
+        ),
+        cooldown_turns=8,
+    ),
+    EventRule(
+        key="energiewende_erfolg",
+        statistic_key="co2_emissions",
+        operator="<",
+        # erreichbar durch Kombination mehrerer Gruen-Policies
+        # (erneuerbare_foerderung -10, windkraft -4, solar -3, gruener_wasserstoff -8).
+        threshold=90.0,
+        template_text=(
+            "Der Emissionsindex faellt auf {value:.1f} -- Niedersachsen gilt "
+            "ueberregional als Energiewende-Vorbild."
+        ),
+        cooldown_turns=8,
+    ),
+    EventRule(
+        key="pflege_fruehwarnung",
+        statistic_key="healthcare_quality",
+        operator="<",
+        # Vorstufe vor pflege_engpass (54). Unter dem jitterten Startwertband
+        # gehalten (healthcare_quality 60 * [0.95, 1.05] = [57, 63], siehe
+        # jittered_starting_statistics) -- sonst kann das "Fruehwarn"-Event
+        # schon vor jeder Spielerentscheidung rein durchs Jitter feuern.
+        threshold=56.0,
+        template_text=(
+            "Erste Pflegeeinrichtungen melden Personalengpaesse -- der "
+            "Versorgungsindex sinkt auf {value:.1f}."
+        ),
+        cooldown_turns=5,
+    ),
+    EventRule(
+        key="bildungssparzwang",
+        statistic_key="education_spending",
+        operator="<",
+        # Vorstufe vor niedrige_bildungsausgaben (34).
+        threshold=38.0,
+        template_text=(
+            "Kommunen kuerzen zuerst bei freiwilligen Schulprogrammen -- der "
+            "Bildungsindex faellt auf {value:.1f}."
+        ),
+        cooldown_turns=5,
+    ),
+    EventRule(
+        key="jobmotor",
+        statistic_key="unemployment_rate",
+        operator="<",
+        # Vorstufe vor fachkraeftemangel (3.8).
+        threshold=4.5,
+        template_text=(
+            "Der Arbeitsmarkt boomt: die Arbeitslosigkeit sinkt auf {value:.1f}%, "
+            "Betriebe werben aktiv um Fachkraefte."
+        ),
+        cooldown_turns=6,
+    ),
+    EventRule(
+        key="energiewende_ausbau",
+        statistic_key="renewable_share",
+        operator=">",
+        # Vorstufe vor energiewende_schub (42).
+        threshold=39.0,
+        template_text=(
+            "Neue Solarparks gehen ans Netz: der Erneuerbaren-Anteil steigt "
+            "auf {value:.1f}%."
+        ),
+        cooldown_turns=6,
+    ),
 ]
 
 # P1-Punkt "Dilemma-Events mit echten Entscheidungsoptionen"
@@ -810,6 +893,180 @@ SAMPLE_DILEMMA_RULES = [
                 effects=[
                     # Trade-off: das Signal "wir sparen jetzt hier" bremst den Schwung.
                     PolicyEffect(statistic_key="education_spending", magnitude=-3.0, delay_turns=1, inertia=2),
+                ],
+            ),
+        ],
+    ),
+    # B25 "Event/Dilemma-Expansion" (M7_SPRINT_PLAN.md): fuenf neue Dilemmas,
+    # jeweils an eine Statistik-Richtung gekoppelt, die bisher NUR als Event
+    # (nicht als echte Entscheidung) abgedeckt war -- Zuwanderung/Automation
+    # (unemployment_rate niedrig), Energie-Exportambition (renewable_share
+    # hoch), Bildungskrise (education_spending sehr niedrig), Verkehrswende
+    # (co2_emissions vor klimaschutzgesetz) und Plattform-Regulierung
+    # (gdp_growth im Boom). Wie bei den bestehenden Dilemmas ueber die
+    # SAMPLE_POLICIES organisch erreichbar, nicht nur per State-Manipulation.
+    DilemmaRule(
+        key="fachkraeftezuwanderung",
+        statistic_key="unemployment_rate",
+        operator="<",
+        threshold=4.0,
+        prompt_text=(
+            "Bei {value:.1f}% Arbeitslosigkeit bleiben tausende Stellen unbesetzt. "
+            "Gezielte Fachkraeftezuwanderung foerdern oder auf Automatisierung "
+            "der Betriebe setzen?"
+        ),
+        cooldown_turns=12,
+        options=[
+            DilemmaOption(
+                key="gezielte_zuwanderung",
+                label="Gezielte Fachkraeftezuwanderung foerdern",
+                budget_cost=25.0,
+                effects=[
+                    PolicyEffect(statistic_key="education_spending", magnitude=2.0, delay_turns=1, inertia=2),
+                    PolicyEffect(statistic_key="gdp_growth", magnitude=0.3, delay_turns=1, inertia=2),
+                ],
+            ),
+            DilemmaOption(
+                key="automatisierungsoffensive",
+                label="Auf Automatisierung der Betriebe setzen",
+                budget_cost=45.0,
+                effects=[
+                    PolicyEffect(statistic_key="gdp_growth", magnitude=0.6, delay_turns=1, inertia=2),
+                    # Trade-off: Weiterbildungsbudget wird fuer Foerderprogramme umgeleitet.
+                    PolicyEffect(statistic_key="education_spending", magnitude=-2.0, delay_turns=1, inertia=2),
+                ],
+            ),
+        ],
+    ),
+    DilemmaRule(
+        key="energiewende_ausbaustufe",
+        statistic_key="renewable_share",
+        operator=">",
+        threshold=45.0,
+        prompt_text=(
+            "Der Erneuerbaren-Anteil erreicht {value:.1f}%. Niedersachsen als "
+            "Energie-Exportland positionieren oder zunaechst die Netzstabilitaet "
+            "sichern?"
+        ),
+        cooldown_turns=14,
+        options=[
+            DilemmaOption(
+                key="exportoffensive",
+                label="Als Energie-Exportland positionieren",
+                budget_cost=50.0,
+                effects=[
+                    PolicyEffect(statistic_key="renewable_share", magnitude=5.0, delay_turns=1, inertia=3),
+                    PolicyEffect(statistic_key="gdp_growth", magnitude=0.3, delay_turns=1, inertia=2),
+                ],
+            ),
+            DilemmaOption(
+                key="netzstabilitaet_sichern",
+                label="Zunaechst die Netzstabilitaet sichern",
+                budget_cost=20.0,
+                effects=[PolicyEffect(statistic_key="co2_emissions", magnitude=-3.0, delay_turns=1, inertia=2)],
+            ),
+        ],
+    ),
+    DilemmaRule(
+        key="bildungsnotstand",
+        statistic_key="education_spending",
+        operator="<",
+        # Tiefere Krisenschwelle als das Event niedrige_bildungsausgaben (34).
+        threshold=30.0,
+        prompt_text=(
+            "Der Bildungsindex faellt auf {value:.1f} -- Schulen schlagen Alarm. "
+            "Ein teures Sofortprogramm auflegen oder eine strukturelle Reform "
+            "mit Wirkung erst mittelfristig?"
+        ),
+        cooldown_turns=12,
+        options=[
+            DilemmaOption(
+                key="notprogramm",
+                label="Sofortprogramm auflegen",
+                budget_cost=50.0,
+                effects=[PolicyEffect(statistic_key="education_spending", magnitude=8.0, delay_turns=0, inertia=2)],
+            ),
+            DilemmaOption(
+                key="strukturreform",
+                label="Strukturelle Reform ansetzen",
+                budget_cost=15.0,
+                effects=[
+                    PolicyEffect(statistic_key="education_spending", magnitude=3.0, delay_turns=1, inertia=3),
+                    # Langfristig wirkt bessere Bildung auch auf den Arbeitsmarkt.
+                    PolicyEffect(statistic_key="unemployment_rate", magnitude=-0.3, delay_turns=3, inertia=4),
+                ],
+            ),
+        ],
+    ),
+    DilemmaRule(
+        key="verkehrswende",
+        statistic_key="co2_emissions",
+        operator=">",
+        # Vorstufe vor klimaschutzgesetz (106). MUSS ueber dem jitterten
+        # Startwertband liegen (co2_emissions 100 * [0.95, 1.05] = [95, 105],
+        # siehe jittered_starting_statistics) -- ein zu niedriger Schwellwert
+        # (urspruenglich 103) loeste das Dilemma bei ungluecklichem Jitter
+        # bereits in Runde 1 aus, VOR jeder Spielerentscheidung (Regression in
+        # test_repeal.py::test_repeal_stops_upkeep_but_keeps_effect_decaying_
+        # across_requests, siehe mistakes.md).
+        threshold=105.0,
+        prompt_text=(
+            "Steigende Emissionen durch Pendlerverkehr (Index {value:.1f}). In "
+            "den OEPNV-Ausbau investieren oder den Strassenausbau vorantreiben?"
+        ),
+        cooldown_turns=12,
+        options=[
+            DilemmaOption(
+                key="oepnv_ausbau",
+                label="In den OEPNV-Ausbau investieren",
+                budget_cost=40.0,
+                effects=[
+                    PolicyEffect(statistic_key="co2_emissions", magnitude=-5.0, delay_turns=1, inertia=3),
+                    PolicyEffect(statistic_key="gdp_growth", magnitude=-0.2, delay_turns=1, inertia=2),
+                ],
+            ),
+            DilemmaOption(
+                key="strassenausbau",
+                label="Strassenausbau vorantreiben",
+                budget_cost=20.0,
+                effects=[
+                    PolicyEffect(statistic_key="gdp_growth", magnitude=0.2, delay_turns=1, inertia=2),
+                    # Trade-off: mehr Strassenkapazitaet zieht mehr Pendlerverkehr an.
+                    PolicyEffect(statistic_key="co2_emissions", magnitude=1.0, delay_turns=1, inertia=2),
+                ],
+            ),
+        ],
+    ),
+    DilemmaRule(
+        key="tech_regulierung",
+        statistic_key="gdp_growth",
+        operator=">",
+        # Nur im Boom erreichbar (siehe Event wirtschaftsboom).
+        threshold=1.8,
+        prompt_text=(
+            "Die Wirtschaft waechst kraeftig ({value:.1f}%) -- der Tech-Sektor "
+            "expandiert rasant. Neue Regulierung fuer Plattformarbeit einfuehren "
+            "oder auf Deregulierung setzen?"
+        ),
+        cooldown_turns=12,
+        options=[
+            DilemmaOption(
+                key="regulierung_einfuehren",
+                label="Regulierung fuer Plattformarbeit einfuehren",
+                budget_cost=10.0,
+                effects=[
+                    PolicyEffect(statistic_key="gdp_growth", magnitude=-0.3, delay_turns=1, inertia=2),
+                    PolicyEffect(statistic_key="healthcare_quality", magnitude=1.0, delay_turns=1, inertia=2),
+                ],
+            ),
+            DilemmaOption(
+                key="deregulierung",
+                label="Auf Deregulierung setzen",
+                budget_cost=0.0,
+                effects=[
+                    PolicyEffect(statistic_key="gdp_growth", magnitude=0.3, delay_turns=1, inertia=2),
+                    # Trade-off: prekaere Plattformjobs erhoehen langfristig die Arbeitslosigkeit.
+                    PolicyEffect(statistic_key="unemployment_rate", magnitude=0.2, delay_turns=2, inertia=3),
                 ],
             ),
         ],
@@ -1084,13 +1341,23 @@ SAMPLE_SCENARIO_GOALS = [
 ]
 
 SAMPLE_OPPOSITION_CAMPAIGNS = [
+    # B26 "Opposition-Kampagnen UI Verbesserung" (M7_SPRINT_PLAN.md): die
+    # `satisfaction_deltas`-Keys mussten hier auf die tatsaechlichen
+    # SAMPLE_VOTER_GROUPS-Namen ("Landwirtschaft", "Industriearbeiter",
+    # "Staedtische Mitte", "Rentner", "Umweltbewusste Waehler",
+    # "Junge Familien") korrigiert werden -- die vorherigen Namen
+    # ("Arbeitnehmer", "Konservativ-Buergerliche", "Gerechtigkeitsbewusste",
+    # "Wirtschaft") existierten in keiner Wählergruppe, wodurch
+    # `_calculate_coalition_viability` (engine.py) sie ueber `vg.name`
+    # nachschlaegt und IMMER 0.0 zurueckbekam -- jede Kampagne war bislang
+    # wirkungslos fuer die Koalitionsfaehigkeit.
     OppositionCampaign(
         key="arbeitsmarkt_kritik",
         name="Kritik: Arbeitsmarktversprechungen nicht erfüllt",
         capital_cost=2.0,
         satisfaction_deltas={
-            "Arbeitnehmer": 8.0,
-            "Umweltbewusste Wähler": 3.0,
+            "Industriearbeiter": 8.0,
+            "Umweltbewusste Waehler": 3.0,
             "Junge Familien": 2.0,
         },
         description="Attacke gegen Regierungs-Arbeitsmarktpolitik; wirkt stark bei Arbeitern",
@@ -1100,9 +1367,9 @@ SAMPLE_OPPOSITION_CAMPAIGNS = [
         name="Sozialversprechen: Gerechtige Verteilung",
         capital_cost=2.5,
         satisfaction_deltas={
-            "Arbeitnehmer": 5.0,
+            "Industriearbeiter": 5.0,
             "Junge Familien": 6.0,
-            "Gerechtigkeitsbewusste": 4.0,
+            "Rentner": 4.0,
         },
         description="Gemäßigte Position; sichere, moderate Wähler-Gewinne",
     ),
@@ -1111,9 +1378,9 @@ SAMPLE_OPPOSITION_CAMPAIGNS = [
         name="Klimaoffensive: Radikale Ziele",
         capital_cost=3.0,
         satisfaction_deltas={
-            "Umweltbewusste Wähler": 12.0,
+            "Umweltbewusste Waehler": 12.0,
             "Junge Familien": 4.0,
-            "Wirtschaft": -6.0,
+            "Landwirtschaft": -6.0,
         },
         description="Aggressive Grünen-Politik; polarisiert stark",
     ),
@@ -1122,10 +1389,32 @@ SAMPLE_OPPOSITION_CAMPAIGNS = [
         name="Haushaltskritik: Zu viele Schulden",
         capital_cost=1.5,
         satisfaction_deltas={
-            "Konservativ-Bürgerliche": 5.0,
-            "Wirtschaft": 4.0,
+            "Landwirtschaft": 5.0,
+            "Staedtische Mitte": 4.0,
         },
         description="Finanzkonservative Kritik; billig, aber begrenzte Reichweite",
+    ),
+    # B26: zwei zusaetzliche Kampagnen fuer mehr taktische Auswahl im
+    # Opposition-Katalog (vorher nur 4 Kampagnen).
+    OppositionCampaign(
+        key="landwirtschaft_schutz",
+        name="Schutzkampagne fuer die Landwirtschaft",
+        capital_cost=2.0,
+        satisfaction_deltas={
+            "Landwirtschaft": 9.0,
+            "Industriearbeiter": 2.0,
+        },
+        description="Positioniert sich als Anwalt laendlicher Betriebe; regional stark, sonst begrenzt",
+    ),
+    OppositionCampaign(
+        key="buergernahe_kommunalpolitik",
+        name="Kampagne: Buergernahe Kommunalpolitik",
+        capital_cost=2.5,
+        satisfaction_deltas={
+            "Staedtische Mitte": 7.0,
+            "Rentner": 5.0,
+        },
+        description="Fokus auf staedtische Infrastruktur und Seniorenthemen; breite, moderate Wirkung",
     ),
 ]
 

@@ -364,6 +364,96 @@ def test_sample_dilemma_rules_are_well_formed():
         assert len(rule.options) >= 2, f"Dilemma '{rule.key}' braucht mindestens zwei echte Optionen"
 
 
+# --- B25 "Event/Dilemma-Expansion" (M7_SPRINT_PLAN.md) --------------------
+# Direkte Trigger-Tests fuer die neuen Events/Dilemmas (Balance-Runner-
+# Telemetrie bestaetigt zusaetzlich organische Erreichbarkeit ueber die
+# SAMPLE_POLICIES, siehe docs/balance-notes.md).
+
+
+def _sample_event(key):
+    return next(r for r in SAMPLE_EVENT_RULES if r.key == key)
+
+
+def _sample_dilemma(key):
+    return next(r for r in SAMPLE_DILEMMA_RULES if r.key == key)
+
+
+def test_wirtschaftsboom_event_fires_above_threshold():
+    state = build_initial_state()
+    state.statistics["gdp_growth"] = 2.0
+    result = advance_turn(state, [], [_sample_event("wirtschaftsboom")])
+    assert len(result.events) == 1
+    assert "2.0" in result.events[0]
+
+
+def test_pflege_fruehwarnung_event_fires_below_threshold():
+    state = build_initial_state()
+    state.statistics["healthcare_quality"] = 55.0
+    result = advance_turn(state, [], [_sample_event("pflege_fruehwarnung")])
+    assert len(result.events) == 1
+    assert "55.0" in result.events[0]
+
+
+def test_energiewende_ausbau_event_fires_before_energiewende_schub():
+    """Vorstufe (39.0) muss VOR der bestehenden Schwelle energiewende_schub
+    (42.0) greifen -- gleiches Zwei-Stufen-Muster wie hohe_arbeitslosigkeit
+    vor arbeitsmarktkrise."""
+    state = build_initial_state()
+    state.statistics["renewable_share"] = 40.0
+    result = advance_turn(state, [], [_sample_event("energiewende_ausbau")])
+    assert len(result.events) == 1
+    assert "40.0" in result.events[0]
+
+
+def test_fachkraeftezuwanderung_dilemma_triggers_with_tradeoff_options():
+    state = build_initial_state()
+    state.statistics["unemployment_rate"] = 3.5
+    rule = _sample_dilemma("fachkraeftezuwanderung")
+    result = advance_turn(state, [], [], dilemma_rules=[rule])
+    assert result.pending_dilemma is not None
+    assert result.pending_dilemma.rule_key == "fachkraeftezuwanderung"
+    resolved = resolve_dilemma(result.state, [rule], "gezielte_zuwanderung")
+    assert resolved.state.pending_dilemma is None
+
+
+def test_energiewende_ausbaustufe_dilemma_triggers_above_threshold():
+    state = build_initial_state()
+    state.statistics["renewable_share"] = 46.0
+    rule = _sample_dilemma("energiewende_ausbaustufe")
+    result = advance_turn(state, [], [], dilemma_rules=[rule])
+    assert result.pending_dilemma is not None
+    assert result.pending_dilemma.rule_key == "energiewende_ausbaustufe"
+
+
+def test_bildungsnotstand_dilemma_triggers_below_threshold():
+    state = build_initial_state()
+    state.statistics["education_spending"] = 28.0
+    rule = _sample_dilemma("bildungsnotstand")
+    result = advance_turn(state, [], [], dilemma_rules=[rule])
+    assert result.pending_dilemma is not None
+    assert result.pending_dilemma.rule_key == "bildungsnotstand"
+
+
+def test_verkehrswende_dilemma_triggers_before_klimaschutzgesetz():
+    """Vorstufe (105.0) muss VOR der bestehenden Schwelle klimaschutzgesetz
+    (106.0) greifen."""
+    state = build_initial_state()
+    state.statistics["co2_emissions"] = 105.5
+    rule = _sample_dilemma("verkehrswende")
+    result = advance_turn(state, [], [], dilemma_rules=[rule])
+    assert result.pending_dilemma is not None
+    assert result.pending_dilemma.rule_key == "verkehrswende"
+
+
+def test_tech_regulierung_dilemma_triggers_in_boom():
+    state = build_initial_state()
+    state.statistics["gdp_growth"] = 2.0
+    rule = _sample_dilemma("tech_regulierung")
+    result = advance_turn(state, [], [], dilemma_rules=[rule])
+    assert result.pending_dilemma is not None
+    assert result.pending_dilemma.rule_key == "tech_regulierung"
+
+
 # --- P2: Namens-Vignetten -------------------------------------------------
 
 

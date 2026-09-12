@@ -33,35 +33,6 @@ const HISTORY_LIMIT = 60;
 const ELECTION_CYCLE = 16;
 const CAPITAL_CAP = 10;
 
-// M5 "Opposition-Loop" (BACKLOG.md B15): Opposition-Kampagnen (Placeholder für MVP).
-// Idealerweise vom Backend kommen, aber für Prototyping hardcoded.
-const _OPPOSITION_CAMPAIGNS = [
-  {
-    key: "arbeitsmarkt_kritik",
-    name: "Arbeitsmarkt-Kritik",
-    description: "Attacke gegen Regierungs-Arbeitsmarktversprechungen",
-    capital_cost: 2.0,
-  },
-  {
-    key: "sozialversprechen_kampagne",
-    name: "Sozialversprechen",
-    description: "Gemäßigte Positon: gerechtige Verteilung",
-    capital_cost: 2.5,
-  },
-  {
-    key: "umwelt_offensiv",
-    name: "Umwelt-Offensiv",
-    description: "Radikale Grünen-Politik (polarisiert)",
-    capital_cost: 3.0,
-  },
-  {
-    key: "budget_kritik",
-    name: "Haushalt-Kritik",
-    description: "Finanzkonservative Kritik",
-    capital_cost: 1.5,
-  },
-];
-
 // M5 "Opposition-Loop" (BACKLOG.md B15 Phase 4): Sonntagsfrage-Overlay
 // im Stil deutscher Umfragen. Zeigt Regierung vs. Opposition mit
 // Koalitionsfähigkeit-Schwelle (30%).
@@ -457,6 +428,15 @@ function StatusBar({ session, events }) {
         </div>
       </div>
 
+      {/* B26 "Opposition-Kampagnen UI Verbesserung" (M7_SPRINT_PLAN.md):
+          sichtbarer Hinweis, dass gerade Opposition statt Regierung gespielt
+          wird -- vorher war das nur indirekt aus dem Mandat-Feld ablesbar. */}
+      {session.opposition_mode && (
+        <div className="opposition-mode-banner">
+          Du bist in Opposition &mdash; wähle eine Kampagne statt Policies.
+        </div>
+      )}
+
       <div className={`term ${urgent ? "term--urgent" : ""}`}>
         <span className="term__count">
           {toElection === 0 ? "Wahltag" : `Wahl in ${toElection} Runden`}
@@ -538,6 +518,73 @@ function TrendArrow({ trend }) {
   return <span className={`delta ${cls}`} title={trend}>{glyph}</span>;
 }
 
+// B26 "Opposition-Kampagnen UI Verbesserung" (M7_SPRINT_PLAN.md): Kampagnen-
+// Katalog fuer den Opposition-Modus, analog zum Policy-Katalog. Nur EINE
+// Kampagne pro Runde waehlbar (siehe `opposition_campaign_key` in
+// AdvanceTurnRequest) -- deshalb Radio-artige Single-Select-Karten statt
+// Checkboxen wie beim Policy-Katalog.
+function OppositionCampaignPanel({ campaigns, selectedCampaign, onSelect, disabled, politicalCapital }) {
+  if (campaigns.length === 0) {
+    return (
+      <div className="panel">
+        <h2>Opposition-Kampagnen</h2>
+        <p className="hint">Kampagnen-Katalog konnte nicht geladen werden.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="panel">
+      <h2>Opposition-Kampagnen fuer naechste Runde</h2>
+      <div className="policy-cards">
+        {campaigns.map((c) => {
+          const selected = selectedCampaign === c.key;
+          const affordable = politicalCapital >= c.capital_cost;
+          return (
+            <div
+              key={c.key}
+              className={`policy-card campaign-card ${selected ? "active" : ""} ${!affordable ? "locked" : ""}`}
+            >
+              <div className="card-header">
+                <label className="card-checkbox">
+                  <input
+                    type="radio"
+                    name="opposition-campaign"
+                    disabled={disabled || (!affordable && !selected)}
+                    checked={selected}
+                    onChange={() => onSelect(selected ? null : c.key)}
+                  />
+                </label>
+                <div className="card-title-section">
+                  <h4>{c.name}</h4>
+                  <div className="card-badges">
+                    <span className="badge cost-badge">🔵 {c.capital_cost} PC</span>
+                  </div>
+                </div>
+              </div>
+              <div className="card-details">
+                {c.description && <p className="policy-description">{c.description}</p>}
+                <ul className="campaign-effects">
+                  {Object.entries(c.satisfaction_deltas).map(([group, delta]) => (
+                    <li key={group}>
+                      {group}: <DeltaArrow delta={delta} />
+                    </li>
+                  ))}
+                </ul>
+                {!affordable && !selected && (
+                  <p className="hint requirement-hint">
+                    ⚠️ Braucht {c.capital_cost} PC, verfuegbar nur {politicalCapital.toFixed(1)}.
+                  </p>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [session, setSession] = useState(null);
   // Dynamischer Policy-Katalog (GET /policies) statt der frueheren hart
@@ -551,8 +598,9 @@ export default function App() {
   // werden sollen. Getrennt von selectedPolicies, weil ein Key nie
   // gleichzeitig neu eingefuehrt UND zurueckgezogen werden kann.
   const [selectedRepeals, setSelectedRepeals] = useState([]);
-  // M5 "Opposition-Loop" (BACKLOG.md B15): Opposition-Kampagnen-UI
-  // const [oppositionCampaigns, setOppositionCampaigns] = useState([]); // TODO: Phase 4c
+  // B26 "Opposition-Kampagnen UI Verbesserung" (M7): echter Katalog aus
+  // GET /opposition-campaigns statt der frueheren unbenutzten Konstante.
+  const [oppositionCampaigns, setOppositionCampaigns] = useState([]);
   const [selectedCampaign, setSelectedCampaign] = useState(null);
   const [showOppositionChoice, setShowOppositionChoice] = useState(false);
   const [events, setEvents] = useState([]);
@@ -655,6 +703,23 @@ export default function App() {
       cancelled = true;
     };
   }, [session]);
+
+  // B26 "Opposition-Kampagnen UI Verbesserung": Kampagnen-Katalog einmalig
+  // beim Laden holen -- global wie der Policy-Katalog, nicht pro Session.
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .listOppositionCampaigns()
+      .then((result) => {
+        if (!cancelled) setOppositionCampaigns(result);
+      })
+      .catch(() => {
+        if (!cancelled) setOppositionCampaigns([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Effekt-Vorschau (P0.1): sobald sich die Policy-Auswahl aendert, wird die
   // naechste Runde read-only simuliert und verworfen (kein Persistieren,
@@ -1307,8 +1372,24 @@ export default function App() {
               </div>
             )}
 
+            {/* B26 "Opposition-Kampagnen UI Verbesserung" (M7_SPRINT_PLAN.md):
+                im Opposition-Modus wird der Policy-Katalog durch den
+                Kampagnen-Katalog ersetzt -- Policies enacten geht in der
+                Opposition sowieso nicht (advance_session_turn ignoriert
+                enact_policy_keys, siehe routes_game.py). */}
+            {session.opposition_mode && (
+              <OppositionCampaignPanel
+                campaigns={oppositionCampaigns}
+                selectedCampaign={selectedCampaign}
+                onSelect={setSelectedCampaign}
+                disabled={gameOver || dilemmaPending}
+                politicalCapital={session.political_capital}
+              />
+            )}
+
             <div className="panel">
-              <h2>Policies fuer naechste Runde</h2>
+              <h2>{session.opposition_mode ? "Naechste Runde" : "Policies fuer naechste Runde"}</h2>
+              {!session.opposition_mode && (
               <div className="policies-grid">
                 {["economy", "social", "environment"].map((category) => (
                   <div key={category} className="policy-category">
@@ -1403,7 +1484,8 @@ export default function App() {
                   </div>
                 ))}
               </div>
-              {selectedCapitalCost > session.political_capital && (
+              )}
+              {!session.opposition_mode && selectedCapitalCost > session.political_capital && (
                 <p className="error">
                   Ausgewaehlt: {selectedCapitalCost} Political Capital, verfuegbar nur{" "}
                   {session.political_capital.toFixed(1)}.

@@ -20,6 +20,7 @@ from app.schemas.game import (
     FactionOut,
     GoalResultOut,
     NewPartyRequest,
+    OppositionCampaignOut,
     PartySummaryOut,
     PendingDilemmaOut,
     PolicyEffectOut,
@@ -114,6 +115,29 @@ def list_policies(db: Session = Depends(get_session)) -> list[PolicyOut]:
             unlock_conditions=[UnlockConditionOut(**c) for c in (row.unlock_conditions or [])],  # B7
         )
         for row in rows
+    ]
+
+
+@router.get("/opposition-campaigns", response_model=list[OppositionCampaignOut])
+def list_opposition_campaigns() -> list[OppositionCampaignOut]:
+    """B26 "Opposition-Kampagnen UI Verbesserung" (M7_SPRINT_PLAN.md): der
+    Opposition-Kampagnen-Katalog kam bisher NUR aus einer hart codierten
+    Frontend-Konstante (`_OPPOSITION_CAMPAIGNS` in App.jsx), die nirgends
+    verwendet wurde -- die Kampagnenauswahl war unsichtbar, Opposition-Runden
+    schickten immer `opposition_campaign_key=null`. Dieser Endpoint liefert
+    den echten Katalog aus sample_data.py, analog zu GET /policies. Nicht
+    DB-gestuetzt (wie /scenarios), weil OppositionCampaign kein eigenes
+    SQLModel/DB-Modell hat -- reine Sim-Beispieldaten wie SAMPLE_RIVAL_PARTIES."""
+    campaigns = load_opposition_campaigns()
+    return [
+        OppositionCampaignOut(
+            key=c.key,
+            name=c.name,
+            description=c.description,
+            capital_cost=c.capital_cost,
+            satisfaction_deltas=dict(c.satisfaction_deltas),
+        )
+        for c in campaigns
     ]
 
 

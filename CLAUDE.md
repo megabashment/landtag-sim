@@ -1,6 +1,6 @@
 # CLAUDE.md — Projektgedächtnis für Landtag-Sim
 
-**Status: M6 Phase 2 complete (B24 Scenario-Modi + Advanced Opposition Coalition, 2026-09-12).** Spiel lauffähig mit Szenario-Support und Koalitions-Verhandlungen nach Wahlverlust.
+**Status: M7 Phase 1 in Arbeit (B25 Content-Ausbau + B26 Opposition-Kampagnen-UI, 2026-09-12).** Siehe `M7_SPRINT_PLAN.md` für den vollen Sprint (B25-B29); B27-B29 noch offen.
 
 **Schnelleinstieg:** Für abgeschlossene Phasen (M1-M4), Recherche-Learnings und historische Issues → **`ARCHIVE.md`**. Für Detailarchitkur → `docs/architecture.md`.
 
@@ -92,24 +92,36 @@ landtag-sim/
 
 ---
 
-## Aktueller Stand (M6 Phase 2)
+## Aktueller Stand (M7 Phase 1)
 
 **Test-Suite (2026-09-12):**
-- **Sim-Engine:** 123 Tests ✓
-- **Backend-API:** 63 Tests ✓ (3 neue: Scenario + Coalition)
-- **Frontend:** Build+Lint ✓, Szenario-Auswahl + Koalitions-Dialog live verifiziert
-- **Balance-Runner:** "Keine vermutlich dominante Policy" (consistent)
+- **Sim-Engine:** 131 Tests ✓ (8 neue: B25 Event-/Dilemma-Trigger)
+- **Backend-API:** 66 Tests ✓ (3 neue: `test_opposition.py`)
+- **Frontend:** Build+Lint ✓, Opposition-Kampagnen-Panel + StatusBar-Banner live verifiziert
+- **Balance-Runner:** "Keine vermutlich dominante Policy", alle 6 neuen Events + 5 neuen Dilemmas triggern organisch (kein NIE_AUSGELOEST)
 
-**Implementiert (M6 Phase 2):**
+**Implementiert (M7 Phase 1):**
 
-### B24 Scenario-Modi
+### B25 Event/Dilemma-Expansion
+- Events 8 → 14 (6 neue: `wirtschaftsboom`, `energiewende_erfolg`, `pflege_fruehwarnung`, `bildungssparzwang`, `jobmotor`, `energiewende_ausbau`)
+- Dilemmas 7 → 12 (5 neue: `fachkraeftezuwanderung`, `energiewende_ausbaustufe`, `bildungsnotstand`, `verkehrswende`, `tech_regulierung`)
+- Alle neuen Regeln nutzen die bestehenden 6 Statistiken, meist als Zwischenstufe vor/nach einer bereits kalibrierten Schwelle (gleiches Muster wie `hohe_arbeitslosigkeit` vor `arbeitsmarktkrise`)
+- **Wichtig:** Schwellen MUESSEN ausserhalb des Jitter-Bands der Statistik liegen (`jittered_starting_statistics`, Basis × [0.95, 1.05]), sonst feuert die Regel schon vor jeder Spielerentscheidung — siehe `mistakes.md` ("Neue Dilemma-Schwelle zu nah am Jitter-Band")
+
+### B26 Opposition-Kampagnen-UI
+- `GET /opposition-campaigns` — echter Kampagnen-Katalog (ersetzt die bisher unbenutzte hart codierte `_OPPOSITION_CAMPAIGNS`-Konstante im Frontend)
+- `OppositionCampaignPanel` (Frontend): Kampagnen-Karten mit Single-Select (Radio), Effekt-Vorschau pro Wählergruppe, PC-Kosten
+- Opposition-Mode-Banner in der StatusBar ("Du bist in Opposition")
+- `SAMPLE_OPPOSITION_CAMPAIGNS`: 4 → 6 Kampagnen; **Bugfix:** `satisfaction_deltas`-Keys zeigten vorher auf nicht-existente Wählergruppen-Namen (z.B. "Arbeitnehmer" statt "Industriearbeiter") und wirkten dadurch NIE auf die Koalitionsfähigkeit — jetzt auf echte `SAMPLE_VOTER_GROUPS`-Namen korrigiert
+
+### B24 Scenario-Modi (M6)
 - `ScenarioDefinition` Model mit `starting_statistics_override`
 - `GET /scenarios` — Liste vordefinierter Spielmodi (5 Sample-Szenarien)
 - `POST /sessions/new-scenario/{scenario_id}` — Session mit Szenario-Startbedingungen
 - Frontend Szenario-Auswahl im Start-Menu mit Beschreibungen
 - Scenario-Statistik-Overrides werden auf Jitter angewendet
 
-### Advanced Opposition (Coalition)
+### Advanced Opposition (Coalition, M6)
 - `ElectionResult.coalition_viability` [0-100] — Viabilität Regierungs-Opposition-Koalition
 - Berechnung basiert auf Opposition-Zufriedenheit aus Sim-Engine
 - `POST /sessions/{id}/respond-to-election` — Coalition Accept/Decline Endpoint
@@ -170,14 +182,12 @@ cd ../sim && python -m pytest tests/ -q
 
 ## Nächste Sprints (M7+)
 
-**M6 abgeschlossen — B24 + Advanced Opposition live**
+**M6 abgeschlossen — B24 + Advanced Opposition live. M7 Phase 1 (B25+B26) abgeschlossen** (siehe `M7_SPRINT_PLAN.md`).
 
-Kommende Prioritäten:
-- **Content-Ausbau** (mehr Dilemmas, Events, Policies für Variety)
-- **Bundes/EU-Skalierung** (regionale Variation, Föderalismus, mehrere Bundesländer)
-- **Opposition-Gameplay** (Opposition-Kampagnen verbessern, Koalitions-Stabilität)
-- **Playtesting & Balance** (Spieler-Feedback-Integration, Balance-Tuning)
-- **Advanced UI** (bessere Visualisierung von Coalition-Optionen, Party-History)
+Offene Prioritäten (M7 Phase 2+3):
+- **B27 Bundes/EU-Skalierung** (Bayern + NRW als weitere Bundesländer, State-Baseline)
+- **B28 Advanced UI** (Party-History-Modal, Coalition-Viz, Session-Dauer-Info)
+- **B29 Playtesting & Balance-Audit** (Balance-Runner pro State, `docs/balance-notes.md`)
 
 ---
 

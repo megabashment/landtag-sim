@@ -1146,6 +1146,33 @@ button:disabled {
   font-size: 11px;
 }
 
+/* B26 "Opposition-Kampagnen UI Verbesserung" (M7_SPRINT_PLAN.md) */
+.campaign-card {
+  cursor: default;
+}
+
+.campaign-effects {
+  list-style: none;
+  margin: 6px 0 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  color: #333;
+}
+
+.opposition-mode-banner {
+  margin-top: 8px;
+  padding: 6px 12px;
+  background: #fff3e0;
+  color: #e65100;
+  border: 1px solid #ffb74d;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: bold;
+}
+
 /* B24 "Scenario Mode": Szenario-Auswahl-Dialog */
 .scenarios-list {
   display: flex;

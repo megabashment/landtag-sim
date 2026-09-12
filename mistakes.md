@@ -570,3 +570,51 @@ am fehlerfreien Skript-Exit ablesen, sondern per `psql \d <tabelle>`
 verifizieren, dass die erwartete Spalte tatsaechlich da ist -- genau wie
 beim Postgres-15-Owner-Fix oben gilt "kein Fehler" nicht als Beweis fuer
 "hat funktioniert".
+
+## Neue Dilemma-Schwelle zu nah am Jitter-Band loeste Backend-Tests spontan aus (B25)
+
+**Wo:** `sim/landtag_sim/sample_data.py::SAMPLE_DILEMMA_RULES` (`verkehrswende`),
+`backend/tests/test_repeal.py::test_repeal_stops_upkeep_but_keeps_effect_decaying_across_requests`,
+2026-09-12.
+
+**Was:** Beim Content-Ausbau (B25, M7) bekam das neue Dilemma
+`verkehrswende` die Schwelle `co2_emissions > 103.0` als "Vorstufe vor
+klimaschutzgesetz (106)". `jittered_starting_statistics()` streut
+`co2_emissions` (Basis 100) aber um ±5%, also auf `[95, 105]` -- ein
+Schwellwert von 103 liegt damit MITTEN im Jitter-Band: rein zufaellig
+(ohne jede Spielerentscheidung) lag `co2_emissions` bei einem Teil der
+Sessions schon in Runde 1 ueber 103, das Dilemma feuerte sofort und
+blockierte jeden folgenden `/advance`-Call mit 400, bis es aufgeloest
+wurde. `sim/tests/test_engine.py` (deterministisch, kein Jitter) sah davon
+nichts -- erst der Backend-Testlauf gegen die echte `POST /sessions`-API
+(mit echtem Jitter) zeigte es, und selbst dort nur bei ungluecklichem
+Zufall (ca. jeder 3.-4. Lauf). Zusaetzlich sank durch die 5 neuen Dilemmas
+insgesamt die statistische "Ruhezeit" pro Legislaturperiode: ein zweiter,
+unabhaengiger Test (`test_term_summary.py::test_term_tracking_resets_...`)
+hatte eine UNGESCHUETZTE `/advance`-Runde ohne Dilemma-Fallback direkt
+nach einer gewonnenen Wahl -- mit nur 7 Dilemma-Regeln praktisch nie ein
+Problem, mit 12 Regeln oft genug, um in ca. 40-60% der Laeufe zu failen.
+
+**Fix:** Schwelle von `verkehrswende` auf `co2_emissions > 105.0` angehoben
+(strikt ausserhalb von `[95, 105]`, siehe Kommentar im Code) und
+`pflege_fruehwarnung` (analog fuer `healthcare_quality`, Basis 60, Band
+`[57, 63]`) von `< 58` auf `< 56` gesenkt. Die ungeschuetzte `/advance`-
+Runde in `test_term_summary.py` bekam denselben "bei 400 aufloesen und
+erneut versuchen"-Fallback wie die uebrigen Runden im selben Test, und das
+Iterations-Sicherheitsnetz in `test_term_summary.py::
+test_term_summary_reports_policy_driven_statistic_changes` wurde von 20
+auf 40 angehoben.
+
+**Lehre:** Bei JEDER neuen Event-/Dilemma-Schwelle sofort gegen die
+`jittered_starting_statistics()`-Bandbreite der jeweiligen Statistik
+pruefen (Basiswert × `[1-spread, 1+spread]`, Standard-Spread 0.05) --
+liegt die Schwelle innerhalb dieses Bands, kann die Regel schon vor jeder
+Spielerentscheidung rein durchs Start-Jitter feuern. Das ist bei einem
+EventRule nur kosmetisch seltsam (feuert halt einmal zu frueh), bei einem
+DilemmaRule aber ein echter Bug, weil es `/advance` blockiert. Ausserdem:
+neuer Content, der die GESAMT-Dilemma-Dichte erhoeht, kann bereits
+bestehende, scheinbar unabhaengige Tests mit fest verdrahteten Iterations-
+Budgets oder ungeschuetzten Einzel-Calls flaky machen, auch wenn die neue
+Regel selbst nirgends im jeweiligen Testpfad erwaehnt wird -- nach JEDEM
+Content-Ausbau die volle Backend-Suite mehrfach hintereinander laufen
+lassen (siehe Lehre oben zu Zufallsrunden), nicht nur einmal gruen sehen.

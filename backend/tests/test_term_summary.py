@@ -52,8 +52,13 @@ def test_term_summary_reports_policy_driven_statistic_changes(client, session_id
     # (konjunkturdelle drueckt gdp_growth) loest bildungsoffensives verschaerfter
     # Wachstums-Trade-off `rezession` organisch aus, was /advance sonst mit 400
     # blockiert. Deterministisch mit Option 0 aufloesen und weiterlaufen.
+    # B25 "Event/Dilemma-Expansion" (M7_SPRINT_PLAN.md): mit 12 statt 7
+    # Dilemma-Regeln steigt die Chance, dass MEHR als eine im 16-Runden-
+    # Legislaturfenster ausloest (jede blockierte /advance-Runde "verbraucht"
+    # eine Loop-Iteration ohne Rundenfortschritt) -- 20 Iterationen reichten
+    # nicht mehr immer als Sicherheitsmarge, 40 sind grosszuegig bemessen.
     ts = None
-    for _ in range(20):
+    for _ in range(40):
         response = client.post(f"/sessions/{session_id}/advance", json={"enact_policy_keys": []})
         if response.status_code == 400:
             pending = client.get(f"/sessions/{session_id}").json()["pending_dilemma"]
@@ -121,8 +126,18 @@ def test_term_tracking_resets_for_the_next_legislative_period(client, session_id
     assert final_response["state"]["status"] == "active"
     assert final_response["term_summary"] is not None
 
-    # Erste Runde des zweiten Zyklus: noch keine neue Bilanz.
+    # Erste Runde des zweiten Zyklus: noch keine neue Bilanz. B25 "Event/
+    # Dilemma-Expansion" (M7_SPRINT_PLAN.md): mit 12 statt 7 Dilemma-Regeln
+    # kann bereits diese erste Runde organisch ein neues Dilemma ausloesen --
+    # dann zuerst aufloesen und die Runde erneut versuchen (gleiches Muster
+    # wie im Loop weiter unten).
     mid = client.post(f"/sessions/{session_id}/advance", json={"enact_policy_keys": []})
+    if mid.status_code == 400:
+        pending = client.get(f"/sessions/{session_id}").json()["pending_dilemma"]
+        assert pending is not None, mid.json()
+        option = pending["options"][0]["key"]
+        client.post(f"/sessions/{session_id}/resolve-dilemma", json={"option_key": option})
+        mid = client.post(f"/sessions/{session_id}/advance", json={"enact_policy_keys": []})
     assert mid.status_code == 200
     assert mid.json()["term_summary"] is None
 

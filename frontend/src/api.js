@@ -34,6 +34,9 @@ export const api = {
     request(`/sessions/from-party/${partyId}`, { method: "POST" }),
   // B24 "Scenario Mode" (M6): vordefinierte Spielmodi mit Preset-Bedingungen
   listScenarios: () => request("/scenarios"),
+  // B26 "Opposition-Kampagnen UI Verbesserung" (M7): echter Katalog statt
+  // der bisher unbenutzten hart codierten _OPPOSITION_CAMPAIGNS-Konstante.
+  listOppositionCampaigns: () => request("/opposition-campaigns"),
   createSessionFromScenario: (scenarioId) =>
     request(`/sessions/new-scenario/${scenarioId}`, { method: "POST" }),
   getSession: (id) => request(`/sessions/${id}`),
