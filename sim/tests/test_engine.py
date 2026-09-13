@@ -19,6 +19,7 @@ from landtag_sim.models import (
     DilemmaRule,
     EventRule,
     InsufficientCapitalError,
+    PendingDilemma,
     Policy,
     PolicyAlreadyActiveError,
     PolicyEffect,
@@ -1871,6 +1872,77 @@ def test_pick_quote_is_deterministic_and_varies_by_turn():
 
     quotes_over_turns = {pick_quote("blue", f"Wirtschaftsunion:{t}") for t in range(20)}
     assert len(quotes_over_turns) > 1  # ueber genug Runden sollten mehrere Zitate vorkommen
+
+
+def test_citizen_voice_fires_when_a_group_is_extremely_dissatisfied():
+    """Eine Waehlergruppe weit unter der Negativ-Schwelle muss irgendwann
+    (deterministisch, siehe citizen_voices.py) zu Wort kommen -- auch ganz
+    ohne Rivalen-Parteien (klassischer Modus)."""
+    state = build_initial_state()
+    state.voter_groups[0].satisfaction = 5.0
+    result = advance_turn(state, [], [])
+    assert result.citizen_voice is not None
+    assert state.voter_groups[0].name in result.citizen_voice
+
+
+def test_citizen_voice_fires_when_a_group_is_extremely_satisfied():
+    state = build_initial_state()
+    state.voter_groups[0].satisfaction = 95.0
+    result = advance_turn(state, [], [])
+    assert result.citizen_voice is not None
+    assert state.voter_groups[0].name in result.citizen_voice
+
+
+def test_citizen_voice_is_none_when_all_groups_are_moderate():
+    state = build_initial_state()
+    for group in state.voter_groups:
+        group.satisfaction = 50.0
+    result = advance_turn(state, [], [])
+    assert result.citizen_voice is None
+
+
+def test_citizen_voice_picks_the_most_extreme_group():
+    from landtag_sim.citizen_voices import generate_citizen_voice
+    from landtag_sim.models import VoterGroup
+
+    groups = [
+        VoterGroup(name="Mittelmaessig unzufrieden", population_share=0.5, satisfaction=30.0, weight_economy=1.5),
+        VoterGroup(name="Voellig verzweifelt", population_share=0.5, satisfaction=5.0, weight_social=1.5),
+    ]
+    voice = generate_citizen_voice(groups, turn=1)
+    assert voice is not None
+    assert "Voellig verzweifelt" in voice
+
+
+def test_pick_citizen_quote_is_deterministic_and_varies_by_turn():
+    from landtag_sim.citizen_voices import pick_quote
+
+    a = pick_quote("negative", "economy", "Rentner:5")
+    b = pick_quote("negative", "economy", "Rentner:5")
+    assert a == b  # gleicher Seed -> gleiches Zitat
+
+    quotes_over_turns = {pick_quote("negative", "economy", f"Rentner:{t}") for t in range(20)}
+    assert len(quotes_over_turns) > 1
+
+
+def test_resolve_dilemma_can_carry_a_citizen_voice():
+    """Eine Dilemma-Entscheidung ist ebenfalls ein Hoehepunkt-Moment (siehe
+    engine.py::resolve_dilemma) -- auch dort muss eine extreme Stimmung
+    zu Wort kommen koennen."""
+    state = build_initial_state()
+    state.voter_groups[0].satisfaction = 3.0
+    option = DilemmaOption(key="a", label="Option A", effects=[])
+    rule = DilemmaRule(
+        key="test-dilemma",
+        statistic_key="gdp_growth",
+        operator=">",
+        threshold=0.0,
+        prompt_text="Testfrage",
+        options=[option],
+    )
+    state.pending_dilemma = PendingDilemma(rule_key=rule.key, prompt=rule.prompt_text, options=rule.options)
+    result = resolve_dilemma(state, [rule], "a")
+    assert result.citizen_voice is not None
 
 
 def test_election_with_rivals_uses_plurality_not_threshold():

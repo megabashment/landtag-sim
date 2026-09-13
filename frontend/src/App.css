@@ -403,6 +403,26 @@
   color: var(--ink);
 }
 
+/* Fortsetzung "Demokratie-Drama"-Pass ("mach es noch lebendiger"): eigener
+   Rahmen fuer die Buergerstimme -- optisch abgesetzt von der Oppositions-
+   Attacke (beide teilen denselben roten Kicker, siehe .front-page__kicker,
+   aber der Zitat-Rahmen soll erkennbar "Volk" statt "Opposition" sein). */
+.front-page__quote-block--citizen .front-page__quote {
+  border-left-color: var(--gold);
+}
+
+/* "Waehlergruppen"-Panel: Stimmungs-Gesicht + Trendpfeil vor dem Namen. */
+.voter-group-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.voter-group-mood {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
 .policy-list li {
   display: block;
 }

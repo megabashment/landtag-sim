@@ -1116,6 +1116,7 @@ def advance_session_turn(
         term_summary=term_summary_out,
         reports=result.reports,
         opposition_reaction=result.opposition_reaction,
+        citizen_voice=result.citizen_voice,
     )
 
 
@@ -1206,4 +1207,5 @@ def resolve_session_dilemma(
         attributions=[
             AttributionOut(source=a.source, statistic_key=a.statistic_key, delta=a.delta) for a in result.attributions
         ],
+        citizen_voice=result.citizen_voice,
     )

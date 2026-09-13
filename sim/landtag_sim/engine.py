@@ -46,6 +46,7 @@ import operator as _operator
 
 from landtag_sim.dilemmas import evaluate_dilemmas
 from landtag_sim.events import evaluate_events
+from landtag_sim.citizen_voices import generate_citizen_voice
 from landtag_sim.opposition_voices import generate_opposition_reaction, turn_category_changes
 from landtag_sim.reports import evaluate_reports
 from landtag_sim.situations import evaluate_situations
@@ -1020,6 +1021,14 @@ def advance_turn(
             this_turn_category_changes, new_state.rival_parties, new_state.turn
         )
 
+    # "Demokratie-Drama"-Pass, Fortsetzung ("mach es noch lebendiger",
+    # 2026-09-13): Buerger-Zitat aus der (nach _apply_reaction) aktuellen
+    # Zufriedenheitslage -- die Waehlergruppe mit der extremsten Stimmung
+    # dieser Runde bekommt das Wort (siehe citizen_voices.py). Anders als
+    # opposition_reaction NICHT an Rivalen-Parteien gebunden -- funktioniert
+    # auch im klassischen Einzel-Partei-Modus.
+    citizen_voice = generate_citizen_voice(new_state.voter_groups, new_state.turn)
+
     return TurnResult(
         state=new_state,
         events=event_texts,
@@ -1030,6 +1039,7 @@ def advance_turn(
         reports=report_texts,
         triggered_event_keys=triggered_event_keys,
         opposition_reaction=opposition_reaction,
+        citizen_voice=citizen_voice,
     )
 
 
@@ -1142,7 +1152,19 @@ def resolve_dilemma(state: SimState, dilemma_rules: list[DilemmaRule], option_ke
         )
     _apply_reaction(new_state, attributions)
 
-    return TurnResult(state=new_state, events=[], attributions=attributions, election_result=None, pending_dilemma=None)
+    # "Demokratie-Drama"-Pass, Fortsetzung: eine Dilemma-Entscheidung ist ein
+    # Hoehepunkt-Moment -- genau hier soll eine Buergerstimme auch zu Wort
+    # kommen koennen (siehe advance_turn/citizen_voices.py).
+    citizen_voice = generate_citizen_voice(new_state.voter_groups, new_state.turn)
+
+    return TurnResult(
+        state=new_state,
+        events=[],
+        attributions=attributions,
+        election_result=None,
+        pending_dilemma=None,
+        citizen_voice=citizen_voice,
+    )
 
 
 # Grobe Statistik->Kategorie Zuordnung fuer die Zufriedenheits-Gewichtung.

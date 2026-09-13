@@ -348,6 +348,11 @@ class AdvanceTurnResponse(BaseModel):
     # Rivalen-Fraktionsvorsitzenden pro Runde, siehe opposition_voices.py.
     # None ohne Rivalen oder in ruhigen Runden.
     opposition_reaction: str | None = None
+    # Fortsetzung ("mach es noch lebendiger"): hoechstens ein Zitat einer
+    # Waehlergruppe pro Runde, wenn ihre Zufriedenheit extrem ist, siehe
+    # citizen_voices.py. None in ruhigen Runden -- funktioniert auch ohne
+    # Rivalen (klassischer Modus).
+    citizen_voice: str | None = None
 
 
 class ResolveDilemmaRequest(BaseModel):
@@ -357,6 +362,9 @@ class ResolveDilemmaRequest(BaseModel):
 class ResolveDilemmaResponse(BaseModel):
     state: SessionStateResponse
     attributions: list[AttributionOut]
+    # "Demokratie-Drama"-Pass, Fortsetzung: eine Dilemma-Entscheidung ist ein
+    # Hoehepunkt-Moment -- siehe citizen_voices.py. None in ruhigen Faellen.
+    citizen_voice: str | None = None
 
 
 class PreviewRequest(BaseModel):

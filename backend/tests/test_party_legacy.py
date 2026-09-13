@@ -62,6 +62,22 @@ def test_opposition_reaction_appears_when_rivals_axis_worsens(client):
     assert "Wirtschaftsunion" in fired
 
 
+def test_citizen_voice_appears_when_a_group_is_extremely_dissatisfied(client, session_id):
+    """Fortsetzung "Demokratie-Drama"-Pass ("mach es noch lebendiger",
+    2026-09-13): eine extrem unzufriedene Waehlergruppe muss per Zitat
+    zu Wort kommen -- auch im klassischen Modus ohne Rivalen-Parteien
+    (siehe citizen_voices.py)."""
+    with Session(engine) as db:
+        group = db.exec(select(VoterGroup).where(VoterGroup.session_id == session_id)).first()
+        group.satisfaction = 3.0
+        db.add(group)
+        db.commit()
+
+    resp = client.post(f"/sessions/{session_id}/advance", json={})
+    assert resp.status_code == 200
+    assert resp.json()["citizen_voice"] is not None
+
+
 def test_classic_session_has_no_rivals_and_no_reputation(client, session_id):
     state = client.get(f"/sessions/{session_id}").json()
     assert state["rival_parties"] == []

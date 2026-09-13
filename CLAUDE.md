@@ -310,6 +310,36 @@ der Chat-Historie): Stimmungs-Gesicht statt reiner Zahl, Wahlnacht als
 eigene dramatische Szene, seltene "Wildcard"-Ereignisse außerhalb des
 balancierten Dilemma-Pools.
 
+### "Demokratie-Drama"-Pass, Fortsetzung (2026-09-13, "mach es noch lebendiger")
+
+Zwei der oben offen gelassenen Punkte umgesetzt:
+
+- **Bürgerstimmen:** `sim/landtag_sim/citizen_voices.py` (neu) -- analog zu
+  `opposition_voices.py`, aber für die Wählergruppen selbst statt der
+  Rivalen-Parteien. Die Gruppe mit der EXTREMSTEN Zufriedenheit einer Runde
+  (< 32 oder > 72, sonst bleibt sie stumm) bekommt ein deterministisches
+  Zitat (`TurnResult.citizen_voice`, gleiche crc32-Technik, kein LLM/NLP).
+  Funktioniert -- anders als `opposition_reaction` -- auch im klassischen
+  Einzel-Partei-Modus (keine Rivalen nötig). Feuert sowohl in
+  `advance_turn()` als auch in `resolve_dilemma()` (eine Dilemma-Entscheidung
+  ist ebenfalls ein Höhepunkt-Moment). Auf der `FrontPage` als eigener
+  "Stimme aus dem Volk"-Block mit goldenem statt rotem Zitat-Rahmen
+  angezeigt (unterscheidbar von der Oppositions-Attacke).
+- **Stimmungs-Gesicht + Trendpfeil im "Wählergruppen"-Panel:** `moodFace()`
+  (😠/😟/😐/🙂/😄 je nach `satisfaction`) und Wiederverwendung von
+  `TrendArrow` (vorher nur für die Wahlprognose) mit `satisfaction_momentum`
+  direkt aus den bereits vorhandenen `voter_groups`-Daten -- kein neues
+  Backend-Feld nötig, reine Frontend-Änderung.
+- Live per Chrome DevTools MCP verifiziert (Rentner-Zufriedenheit per DB
+  direkt auf 4.0 gesetzt → 😠-Gesicht + "„Auf uns wird einfach vergessen...“
+  — eine Stimme aus der Gruppe „Rentner“" erscheint korrekt auf der
+  Titelseite).
+- 7 neue Sim-Tests (`test_engine.py`), 1 neuer Backend-Test
+  (`test_party_legacy.py`).
+
+**Weiterhin offen:** Wahlnacht als eigene dramatische Szene, seltene
+"Wildcard"-Ereignisse außerhalb des balancierten Dilemma-Pools.
+
 ---
 
 **Für tiefere Doku:** `docs/architecture.md` (Game-Director-Review), `docs/game-design-roadmap.md` (P0-P2 Roadmap), `ARCHIVE.md` (historische Learnings).

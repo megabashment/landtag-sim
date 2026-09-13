@@ -559,6 +559,13 @@ class TurnResult:
     # Anzeige -- keine Sim-Wirkung.
     opposition_reaction: str | None = None
 
+    # "Demokratie-Drama"-Pass, Fortsetzung ("mach es noch lebendiger",
+    # 2026-09-13): hoechstens EIN Zitat einer Waehlergruppe pro Runde, wenn
+    # ihre Zufriedenheit gerade besonders extrem ist (siehe
+    # citizen_voices.py). None in ruhigen Runden. Reine Anzeige -- keine
+    # Sim-Wirkung.
+    citizen_voice: str | None = None
+
 
 @dataclass
 class DelayedEffect:
