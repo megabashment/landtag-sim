@@ -1814,6 +1814,65 @@ def test_rival_approval_grows_under_matching_discontent():
     assert green_after > green_before + 3.0
 
 
+# --- "Demokratie-Drama"-Pass (Nutzer-Feedback 2026-09-13) ------------------
+
+
+def test_opposition_reaction_fires_when_rivals_axis_worsens():
+    """bildungsoffensive senkt gdp_growth (economy) stark -- die blaue
+    Wirtschaftsunion muss irgendwann in den ersten Runden reagieren."""
+    state = _state_with_rivals()
+    result = advance_turn(state, SAMPLE_POLICIES, [], newly_enacted_keys=["bildungsoffensive"])
+
+    reactions = []
+    for _ in range(4):
+        result = advance_turn(result.state, SAMPLE_POLICIES, [])
+        reactions.append(result.opposition_reaction)
+
+    assert any(r is not None for r in reactions), "Erwartete mindestens ein Oppositions-Zitat"
+    fired = next(r for r in reactions if r is not None)
+    assert "Wirtschaftsunion" in fired
+    assert "Friedrich Wessel" in fired
+
+
+def test_opposition_reaction_is_none_in_calm_turn():
+    """Ohne nennenswerte Statistik-Bewegung darf kein Zitat erzwungen werden."""
+    state = _state_with_rivals()
+    result = advance_turn(state, [], [])
+    assert result.opposition_reaction is None
+
+
+def test_opposition_reaction_is_none_without_rival_parties():
+    """Klassischer Modus (keine Rivalen) darf nie ein Oppositions-Zitat liefern."""
+    state = build_initial_state()
+    assert state.rival_parties == []
+    result = advance_turn(state, SAMPLE_POLICIES, [], newly_enacted_keys=["bildungsoffensive"])
+    assert result.opposition_reaction is None
+
+
+def test_generate_opposition_reaction_picks_worst_affected_party():
+    from landtag_sim.models import RivalParty
+    from landtag_sim.opposition_voices import generate_opposition_reaction
+    from landtag_sim.sample_data import SAMPLE_RIVAL_PARTIES
+
+    rivals = [RivalParty(**vars(r)) for r in SAMPLE_RIVAL_PARTIES]
+    # green (Umwelt) leicht negativ, blue (Wirtschaft) stark negativ -> blue muss gewinnen.
+    category_changes = {"environment": -0.5, "economy": -5.0, "social": 0.2}
+    reaction = generate_opposition_reaction(category_changes, rivals, turn=3)
+    assert reaction is not None
+    assert "Wirtschaftsunion" in reaction
+
+
+def test_pick_quote_is_deterministic_and_varies_by_turn():
+    from landtag_sim.opposition_voices import pick_quote
+
+    a = pick_quote("blue", "Wirtschaftsunion:5")
+    b = pick_quote("blue", "Wirtschaftsunion:5")
+    assert a == b  # gleicher Seed -> gleiches Zitat
+
+    quotes_over_turns = {pick_quote("blue", f"Wirtschaftsunion:{t}") for t in range(20)}
+    assert len(quotes_over_turns) > 1  # ueber genug Runden sollten mehrere Zitate vorkommen
+
+
 def test_election_with_rivals_uses_plurality_not_threshold():
     """Mit Rivalen zählt der höchste Stimmenanteil -- eine Partei kann mit
     < 50 gewichteter Zustimmung gewinnen, wenn die Rivalen schwächer sind."""

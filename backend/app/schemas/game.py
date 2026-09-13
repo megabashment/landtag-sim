@@ -88,6 +88,10 @@ class RivalPartyOut(BaseModel):
     name: str
     ideology: str
     approval: float
+    # "Demokratie-Drama"-Pass (2026-09-13): Anzeigename fuer Oppositions-
+    # Zitate (siehe opposition_voices.py) -- leer bei alten, vor diesem
+    # Feature angelegten Sessions.
+    leader_name: str = ""
 
 
 class CreateSessionResponse(BaseModel):
@@ -340,6 +344,10 @@ class AdvanceTurnResponse(BaseModel):
     # Presseschau-Text pro Runde, nur in Runden ohne Event/Dilemma. Reine
     # Anzeige, keine Sim-Wirkung.
     reports: list[str] = []
+    # "Demokratie-Drama"-Pass (2026-09-13): hoechstens ein Zitat eines
+    # Rivalen-Fraktionsvorsitzenden pro Runde, siehe opposition_voices.py.
+    # None ohne Rivalen oder in ruhigen Runden.
+    opposition_reaction: str | None = None
 
 
 class ResolveDilemmaRequest(BaseModel):

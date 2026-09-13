@@ -31,6 +31,35 @@ def test_new_party_session_seeds_three_rivals(client):
     assert {r["ideology"] for r in rivals} == {"green", "red", "blue"}
     # Ruf startet neutral.
     assert state["party_reputation"] == 50.0
+    # "Demokratie-Drama"-Pass (2026-09-13): jede Rivalen-Partei hat einen
+    # Fraktionsvorsitzenden-Namen fuer die Oppositions-Zitate (siehe
+    # opposition_voices.py) -- kein leerer String.
+    assert all(r["leader_name"] for r in rivals)
+
+
+def test_opposition_reaction_appears_when_rivals_axis_worsens(client):
+    """bildungsoffensive senkt gdp_growth (economy) stark -- die blaue
+    Wirtschaftsunion muss irgendwann in den ersten Runden per Zitat
+    reagieren (siehe opposition_voices.py)."""
+    body = _new_party(client, name="Reaktionstest", ideology="green")
+    sid = body["session_id"]
+
+    reactions = []
+    resp = client.post(f"/sessions/{sid}/advance", json={"enact_policy_keys": ["bildungsoffensive"]})
+    assert resp.status_code == 200
+    reactions.append(resp.json()["opposition_reaction"])
+    for _ in range(4):
+        resp = client.post(f"/sessions/{sid}/advance", json={})
+        if resp.status_code == 400:
+            pending = client.get(f"/sessions/{sid}").json()["pending_dilemma"]
+            if pending:
+                client.post(f"/sessions/{sid}/resolve-dilemma", json={"option_key": pending["options"][0]["key"]})
+            continue
+        reactions.append(resp.json()["opposition_reaction"])
+
+    assert any(r is not None for r in reactions), "Erwartete mindestens ein Oppositions-Zitat"
+    fired = next(r for r in reactions if r is not None)
+    assert "Wirtschaftsunion" in fired
 
 
 def test_classic_session_has_no_rivals_and_no_reputation(client, session_id):

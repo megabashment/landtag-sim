@@ -1434,9 +1434,9 @@ SAMPLE_OPPOSITION_CAMPAIGNS = [
 # startet = base_strength. Summe der Sockel (~48) laesst der Spieler-Partei
 # in guter Lage bequem die Mehrheit, in der Krise wird es eng.
 SAMPLE_RIVAL_PARTIES = [
-    RivalParty(name="Klima-Liste", ideology="green", base_strength=16.0, approval=16.0),
-    RivalParty(name="SozialAllianz", ideology="red", base_strength=18.0, approval=18.0),
-    RivalParty(name="Wirtschaftsunion", ideology="blue", base_strength=14.0, approval=14.0),
+    RivalParty(name="Klima-Liste", ideology="green", base_strength=16.0, approval=16.0, leader_name="Insa Brandt"),
+    RivalParty(name="SozialAllianz", ideology="red", base_strength=18.0, approval=18.0, leader_name="Kemal Dogan"),
+    RivalParty(name="Wirtschaftsunion", ideology="blue", base_strength=14.0, approval=14.0, leader_name="Friedrich Wessel"),
 ]
 
 # B24 "Scenario Mode" (M6 Sprint 1): vordefinierte Spielmodi mit Story +

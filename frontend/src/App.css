@@ -330,6 +330,79 @@
   border-bottom: 1px solid var(--rule);
 }
 
+/* "Demokratie-Drama"-Pass (2026-09-13): Event/Presseschau/Oppositions-Zitat
+   als Zeitungs-Titelseite statt schlichter <li>-Liste -- macht dieselben
+   Daten spuerbar. Aufmacher (Event) am groessten, Presseschau sekundaer,
+   Oppositions-Zitat als eigener Zitat-Block. */
+.front-page {
+  border-color: var(--ink-dim);
+}
+
+.front-page__masthead {
+  display: block;
+  font-family: var(--data);
+  font-size: 0.62rem;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 0.5rem;
+  margin-bottom: 0.8rem;
+}
+
+.front-page__story {
+  padding: 0.6rem 0;
+}
+
+.front-page__story + .front-page__story,
+.front-page__story + .front-page__quote-block {
+  border-top: 1px solid var(--rule);
+}
+
+.front-page__kicker {
+  display: block;
+  font-family: var(--data);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: #b3261e;
+  margin-bottom: 0.25rem;
+}
+
+.front-page__headline {
+  font-family: var(--body);
+  font-weight: 700;
+  line-height: 1.25;
+  margin: 0;
+  color: var(--ink);
+}
+
+.front-page__story--lead .front-page__headline {
+  font-size: 1.5rem;
+  letter-spacing: -0.01em;
+}
+
+.front-page__headline--secondary {
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.front-page__quote-block {
+  padding: 0.6rem 0 0.1rem;
+}
+
+.front-page__quote {
+  margin: 0;
+  padding-left: 0.9rem;
+  border-left: 3px solid var(--ink-dim);
+  font-family: var(--body);
+  font-style: italic;
+  font-size: 1rem;
+  color: var(--ink);
+}
+
 .policy-list li {
   display: block;
 }
@@ -354,25 +427,9 @@
   color: #555;
 }
 
-.events {
-  margin-top: 1rem;
-  background: #fff8e6;
-  border-color: #f0d98c;
-}
-
-/* B4 "Narrative Konsequenz-Ebene": Presseschau -- bewusst zurueckhaltender
-   als das Ereignis-Panel (grau, kein Alarm-Gelb), weil Reports narrative
-   Begleitung sind und nicht die "Headline" der Runde. */
-.reports {
-  margin-top: 1rem;
-  background: #f4f4f2;
-  border-color: #cfcfc7;
-  font-style: italic;
-}
-
 .history-reports li {
   font-style: italic;
-  color: #555;
+  color: var(--ink-dim);
 }
 
 .error {
@@ -422,8 +479,8 @@
 
 .attributions {
   margin-top: 1rem;
-  background: #eef3fb;
-  border-color: #b9cdea;
+  background: var(--paper);
+  border-color: var(--rule);
 }
 
 .election-banner {
@@ -431,20 +488,24 @@
   text-align: center;
 }
 
+/* Dark-Mode-Kontrast-Fix (2026-09-13, siehe mistakes.md): hart codierte
+   Pastellfarben durch die theme-bewussten --positive-bg/--seal-bg/--seal-
+   strong-Variablen ersetzt (index.css) -- Text bleibt --ink, das jetzt
+   in BEIDEN Modi zum Hintergrund passt statt nur im Hellen. */
 .election-banner.won {
-  background: #e8f7ec;
-  border-color: #8fd6a4;
+  background: var(--positive-bg);
+  border-color: var(--positive);
 }
 
 .election-banner.lost {
-  background: #fceceb;
-  border-color: #e0a49e;
+  background: var(--seal-bg);
+  border-color: var(--seal);
 }
 
 .dilemma-banner {
   margin: 1rem 0;
-  background: #fdf1e6;
-  border-color: #e8b980;
+  background: var(--seal-bg);
+  border-color: var(--seal);
 }
 
 /* B5 "Wahlprognose mit sichtbarem Turnout/Apathie" (BACKLOG.md) */
@@ -453,13 +514,13 @@
 }
 
 .election-projection.won {
-  background: #e8f7ec;
-  border-color: #8fd6a4;
+  background: var(--positive-bg);
+  border-color: var(--positive);
 }
 
 .election-projection.lost {
-  background: #fceceb;
-  border-color: #e0a49e;
+  background: var(--seal-bg);
+  border-color: var(--seal);
 }
 
 .projection-groups {
@@ -527,8 +588,8 @@
 /* B1 "Legislatur-Bogen & Amtszeit-Debrief" (BACKLOG.md) */
 .term-summary {
   margin: 1rem 0;
-  background: #eef2fb;
-  border-color: #a9bde5;
+  background: var(--paper-raised);
+  border-color: var(--rule);
 }
 
 .term-categories {
@@ -589,8 +650,8 @@ button:disabled {
    vergangener Runden statt nur der letzten. */
 .history {
   margin-top: 1rem;
-  background: #f7f7fa;
-  border-color: #d8d8e0;
+  background: var(--paper);
+  border-color: var(--rule);
 }
 
 .history-list {
@@ -601,13 +662,13 @@ button:disabled {
 .history-list > li {
   display: block;
   padding: 0.5rem 0;
-  border-bottom: 1px solid #e4e4ea;
+  border-bottom: 1px solid var(--rule);
 }
 
 .history-sub {
   margin: 0.25rem 0 0 1rem;
   font-size: 0.85rem;
-  color: #444;
+  color: var(--ink-dim);
 }
 
 .history-sub li {
@@ -619,12 +680,16 @@ button:disabled {
 /* M5 "Opposition-Loop" (BACKLOG.md B15 Phase 4): Sonntagsfrage-Overlay
    im Stil deutscher Umfragen. Zeigt Regierung vs. Opposition mit
    Koalitionsfähigkeit-Schwelle. */
+/* Dark-Mode-Kontrast-Fix (2026-09-13, siehe mistakes.md/CLAUDE.md "Offen
+   aus demselben UX-Pass"): war die letzte grosse, staendig sichtbare Karte
+   mit hart codiertem hellen Hintergrund + geerbter --ink-Textfarbe. */
 .sonntagsfrage-overlay {
-  background: linear-gradient(to bottom, #f9f9fc, #f3f3f8);
-  border: 1px solid #d8d8e0;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
   border-radius: 3px;
   padding: 1.5rem;
   margin-bottom: 1.5rem;
+  color: var(--ink);
 }
 
 .sonntagsfrage-title {
@@ -694,8 +759,8 @@ button:disabled {
   position: relative;
   height: 2rem;
   margin-bottom: 1rem;
-  background: #fafafa;
-  border: 1px solid #d8d8e0;
+  background: var(--paper);
+  border: 1px solid var(--rule);
   border-radius: 2px;
 }
 
@@ -751,7 +816,7 @@ button:disabled {
 
 .election-standings .standings-player {
   font-weight: 700;
-  background: #fff8e1;
+  background: var(--positive-bg);
 }
 
 /* B20 "Party-Legacy": bestehende Parteien im Startmenue */
@@ -806,7 +871,7 @@ button:disabled {
 }
 
 .opposition-mode-hint {
-  background: #e3f2fd;
+  background: var(--paper-raised);
   border-left: 4px solid #1e88e5;
   padding: 0.75rem 1rem;
   margin: 0;
@@ -815,7 +880,7 @@ button:disabled {
 
 /* Opposition-Wahl-Dialog nach Wahlverlust */
 .opposition-choice {
-  background: #f0f4f8;
+  background: var(--paper-raised);
   border: 2px solid #1e88e5;
   border-radius: 3px;
   padding: 1.5rem;
@@ -1389,7 +1454,7 @@ button:disabled {
 }
 
 .coalition-dialog .coalition-info {
-  background: #f9f9f9;
+  background: var(--paper);
   border-left: 4px solid #c41c3b;
   padding: 1rem;
   margin: 1rem 0;

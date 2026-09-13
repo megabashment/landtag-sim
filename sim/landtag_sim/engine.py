@@ -46,6 +46,7 @@ import operator as _operator
 
 from landtag_sim.dilemmas import evaluate_dilemmas
 from landtag_sim.events import evaluate_events
+from landtag_sim.opposition_voices import generate_opposition_reaction, turn_category_changes
 from landtag_sim.reports import evaluate_reports
 from landtag_sim.situations import evaluate_situations
 from landtag_sim.models import (
@@ -1008,6 +1009,17 @@ def advance_turn(
         new_state.term_dilemma_count = 0
         new_state.term_event_count = 0
 
+    # "Demokratie-Drama"-Pass (Nutzer-Feedback 2026-09-13): Oppositions-Zitat
+    # aus den Attributionen DIESER Runde, wenn eine Rivalen-Partei "ihre"
+    # Achse verschlechtert sieht (siehe opposition_voices.py). No-op ohne
+    # Rivalen (klassischer Modus, new_state.rival_parties ist dann leer).
+    opposition_reaction = None
+    if new_state.rival_parties:
+        this_turn_category_changes = turn_category_changes(attributions, _STAT_CATEGORY, _stat_direction)
+        opposition_reaction = generate_opposition_reaction(
+            this_turn_category_changes, new_state.rival_parties, new_state.turn
+        )
+
     return TurnResult(
         state=new_state,
         events=event_texts,
@@ -1017,6 +1029,7 @@ def advance_turn(
         term_summary=term_summary,
         reports=report_texts,
         triggered_event_keys=triggered_event_keys,
+        opposition_reaction=opposition_reaction,
     )
 
 

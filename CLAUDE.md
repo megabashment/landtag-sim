@@ -275,6 +275,41 @@ fällt `BundeslandBadge` auf die alte Platzhalter-Silhouette zurück statt
 nichts anzuzeigen. Live per Chrome DevTools MCP verifiziert (Header +
 Auswahl-Dialog zeigen jetzt echte, klar erkennbare Landkarten).
 
+### "Demokratie-Drama"-Pass (2026-09-13, Nutzer-Feedback: "das Spiel ist langweilig, der Punkt einer Demokratie-Sim kommt schwer rüber")
+
+Diagnose: die Mechanik ist solide, aber Konsequenzen wurden nie als
+MENSCHEN spürbar gemacht -- Wählergruppen sind Balken, Rivalen-Parteien
+sind Balken in der Sonntagsfrage, Events/Presseschau waren `<li>`-Listen.
+Erster, günstigster Hebel umgesetzt:
+
+- **Oppositions-Zitate:** `sim/landtag_sim/opposition_voices.py` (neu) --
+  jede Rivalen-Partei hat jetzt einen `leader_name` (`RivalParty.leader_name`,
+  z.B. "Friedrich Wessel" für die Wirtschaftsunion). Verschlechtert sich in
+  einer Runde die STATISTIK-ACHSE, die "ihrer" Ideologie entspricht
+  (green→environment, red→social, blue→economy) über einen Schwellenwert,
+  feuert ein deterministisches Zitat (`TurnResult.opposition_reaction`,
+  crc32-Seed-Auswahl wie `vignettes.py` -- kein LLM/NLP, Projekt-Constraint).
+  Höchstens ein Zitat pro Runde, None in ruhigen Runden oder ohne Rivalen.
+- **Presseschau als Zeitungsseite:** `FrontPage`-Komponente (`App.jsx`)
+  ersetzt die separaten `<li>`-Listen für Events/Reports durch eine
+  Titelseiten-Optik (Eilmeldungs-Kicker, große Serifen-Headline, Oppositions-
+  Zitat als eigener Zitat-Block) -- reines Anzeige-Layout, keine Sim-Logik
+  angefasst.
+- Dabei zwei weitere Dark-Mode-Kontrast-Bugs gefunden+gefixt (`.attributions`/
+  `.history` hart codierte helle Hintergründe, gleiches Muster wie beim
+  UX-Pass) -- siehe `mistakes.md`.
+- Live per Chrome DevTools MCP verifiziert: `bildungsoffensive` enacted →
+  nach 2 Runden erscheint "„Ein weiterer Beweis wirtschaftlicher
+  Ahnungslosigkeit dieser Regierung.“ — Friedrich Wessel (Wirtschaftsunion)"
+  auf der Titelseite.
+- 5 neue Sim-Tests (`test_engine.py`), 2 neue Backend-Tests
+  (`test_party_legacy.py`).
+
+**Offen für einen weiteren Drama-Pass** (nicht umgesetzt, siehe Diagnose in
+der Chat-Historie): Stimmungs-Gesicht statt reiner Zahl, Wahlnacht als
+eigene dramatische Szene, seltene "Wildcard"-Ereignisse außerhalb des
+balancierten Dilemma-Pools.
+
 ---
 
 **Für tiefere Doku:** `docs/architecture.md` (Game-Director-Review), `docs/game-design-roadmap.md` (P0-P2 Roadmap), `ARCHIVE.md` (historische Learnings).

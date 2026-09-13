@@ -28,6 +28,8 @@
   --seal-strong: rgba(160, 43, 30, 0.16);
   --gold: #8a6d24;          /* Ministerial-Gold -- politisches Kapital */
   --positive: #2e6b41;
+  --positive-bg: rgba(46, 107, 65, 0.1);
+  --positive-strong: rgba(46, 107, 65, 0.22);
 
   color-scheme: light dark;
   font: 400 17px/1.55 var(--body);
@@ -51,6 +53,8 @@
     --seal-strong: rgba(216, 96, 78, 0.22);
     --gold: #c7a75a;
     --positive: #6fb187;
+    --positive-bg: rgba(111, 177, 135, 0.13);
+    --positive-strong: rgba(111, 177, 135, 0.24);
   }
 }
 

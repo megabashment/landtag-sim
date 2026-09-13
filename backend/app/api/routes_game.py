@@ -650,7 +650,7 @@ def _build_state_response(db: Session, session: GameSession) -> SessionStateResp
         party_ideology=sim_state.party_ideology if session.party_id else None,
         admin_unit_name=admin_unit_name,
         rival_parties=[
-            RivalPartyOut(name=r.name, ideology=r.ideology, approval=round(r.approval, 1))
+            RivalPartyOut(name=r.name, ideology=r.ideology, approval=round(r.approval, 1), leader_name=r.leader_name)
             for r in sim_state.rival_parties
         ],
     )
@@ -1115,6 +1115,7 @@ def advance_session_turn(
         pending_dilemma=_pending_dilemma_out(session),
         term_summary=term_summary_out,
         reports=result.reports,
+        opposition_reaction=result.opposition_reaction,
     )
 
 

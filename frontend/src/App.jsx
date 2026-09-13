@@ -373,6 +373,41 @@ function PartyDetailModal({ partyId, onClose }) {
   );
 }
 
+// "Demokratie-Drama"-Pass (Nutzer-Feedback 2026-09-13: "das Spiel ist
+// langweilig, der Punkt einer Demokratie-Sim kommt schwer rueber"): Events/
+// Presseschau/Oppositions-Zitat waren bisher schlichte <li>-Listen -- eine
+// Zeitungsseiten-Praesentation macht dieselben Daten spuerbar, ohne die
+// Sim-Logik anzufassen (reines Anzeige-Layout). Nur EIN Element pro Runde
+// je Kategorie (Event max. 1, Report max. 1, Oppositions-Zitat max. 1 --
+// alles bereits serverseitig so begrenzt), daher passt eine Titelseite
+// mit Aufmacher + Meldung + Zitat gut, ohne ueberladen zu wirken.
+function FrontPage({ events, reports, oppositionReaction }) {
+  if (events.length === 0 && reports.length === 0 && !oppositionReaction) return null;
+  return (
+    <section className="panel front-page">
+      <span className="front-page__masthead">Aktuelle Ausgabe &middot; Runde im Rueckblick</span>
+      {events.map((text, i) => (
+        <div key={`event-${i}`} className="front-page__story front-page__story--lead">
+          <span className="front-page__kicker">Eilmeldung</span>
+          <h2 className="front-page__headline">{text}</h2>
+        </div>
+      ))}
+      {reports.map((text, i) => (
+        <div key={`report-${i}`} className="front-page__story">
+          <span className="front-page__kicker">Presseschau</span>
+          <h3 className="front-page__headline front-page__headline--secondary">{text}</h3>
+        </div>
+      ))}
+      {oppositionReaction && (
+        <div className="front-page__quote-block">
+          <span className="front-page__kicker">Stimme der Opposition</span>
+          <blockquote className="front-page__quote">{oppositionReaction}</blockquote>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function CoalitionDialog({ electionResult, onAccept, onDecline, disabled }) {
   if (!electionResult || electionResult.won || electionResult.coalition_viability < 30) {
     return null; // Nicht anzeigen wenn kein Verlust oder koalition nicht möglich
@@ -814,6 +849,10 @@ export default function App() {
   // Presseschau-Meldungen (kein Sim-Effekt), hoechstens eine pro Runde und
   // nur in Runden ohne Ereignis/Dilemma.
   const [reports, setReports] = useState([]);
+  // "Demokratie-Drama"-Pass (Nutzer-Feedback 2026-09-13): Oppositions-Zitat
+  // eines Rivalen-Fraktionsvorsitzenden, hoechstens eines pro Runde (siehe
+  // opposition_voices.py). null ohne Rivalen oder in ruhigen Runden.
+  const [oppositionReaction, setOppositionReaction] = useState(null);
   const [electionResult, setElectionResult] = useState(null);
   // M6 Phase 2 "Advanced Opposition": flag zur Kontrolle der Koalitions-Dialog-Anzeige
   const [showCoalitionDialog, setShowCoalitionDialog] = useState(false);
@@ -982,6 +1021,7 @@ export default function App() {
       setEvents([]);
       setAttributions([]);
       setReports([]);
+      setOppositionReaction(null);
       setElectionResult(null);
       setTermSummary(null);
       setSelectedPolicies([]);
@@ -1013,6 +1053,7 @@ export default function App() {
       setEvents([]);
       setAttributions([]);
       setReports([]);
+      setOppositionReaction(null);
       setElectionResult(null);
       setTermSummary(null);
       setSelectedPolicies([]);
@@ -1038,6 +1079,7 @@ export default function App() {
       setEvents([]);
       setAttributions([]);
       setReports([]);
+      setOppositionReaction(null);
       setElectionResult(null);
       setTermSummary(null);
       setSelectedPolicies([]);
@@ -1063,6 +1105,7 @@ export default function App() {
       setEvents([]);
       setAttributions([]);
       setReports([]);
+      setOppositionReaction(null);
       setElectionResult(null);
       setTermSummary(null);
       setSelectedPolicies([]);
@@ -1091,6 +1134,7 @@ export default function App() {
       setEvents(result.events);
       setAttributions(result.attributions);
       setReports(result.reports ?? []);
+      setOppositionReaction(result.opposition_reaction ?? null);
       setElectionResult(result.election_result);
       setTermSummary(result.term_summary);
       setSelectedPolicies([]);
@@ -1163,6 +1207,7 @@ export default function App() {
       setEvents(result.events);
       setAttributions(result.attributions);
       setReports(result.reports ?? []);
+      setOppositionReaction(result.opposition_reaction ?? null);
       setElectionResult(result.election_result);
       setTermSummary(result.term_summary);
       setSelectedPolicies([]);
@@ -1222,6 +1267,7 @@ export default function App() {
       setAttributions(result.attributions);
       setEvents([]);
       setReports([]);
+      setOppositionReaction(null);
       setElectionResult(null);
       setTermSummary(null);
       pushHistoryEntry({
@@ -1748,27 +1794,7 @@ export default function App() {
             </div>
           </section>
 
-          {events.length > 0 && (
-            <section className="panel events">
-              <h2>Ereignisse dieser Runde</h2>
-              <ul>
-                {events.map((text, i) => (
-                  <li key={i}>{text}</li>
-                ))}
-              </ul>
-            </section>
-          )}
-
-          {reports.length > 0 && (
-            <section className="panel reports">
-              <h2>Presseschau</h2>
-              <ul>
-                {reports.map((text, i) => (
-                  <li key={i}>{text}</li>
-                ))}
-              </ul>
-            </section>
-          )}
+          <FrontPage events={events} reports={reports} oppositionReaction={oppositionReaction} />
 
           {attributions.length > 0 && (
             <section className="panel attributions">

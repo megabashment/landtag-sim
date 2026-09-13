@@ -740,3 +740,44 @@ Kernmechanik-Screens (hier: der GESAMTE Policy-Katalog) sollten nicht
 monatelang ohne einen einzigen Klicktest bleiben, nur weil Unit-Tests
 gruen sind -- Unit-Tests pruefen hier nur, dass ein Endpoint 200
 zurueckgibt, nicht, dass sein Inhalt fuer die UI tatsaechlich NUTZBAR ist.
+
+## Noch zwei hart codierte helle Panel-Hintergruende im Dark Mode uebersehen (`.attributions`/`.history`)
+
+**Wo:** `frontend/src/App.css`, gefunden beim "Demokratie-Drama"-Pass
+(2026-09-13) waehrend eines Live-Klicktests.
+
+**Was:** Derselbe Bug wie zuvor bei `.scenario-card`/`.campaign-effects`
+(siehe Eintrag oben) -- `.attributions` (`background: #eef3fb`) und
+`.history` (`background: #f7f7fa`) hatten ebenfalls hart codierte helle
+Hintergruende, waehrend ihr Text weiterhin `var(--ink)` erbte (im Dark Mode
+ein heller Cremeton). Genau wie beim ersten Mal beim Codelesen unauffaellig
+(#eef3fb sieht "wie ein Panel" aus), erst im echten Screenshot als fast
+unlesbarer Text sichtbar.
+
+**Fix:** Beide auf `var(--paper)`/`var(--rule)` umgestellt, dazu
+`.history-list > li`-Trennlinien und `.history-sub`/`.history-reports li`-
+Textfarben von hart codierten Grautoenen (`#444`/`#555`/`#e4e4ea`) auf
+`var(--ink-dim)`/`var(--rule)`. Nebenbei zwei tote Regeln entfernt
+(`.events`/`.reports` -- durch die neue `FrontPage`-Komponente ersetzt,
+niemand referenzierte sie mehr).
+
+**Lehre:** Dieselbe Lehre wie beim ersten Fund, jetzt zum zweiten Mal
+bestaetigt: Ein einzelner behobener Kontrast-Bug ist kein Beweis, dass ALLE
+aehnlichen Stellen im Codebase gefunden wurden. Diesmal direkt umgesetzt
+(nicht nur als Vorsatz notiert): `grep -n "background: #[0-9a-fA-F]" src/
+App.css` lieferte ~28 Treffer, davon 9 weitere echte Bugs (`.election-
+banner`/`.election-projection` won/lost, `.dilemma-banner`, `.term-summary`,
+`.election-standings .standings-player`, `.opposition-mode-hint`,
+`.opposition-choice`, `.sonntagsfrage-overlay` + `.sonntagsfrage-threshold`,
+`.coalition-dialog .coalition-info`) -- alles Panels mit hart codiertem
+hellem Hintergrund + geerbter `--ink`-Textfarbe. Dabei zwei neue Theme-
+Variablen ergaenzt (`--positive-bg`/`--positive-strong` in `index.css`,
+analog zu `--seal-bg`/`--seal-strong`), damit "Erfolg"-Banner nicht auf
+hart codiertes Gruen zurueckfallen mussten. Die uebrigen ~19 Treffer waren
+KEINE Bugs (Badges/Buttons mit explizit gepaarter Hintergrund+Text-Farbe,
+z.B. `.cost-badge`/`.policy-card`-Familie, oder reine Deko-Elemente ohne
+Text wie Balken-Fuellungen) -- der Grep allein reicht nicht, jeder Treffer
+brauchte eine kurze Pruefung "hat das Element eine EXPLIZITE Textfarbe,
+oder erbt es `--ink`?". Genereller: wenn eine Lehre "das haette man
+systematisch pruefen sollen" lautet, in DERSELBEN Session gleich den Grep
+laufen lassen, nicht nur fuer die Zukunft aufschreiben.
