@@ -46,6 +46,12 @@
 .bundesland-badge {
   color: var(--ink-dim);
   flex-shrink: 0;
+  object-fit: contain;
+  border-radius: 3px;
+  /* Die echten Lagekarten haben einen hellen Fond (siehe bundeslandData.js) --
+     ein zarter Rahmen fasst das Rechteck sauber ein statt hart auf dem
+     dunklen Amtsblatt-Hintergrund zu "schweben". */
+  box-shadow: 0 0 0 1px var(--rule);
 }
 
 .bundesland-card-header {

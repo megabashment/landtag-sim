@@ -259,6 +259,22 @@ auch bereits existierende Zeilen (selbstheilend für laufende DBs). Live
 per Chrome DevTools MCP verifiziert (Policy anklicken → Checkbox + roter
 Auswahl-Rahmen). Details + Lehre: siehe `mistakes.md`.
 
+### Echte Bundesland-Lagekarten (2026-09-13, Nutzer-Feedback)
+
+Die Platzhalter-Silhouetten aus dem UX-Pass wurden durch echte Vektorkarten
+ersetzt: Deutschland-Umriss mit dem jeweiligen Bundesland farbig
+hervorgehoben (Wikimedia Commons, Autor TUBS, CC BY-SA 3.0 -- siehe
+CREDITS.md). Dateien liegen unverändert (keine Bearbeitung, daher kein
+Share-Alike-Problem) unter `frontend/public/maps/{niedersachsen,bayern,
+nrw}.svg` (~680 KB je Datei) und werden per `<img>` eingebunden
+(`BundeslandBadge` in `App.jsx`), nicht inline -- zu groß fürs JS-Bundle,
+als Standalone-Datei einmalig vom Browser geladen/gecacht.
+`bundeslandData.js::REAL_MAP_KEYS` markiert, für welche Bundesländer eine
+echte Karte existiert; fehlt sie (künftiges Bundesland ohne Kartenmaterial),
+fällt `BundeslandBadge` auf die alte Platzhalter-Silhouette zurück statt
+nichts anzuzeigen. Live per Chrome DevTools MCP verifiziert (Header +
+Auswahl-Dialog zeigen jetzt echte, klar erkennbare Landkarten).
+
 ---
 
 **Für tiefere Doku:** `docs/architecture.md` (Game-Director-Review), `docs/game-design-roadmap.md` (P0-P2 Roadmap), `ARCHIVE.md` (historische Learnings).

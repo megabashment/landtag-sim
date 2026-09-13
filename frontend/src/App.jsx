@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "./api";
 import { STAT_ICON_PATHS } from "./statIcons";
 import { PARTY_ICONS } from "./partyIcons";
-import { BUNDESLAND_SILHOUETTES, bundeslandKeyFromName } from "./bundeslandData";
+import { PLACEHOLDER_SILHOUETTES, bundeslandKeyFromName, bundeslandMapSrc } from "./bundeslandData";
 import "./App.css";
 
 // B14: kleines Statistik-Icon (game-icons.net, CC BY 3.0 -- siehe CREDITS.md).
@@ -17,11 +17,27 @@ function StatIcon({ statKey }) {
   );
 }
 
-// Game-Director-Review (2026-09-12): Platzhalter-Silhouette pro Bundesland
-// (siehe bundeslandData.js -- KEINE echten Landesgrenzen, nur Formsprache
-// zur Unterscheidung, bis echte Wikimedia-Commons-Umrisse eingebunden sind).
+// Nutzer-Feedback (2026-09-13): echte Vektor-Lagekarten (Wikimedia Commons,
+// TUBS, CC BY-SA 3.0 -- siehe CREDITS.md/bundeslandData.js) statt der
+// vorherigen Platzhalter-Silhouetten. Als <img> auf die statische Datei
+// (frontend/public/maps/<key>.svg) statt Inline-SVG -- die Dateien sind
+// mit ~680 KB deutlich zu gross fuers JS-Bundle, als Standalone-Datei
+// werden sie einmal vom Browser geladen und gecacht. Faellt fuer ein
+// Bundesland ohne echte Karte (noch) auf die Platzhalter-Silhouette zurueck.
 function BundeslandBadge({ bundeslandKey, size = 40 }) {
-  const shape = BUNDESLAND_SILHOUETTES[bundeslandKey];
+  const mapSrc = bundeslandMapSrc(bundeslandKey);
+  if (mapSrc) {
+    return (
+      <img
+        className="bundesland-badge"
+        src={mapSrc}
+        alt=""
+        style={{ width: size, height: size }}
+      />
+    );
+  }
+
+  const shape = PLACEHOLDER_SILHOUETTES[bundeslandKey];
   if (!shape) return null;
   return (
     <svg
