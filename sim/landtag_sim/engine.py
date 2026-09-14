@@ -47,7 +47,9 @@ import operator as _operator
 from landtag_sim.dilemmas import evaluate_dilemmas
 from landtag_sim.events import evaluate_events
 from landtag_sim.citizen_voices import generate_citizen_voice
+from landtag_sim.election_drama import generate_election_headline
 from landtag_sim.opposition_voices import generate_opposition_reaction, turn_category_changes
+from landtag_sim.wildcard_events import maybe_generate_wildcard
 from landtag_sim.reports import evaluate_reports
 from landtag_sim.situations import evaluate_situations
 from landtag_sim.models import (
@@ -953,6 +955,16 @@ def advance_turn(
         if new_state.report_cooldowns[key] > 0:
             new_state.report_cooldowns[key] -= 1
 
+    # 2d) Wildcard-Ereignis (Fortsetzung "Demokratie-Drama"-Pass, "mach
+    # weiter", 2026-09-14, siehe wildcard_events.py): nur in Runden, die
+    # ansonsten KOMPLETT leer waeren (kein Event, kein Dilemma, kein
+    # Report) -- die haeufigste und "langweiligste" Situation. Rein
+    # textlich, keine Statistik-Wirkung, feuert selten (siehe
+    # WILDCARD_FIRE_PERCENT).
+    wildcard_event = None
+    if not event_texts and pending_dilemma is None and not report_texts:
+        wildcard_event = maybe_generate_wildcard(new_state.turn)
+
     # 3) Waehlerzufriedenheit auf Basis ALLER attribuierten Deltas dieser Runde
     # (Policies + Events) anpassen. Vereinfachtes, aber nachvollziehbares Modell:
     # jede Gruppe reagiert gewichtet auf Aenderungen, die grob in
@@ -991,12 +1003,20 @@ def advance_turn(
         # wenn opposition_viability >= 30.
         coalition_viability = _calculate_coalition_viability(new_state, opposition_mode=True)
 
+        # "Demokratie-Drama"-Pass, Fortsetzung: deterministische Wahlnacht-
+        # Schlagzeile passend zum Abstand des Ergebnisses (siehe
+        # election_drama.py).
+        headline = generate_election_headline(
+            won, standings, approval, ELECTION_APPROVAL_THRESHOLD, new_state.turn
+        )
+
         election_result = ElectionResult(
             approval=approval,
             threshold=ELECTION_APPROVAL_THRESHOLD,
             won=won,
             standings=standings,
             coalition_viability=coalition_viability,
+            headline=headline,
         )
         # B1 (BACKLOG.md): Bilanz der gerade abgelaufenen Legislaturperiode
         # bauen -- BEVOR das Term-Tracking auf den naechsten Zyklus
@@ -1040,6 +1060,7 @@ def advance_turn(
         triggered_event_keys=triggered_event_keys,
         opposition_reaction=opposition_reaction,
         citizen_voice=citizen_voice,
+        wildcard_event=wildcard_event,
     )
 
 

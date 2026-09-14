@@ -62,6 +62,27 @@ def test_opposition_reaction_appears_when_rivals_axis_worsens(client):
     assert "Wirtschaftsunion" in fired
 
 
+def test_election_result_carries_a_headline(client):
+    """Fortsetzung "Demokratie-Drama"-Pass ("mach weiter", 2026-09-14): die
+    Wahlnacht bekommt eine Schlagzeile, siehe election_drama.py."""
+    body = _new_party(client, name="Wahlnachttest", ideology="red")
+    sid = body["session_id"]
+
+    with Session(engine) as db:
+        session = db.get(GameSession, sid)
+        session.turns_until_election = 1
+        db.add(session)
+        for vg in db.exec(select(VoterGroup).where(VoterGroup.session_id == sid)):
+            vg.satisfaction = 60.0
+            db.add(vg)
+        db.commit()
+
+    resp = client.post(f"/sessions/{sid}/advance", json={"enact_policy_keys": []}).json()
+    er = resp["election_result"]
+    assert er is not None
+    assert er["headline"] != ""
+
+
 def test_citizen_voice_appears_when_a_group_is_extremely_dissatisfied(client, session_id):
     """Fortsetzung "Demokratie-Drama"-Pass ("mach es noch lebendiger",
     2026-09-13): eine extrem unzufriedene Waehlergruppe muss per Zitat
@@ -76,6 +97,14 @@ def test_citizen_voice_appears_when_a_group_is_extremely_dissatisfied(client, se
     resp = client.post(f"/sessions/{session_id}/advance", json={})
     assert resp.status_code == 200
     assert resp.json()["citizen_voice"] is not None
+
+
+def test_advance_response_exposes_wildcard_event_field(client, session_id):
+    """wildcard_event ist immer im Response-Body vorhanden (haeufig None,
+    siehe wildcard_events.py) -- reiner Vertrags-/Serialisierungstest."""
+    resp = client.post(f"/sessions/{session_id}/advance", json={})
+    assert resp.status_code == 200
+    assert "wildcard_event" in resp.json()
 
 
 def test_classic_session_has_no_rivals_and_no_reputation(client, session_id):

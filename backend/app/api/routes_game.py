@@ -1033,6 +1033,7 @@ def advance_session_turn(
             won=result.election_result.won,
             standings=[list(s) for s in result.election_result.standings],
             coalition_viability=result.election_result.coalition_viability,
+            headline=result.election_result.headline,
         )
         # Wahlmechanik (P0, siehe docs/game-design-roadmap.md): verlorene Wahl
         # beendet die Session (kein weiteres /advance moeglich, siehe Check
@@ -1117,6 +1118,7 @@ def advance_session_turn(
         reports=result.reports,
         opposition_reaction=result.opposition_reaction,
         citizen_voice=result.citizen_voice,
+        wildcard_event=result.wildcard_event,
     )
 
 

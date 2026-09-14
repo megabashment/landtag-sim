@@ -328,6 +328,11 @@ class ElectionResult:
     standings: list[tuple[str, float]] = field(default_factory=list)
     # M6 "Advanced Opposition": Opposition-Koalitionsviabilität [0, 100]
     coalition_viability: float = 0.0
+    # "Demokratie-Drama"-Pass, Fortsetzung ("mach weiter", 2026-09-14):
+    # deterministische Wahlnacht-Schlagzeile passend zum Abstand des
+    # Ergebnisses (Erdrutsch/Zitterpartie/normal), siehe election_drama.py.
+    # Reine Anzeige -- keine Sim-Wirkung.
+    headline: str = ""
 
 
 @dataclass
@@ -565,6 +570,13 @@ class TurnResult:
     # citizen_voices.py). None in ruhigen Runden. Reine Anzeige -- keine
     # Sim-Wirkung.
     citizen_voice: str | None = None
+
+    # "Demokratie-Drama"-Pass, Fortsetzung ("mach weiter", 2026-09-14): eine
+    # seltene, rein textliche Ueberraschungsmeldung OHNE Statistik-Wirkung,
+    # nur in Runden OHNE Event/Dilemma/Report (siehe wildcard_events.py) --
+    # sorgt dafuer, dass eine komplett "leere" Runde nicht immer nur
+    # "Keine besonderen Vorkommnisse." zeigt. None in den meisten Runden.
+    wildcard_event: str | None = None
 
 
 @dataclass

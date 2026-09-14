@@ -1945,6 +1945,76 @@ def test_resolve_dilemma_can_carry_a_citizen_voice():
     assert result.citizen_voice is not None
 
 
+# --- "Demokratie-Drama"-Pass, Fortsetzung ("mach weiter", 2026-09-14) ------
+
+
+def test_election_headline_is_set_and_varies_by_outcome():
+    from landtag_sim.election_drama import generate_election_headline
+
+    win_landslide = generate_election_headline(True, [("Deine Partei", 70.0), ("Rivale", 30.0)], 70.0, 50.0, turn=1)
+    loss_landslide = generate_election_headline(False, [("Deine Partei", 20.0), ("Rivale", 80.0)], 20.0, 50.0, turn=1)
+    win_close = generate_election_headline(True, [("Deine Partei", 51.0), ("Rivale", 49.0)], 51.0, 50.0, turn=1)
+
+    assert win_landslide and loss_landslide and win_close
+    assert win_landslide != loss_landslide
+    assert win_landslide != win_close  # unterschiedliche Kategorie (Erdrutsch vs. Zitterpartie)
+
+
+def test_election_headline_is_deterministic():
+    from landtag_sim.election_drama import generate_election_headline
+
+    standings = [("Deine Partei", 55.0), ("Rivale", 45.0)]
+    a = generate_election_headline(True, standings, 55.0, 50.0, turn=7)
+    b = generate_election_headline(True, standings, 55.0, 50.0, turn=7)
+    assert a == b
+
+
+def test_advance_turn_election_result_carries_a_headline():
+    """Am Wahl-Turn selbst (advance_turn, nicht nur die reine Funktion) muss
+    ElectionResult.headline gesetzt sein."""
+    state = _state_with_rivals()
+    state.turns_until_election = 1
+    for group in state.voter_groups:
+        group.satisfaction = 60.0
+    result = advance_turn(state, SAMPLE_POLICIES, [])
+    assert result.election_result is not None
+    assert result.election_result.headline != ""
+
+
+def test_wildcard_fires_sometimes_in_fully_quiet_turns():
+    from landtag_sim.wildcard_events import maybe_generate_wildcard
+
+    hits = [maybe_generate_wildcard(t) for t in range(200)]
+    fired = [h for h in hits if h is not None]
+    assert len(fired) > 0
+    assert len(fired) < len(hits)  # nicht jede Runde -- bleibt selten
+
+
+def test_wildcard_pick_is_deterministic():
+    from landtag_sim.wildcard_events import maybe_generate_wildcard
+
+    # Ueber genug Runden muss mindestens ein reproduzierbarer Treffer dabei sein.
+    turn = next(t for t in range(200) if maybe_generate_wildcard(t) is not None)
+    assert maybe_generate_wildcard(turn) == maybe_generate_wildcard(turn)
+
+
+def test_wildcard_never_fires_when_an_event_already_happened():
+    """engine.py prueft Wildcards nur in KOMPLETT leeren Runden -- eine Runde
+    mit Event darf nie zusaetzlich ein Wildcard tragen."""
+    state = build_initial_state()
+    state.statistics["unemployment_rate"] = 20.0  # loest garantiert ein Event aus
+    rule = EventRule(
+        key="hohe_arbeitslosigkeit_test",
+        statistic_key="unemployment_rate",
+        operator=">",
+        threshold=10.0,
+        template_text="Testereignis",
+    )
+    result = advance_turn(state, [], [rule])
+    assert result.events  # Event ist tatsaechlich gefeuert
+    assert result.wildcard_event is None
+
+
 def test_election_with_rivals_uses_plurality_not_threshold():
     """Mit Rivalen zählt der höchste Stimmenanteil -- eine Partei kann mit
     < 50 gewichteter Zustimmung gewinnen, wenn die Rivalen schwächer sind."""

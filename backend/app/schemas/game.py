@@ -288,6 +288,9 @@ class ElectionResultOut(BaseModel):
     # M6 Phase 2 "Advanced Opposition": Koalitionsviabilität [0, 100]
     # Bei Niederlage >= 30 kann Koalition angeboten werden
     coalition_viability: float = 0.0
+    # "Demokratie-Drama"-Pass, Fortsetzung ("mach weiter", 2026-09-14):
+    # deterministische Wahlnacht-Schlagzeile, siehe election_drama.py.
+    headline: str = ""
 
 
 class GoalResultOut(BaseModel):
@@ -353,6 +356,10 @@ class AdvanceTurnResponse(BaseModel):
     # citizen_voices.py. None in ruhigen Runden -- funktioniert auch ohne
     # Rivalen (klassischer Modus).
     citizen_voice: str | None = None
+    # Fortsetzung ("mach weiter", 2026-09-14): seltene Ueberraschungsmeldung
+    # ohne Statistik-Wirkung, nur in ansonsten leeren Runden, siehe
+    # wildcard_events.py.
+    wildcard_event: str | None = None
 
 
 class ResolveDilemmaRequest(BaseModel):

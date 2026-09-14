@@ -340,6 +340,38 @@ Zwei der oben offen gelassenen Punkte umgesetzt:
 **Weiterhin offen:** Wahlnacht als eigene dramatische Szene, seltene
 "Wildcard"-Ereignisse außerhalb des balancierten Dilemma-Pools.
 
+### "Demokratie-Drama"-Pass, dritte Runde (2026-09-14, "mach weiter")
+
+Die letzten beiden offenen Punkte umgesetzt:
+
+- **Wahlnacht-Schlagzeile:** `sim/landtag_sim/election_drama.py` (neu) --
+  `ElectionResult.headline` liefert eine deterministische Schlagzeile passend
+  zum tatsächlichen Abstand des Ergebnisses (Erdrutsch ≥ 18 Punkte,
+  Zitterpartie ≤ 3 Punkte, sonst normal -- je 3 Varianten für Sieg/Niederlage,
+  crc32-Seed-Auswahl). Mit Rivalen zählt der Abstand Platz1↔Platz2 der
+  Rangliste, ohne Rivalen der Abstand Zustimmung↔Schwellenwert. Im
+  `election-banner` als "WAHLNACHT"-Kicker + kursive Zeile über den
+  Prozentzahlen angezeigt.
+- **Wildcard-Ereignisse:** `sim/landtag_sim/wildcard_events.py` (neu) --
+  10 rein textliche Farbmeldungen OHNE jede Statistik-Wirkung (bewusst
+  außerhalb des balancierten Event-/Dilemma-Pools, kein Balance-Risiko).
+  Werden nur in Runden geprüft, die SONST komplett leer wären (kein Event,
+  kein Dilemma, kein Report -- die häufigste "langweiligste" Situation),
+  und feuern dann nur mit 15% Wahrscheinlichkeit (deterministisch per
+  crc32(turn), kein `random`). `TurnResult.wildcard_event`, auf der
+  `FrontPage` als "Kuriosum"-Meldung angezeigt.
+- Live verifiziert: Wahlnacht per DB-Manipulation (Zustimmung hoch,
+  `turns_until_election=1`) erzwungen → "WAHLNACHT · Wahl gewonnen! ·
+  Historisches Ergebnis -- die Konkurrenz wird regelrecht abgehängt."
+  erscheint korrekt. Wildcard per 25× `/advance`-Loop gegen die laufende
+  Session getestet -- feuerte bei Runde 24 wie erwartet ("Ein Boulevardblatt
+  kürt die Landesregierung zur 'unauffälligsten des Jahres'...").
+- 6 neue Sim-Tests (`test_engine.py`), 2 neue Backend-Tests
+  (`test_party_legacy.py`).
+
+Damit ist die im ersten Drama-Pass offen gelassene Liste (Stimmungs-Gesicht,
+Bürgerstimmen, Wahlnacht, Wildcards) vollständig umgesetzt.
+
 ---
 
 **Für tiefere Doku:** `docs/architecture.md` (Game-Director-Review), `docs/game-design-roadmap.md` (P0-P2 Roadmap), `ARCHIVE.md` (historische Learnings).

@@ -522,6 +522,28 @@
   border-color: var(--seal);
 }
 
+/* Fortsetzung "Demokratie-Drama"-Pass ("mach weiter", 2026-09-14): die
+   Wahlnacht bekommt eine eigene Schlagzeile statt nur Prozentzahlen --
+   siehe election_drama.py. */
+.election-banner__kicker {
+  display: block;
+  font-family: var(--data);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  margin-bottom: 0.3rem;
+}
+
+.election-banner__headline {
+  font-family: var(--body);
+  font-weight: 600;
+  font-style: italic;
+  font-size: 1.1rem;
+  margin: 0.3rem 0 0.6rem;
+}
+
 .dilemma-banner {
   margin: 1rem 0;
   background: var(--seal-bg);

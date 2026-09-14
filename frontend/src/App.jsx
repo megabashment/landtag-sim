@@ -381,8 +381,16 @@ function PartyDetailModal({ partyId, onClose }) {
 // je Kategorie (Event max. 1, Report max. 1, Oppositions-Zitat max. 1 --
 // alles bereits serverseitig so begrenzt), daher passt eine Titelseite
 // mit Aufmacher + Meldung + Zitat gut, ohne ueberladen zu wirken.
-function FrontPage({ events, reports, oppositionReaction, citizenVoice }) {
-  if (events.length === 0 && reports.length === 0 && !oppositionReaction && !citizenVoice) return null;
+function FrontPage({ events, reports, oppositionReaction, citizenVoice, wildcardEvent }) {
+  if (
+    events.length === 0 &&
+    reports.length === 0 &&
+    !oppositionReaction &&
+    !citizenVoice &&
+    !wildcardEvent
+  ) {
+    return null;
+  }
   return (
     <section className="panel front-page">
       <span className="front-page__masthead">Aktuelle Ausgabe &middot; Runde im Rueckblick</span>
@@ -398,6 +406,12 @@ function FrontPage({ events, reports, oppositionReaction, citizenVoice }) {
           <h3 className="front-page__headline front-page__headline--secondary">{text}</h3>
         </div>
       ))}
+      {wildcardEvent && (
+        <div className="front-page__story">
+          <span className="front-page__kicker">Kuriosum</span>
+          <h3 className="front-page__headline front-page__headline--secondary">{wildcardEvent}</h3>
+        </div>
+      )}
       {oppositionReaction && (
         <div className="front-page__quote-block">
           <span className="front-page__kicker">Stimme der Opposition</span>
@@ -885,6 +899,9 @@ export default function App() {
   // Waehlergruppe, hoechstens eines pro Runde (siehe citizen_voices.py).
   // null in ruhigen Runden -- funktioniert auch ohne Rivalen.
   const [citizenVoice, setCitizenVoice] = useState(null);
+  // Fortsetzung ("mach weiter", 2026-09-14): seltene Ueberraschungsmeldung
+  // ohne Sim-Wirkung, nur in ansonsten leeren Runden (siehe wildcard_events.py).
+  const [wildcardEvent, setWildcardEvent] = useState(null);
   const [electionResult, setElectionResult] = useState(null);
   // M6 Phase 2 "Advanced Opposition": flag zur Kontrolle der Koalitions-Dialog-Anzeige
   const [showCoalitionDialog, setShowCoalitionDialog] = useState(false);
@@ -1055,6 +1072,7 @@ export default function App() {
       setReports([]);
       setOppositionReaction(null);
       setCitizenVoice(null);
+      setWildcardEvent(null);
       setElectionResult(null);
       setTermSummary(null);
       setSelectedPolicies([]);
@@ -1088,6 +1106,7 @@ export default function App() {
       setReports([]);
       setOppositionReaction(null);
       setCitizenVoice(null);
+      setWildcardEvent(null);
       setElectionResult(null);
       setTermSummary(null);
       setSelectedPolicies([]);
@@ -1115,6 +1134,7 @@ export default function App() {
       setReports([]);
       setOppositionReaction(null);
       setCitizenVoice(null);
+      setWildcardEvent(null);
       setElectionResult(null);
       setTermSummary(null);
       setSelectedPolicies([]);
@@ -1142,6 +1162,7 @@ export default function App() {
       setReports([]);
       setOppositionReaction(null);
       setCitizenVoice(null);
+      setWildcardEvent(null);
       setElectionResult(null);
       setTermSummary(null);
       setSelectedPolicies([]);
@@ -1172,6 +1193,7 @@ export default function App() {
       setReports(result.reports ?? []);
       setOppositionReaction(result.opposition_reaction ?? null);
       setCitizenVoice(result.citizen_voice ?? null);
+      setWildcardEvent(result.wildcard_event ?? null);
       setElectionResult(result.election_result);
       setTermSummary(result.term_summary);
       setSelectedPolicies([]);
@@ -1246,6 +1268,7 @@ export default function App() {
       setReports(result.reports ?? []);
       setOppositionReaction(result.opposition_reaction ?? null);
       setCitizenVoice(result.citizen_voice ?? null);
+      setWildcardEvent(result.wildcard_event ?? null);
       setElectionResult(result.election_result);
       setTermSummary(result.term_summary);
       setSelectedPolicies([]);
@@ -1307,6 +1330,7 @@ export default function App() {
       setReports([]);
       setOppositionReaction(null);
       setCitizenVoice(result.citizen_voice ?? null);
+      setWildcardEvent(result.wildcard_event ?? null);
       setElectionResult(null);
       setTermSummary(null);
       pushHistoryEntry({
@@ -1486,7 +1510,11 @@ export default function App() {
 
           {electionResult && (
             <section className={`panel election-banner ${electionResult.won ? "won" : "lost"}`}>
+              <span className="election-banner__kicker">Wahlnacht</span>
               <h2>{electionResult.won ? "Wahl gewonnen!" : "Wahl verloren."}</h2>
+              {electionResult.headline && (
+                <p className="election-banner__headline">{electionResult.headline}</p>
+              )}
               <p>
                 Zufriedenheit (gewichtet): {electionResult.approval.toFixed(1)} / Schwellenwert{" "}
                 {electionResult.threshold.toFixed(1)}
@@ -1844,6 +1872,7 @@ export default function App() {
             reports={reports}
             oppositionReaction={oppositionReaction}
             citizenVoice={citizenVoice}
+            wildcardEvent={wildcardEvent}
           />
 
           {attributions.length > 0 && (
