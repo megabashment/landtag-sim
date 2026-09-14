@@ -149,6 +149,7 @@ def seed_rival_parties() -> list[dict]:
             "base_strength": r.base_strength,
             "approval": r.approval,
             "momentum": r.momentum,
+            "leader_name": r.leader_name,
         }
         for r in SAMPLE_RIVAL_PARTIES
     ]
@@ -163,6 +164,7 @@ def serialize_rival_parties(rivals: list) -> list[dict]:
             "base_strength": r.base_strength,
             "approval": r.approval,
             "momentum": r.momentum,
+            "leader_name": r.leader_name,
         }
         for r in rivals
     ]
@@ -330,6 +332,11 @@ def load_sim_state(
                 base_strength=r["base_strength"],
                 approval=r.get("approval", r["base_strength"]),
                 momentum=r.get("momentum", 0.0),
+                # "Demokratie-Drama"-Pass (2026-09-13): .get() mit Default,
+                # damit bereits laufende Sessions (JSON ohne dieses Feld)
+                # nicht crashen -- die Oppositions-Zitate fallen fuer sie auf
+                # den Parteinamen zurueck (siehe opposition_voices.py).
+                leader_name=r.get("leader_name", ""),
             )
             for r in (rival_parties or [])
         ],

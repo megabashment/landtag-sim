@@ -328,6 +328,11 @@ class ElectionResult:
     standings: list[tuple[str, float]] = field(default_factory=list)
     # M6 "Advanced Opposition": Opposition-Koalitionsviabilität [0, 100]
     coalition_viability: float = 0.0
+    # "Demokratie-Drama"-Pass, Fortsetzung ("mach weiter", 2026-09-14):
+    # deterministische Wahlnacht-Schlagzeile passend zum Abstand des
+    # Ergebnisses (Erdrutsch/Zitterpartie/normal), siehe election_drama.py.
+    # Reine Anzeige -- keine Sim-Wirkung.
+    headline: str = ""
 
 
 @dataclass
@@ -552,6 +557,27 @@ class TurnResult:
     # (Frequenz-Management, L5). Reine Anzeige -- keine Sim-Wirkung.
     reports: list[str] = field(default_factory=list)
 
+    # "Demokratie-Drama"-Pass (Nutzer-Feedback 2026-09-13): hoechstens EIN
+    # Zitat eines Rivalen-Fraktionsvorsitzenden pro Runde, wenn die Runde
+    # "seine" Statistik-Achse verschlechtert hat (siehe opposition_voices.py).
+    # None ohne Rivalen (klassischer Modus) oder in ruhigen Runden. Reine
+    # Anzeige -- keine Sim-Wirkung.
+    opposition_reaction: str | None = None
+
+    # "Demokratie-Drama"-Pass, Fortsetzung ("mach es noch lebendiger",
+    # 2026-09-13): hoechstens EIN Zitat einer Waehlergruppe pro Runde, wenn
+    # ihre Zufriedenheit gerade besonders extrem ist (siehe
+    # citizen_voices.py). None in ruhigen Runden. Reine Anzeige -- keine
+    # Sim-Wirkung.
+    citizen_voice: str | None = None
+
+    # "Demokratie-Drama"-Pass, Fortsetzung ("mach weiter", 2026-09-14): eine
+    # seltene, rein textliche Ueberraschungsmeldung OHNE Statistik-Wirkung,
+    # nur in Runden OHNE Event/Dilemma/Report (siehe wildcard_events.py) --
+    # sorgt dafuer, dass eine komplett "leere" Runde nicht immer nur
+    # "Keine besonderen Vorkommnisse." zeigt. None in den meisten Runden.
+    wildcard_event: str | None = None
+
 
 @dataclass
 class DelayedEffect:
@@ -584,6 +610,12 @@ class RivalParty:
     base_strength: float  # Sockel-Stimmenanteil ohne Lage-Bonus (z.B. 18.0)
     approval: float = 18.0  # aktueller Stimmenanteil, wird pro Runde aktualisiert
     momentum: float = 0.0  # EMA-Gedaechtnis fuer weiche Drift
+    # "Demokratie-Drama"-Pass (Nutzer-Feedback 2026-09-13, "der Punkt einer
+    # Demokratie-Sim kommt schwer rueber"): eine Rivalen-Partei war bisher nur
+    # ein Balken in der Sonntagsfrage. leader_name gibt ihr ein Gesicht fuer
+    # die Oppositions-Zitate (siehe opposition_voices.py) -- reiner Anzeige-
+    # wert, keine Sim-Wirkung.
+    leader_name: str = ""
 
 
 @dataclass

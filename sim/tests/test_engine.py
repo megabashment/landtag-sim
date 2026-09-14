@@ -19,6 +19,7 @@ from landtag_sim.models import (
     DilemmaRule,
     EventRule,
     InsufficientCapitalError,
+    PendingDilemma,
     Policy,
     PolicyAlreadyActiveError,
     PolicyEffect,
@@ -1812,6 +1813,206 @@ def test_rival_approval_grows_under_matching_discontent():
     green_after = next(r.approval for r in result_state.rival_parties if r.ideology == "green")
 
     assert green_after > green_before + 3.0
+
+
+# --- "Demokratie-Drama"-Pass (Nutzer-Feedback 2026-09-13) ------------------
+
+
+def test_opposition_reaction_fires_when_rivals_axis_worsens():
+    """bildungsoffensive senkt gdp_growth (economy) stark -- die blaue
+    Wirtschaftsunion muss irgendwann in den ersten Runden reagieren."""
+    state = _state_with_rivals()
+    result = advance_turn(state, SAMPLE_POLICIES, [], newly_enacted_keys=["bildungsoffensive"])
+
+    reactions = []
+    for _ in range(4):
+        result = advance_turn(result.state, SAMPLE_POLICIES, [])
+        reactions.append(result.opposition_reaction)
+
+    assert any(r is not None for r in reactions), "Erwartete mindestens ein Oppositions-Zitat"
+    fired = next(r for r in reactions if r is not None)
+    assert "Wirtschaftsunion" in fired
+    assert "Friedrich Wessel" in fired
+
+
+def test_opposition_reaction_is_none_in_calm_turn():
+    """Ohne nennenswerte Statistik-Bewegung darf kein Zitat erzwungen werden."""
+    state = _state_with_rivals()
+    result = advance_turn(state, [], [])
+    assert result.opposition_reaction is None
+
+
+def test_opposition_reaction_is_none_without_rival_parties():
+    """Klassischer Modus (keine Rivalen) darf nie ein Oppositions-Zitat liefern."""
+    state = build_initial_state()
+    assert state.rival_parties == []
+    result = advance_turn(state, SAMPLE_POLICIES, [], newly_enacted_keys=["bildungsoffensive"])
+    assert result.opposition_reaction is None
+
+
+def test_generate_opposition_reaction_picks_worst_affected_party():
+    from landtag_sim.models import RivalParty
+    from landtag_sim.opposition_voices import generate_opposition_reaction
+    from landtag_sim.sample_data import SAMPLE_RIVAL_PARTIES
+
+    rivals = [RivalParty(**vars(r)) for r in SAMPLE_RIVAL_PARTIES]
+    # green (Umwelt) leicht negativ, blue (Wirtschaft) stark negativ -> blue muss gewinnen.
+    category_changes = {"environment": -0.5, "economy": -5.0, "social": 0.2}
+    reaction = generate_opposition_reaction(category_changes, rivals, turn=3)
+    assert reaction is not None
+    assert "Wirtschaftsunion" in reaction
+
+
+def test_pick_quote_is_deterministic_and_varies_by_turn():
+    from landtag_sim.opposition_voices import pick_quote
+
+    a = pick_quote("blue", "Wirtschaftsunion:5")
+    b = pick_quote("blue", "Wirtschaftsunion:5")
+    assert a == b  # gleicher Seed -> gleiches Zitat
+
+    quotes_over_turns = {pick_quote("blue", f"Wirtschaftsunion:{t}") for t in range(20)}
+    assert len(quotes_over_turns) > 1  # ueber genug Runden sollten mehrere Zitate vorkommen
+
+
+def test_citizen_voice_fires_when_a_group_is_extremely_dissatisfied():
+    """Eine Waehlergruppe weit unter der Negativ-Schwelle muss irgendwann
+    (deterministisch, siehe citizen_voices.py) zu Wort kommen -- auch ganz
+    ohne Rivalen-Parteien (klassischer Modus)."""
+    state = build_initial_state()
+    state.voter_groups[0].satisfaction = 5.0
+    result = advance_turn(state, [], [])
+    assert result.citizen_voice is not None
+    assert state.voter_groups[0].name in result.citizen_voice
+
+
+def test_citizen_voice_fires_when_a_group_is_extremely_satisfied():
+    state = build_initial_state()
+    state.voter_groups[0].satisfaction = 95.0
+    result = advance_turn(state, [], [])
+    assert result.citizen_voice is not None
+    assert state.voter_groups[0].name in result.citizen_voice
+
+
+def test_citizen_voice_is_none_when_all_groups_are_moderate():
+    state = build_initial_state()
+    for group in state.voter_groups:
+        group.satisfaction = 50.0
+    result = advance_turn(state, [], [])
+    assert result.citizen_voice is None
+
+
+def test_citizen_voice_picks_the_most_extreme_group():
+    from landtag_sim.citizen_voices import generate_citizen_voice
+    from landtag_sim.models import VoterGroup
+
+    groups = [
+        VoterGroup(name="Mittelmaessig unzufrieden", population_share=0.5, satisfaction=30.0, weight_economy=1.5),
+        VoterGroup(name="Voellig verzweifelt", population_share=0.5, satisfaction=5.0, weight_social=1.5),
+    ]
+    voice = generate_citizen_voice(groups, turn=1)
+    assert voice is not None
+    assert "Voellig verzweifelt" in voice
+
+
+def test_pick_citizen_quote_is_deterministic_and_varies_by_turn():
+    from landtag_sim.citizen_voices import pick_quote
+
+    a = pick_quote("negative", "economy", "Rentner:5")
+    b = pick_quote("negative", "economy", "Rentner:5")
+    assert a == b  # gleicher Seed -> gleiches Zitat
+
+    quotes_over_turns = {pick_quote("negative", "economy", f"Rentner:{t}") for t in range(20)}
+    assert len(quotes_over_turns) > 1
+
+
+def test_resolve_dilemma_can_carry_a_citizen_voice():
+    """Eine Dilemma-Entscheidung ist ebenfalls ein Hoehepunkt-Moment (siehe
+    engine.py::resolve_dilemma) -- auch dort muss eine extreme Stimmung
+    zu Wort kommen koennen."""
+    state = build_initial_state()
+    state.voter_groups[0].satisfaction = 3.0
+    option = DilemmaOption(key="a", label="Option A", effects=[])
+    rule = DilemmaRule(
+        key="test-dilemma",
+        statistic_key="gdp_growth",
+        operator=">",
+        threshold=0.0,
+        prompt_text="Testfrage",
+        options=[option],
+    )
+    state.pending_dilemma = PendingDilemma(rule_key=rule.key, prompt=rule.prompt_text, options=rule.options)
+    result = resolve_dilemma(state, [rule], "a")
+    assert result.citizen_voice is not None
+
+
+# --- "Demokratie-Drama"-Pass, Fortsetzung ("mach weiter", 2026-09-14) ------
+
+
+def test_election_headline_is_set_and_varies_by_outcome():
+    from landtag_sim.election_drama import generate_election_headline
+
+    win_landslide = generate_election_headline(True, [("Deine Partei", 70.0), ("Rivale", 30.0)], 70.0, 50.0, turn=1)
+    loss_landslide = generate_election_headline(False, [("Deine Partei", 20.0), ("Rivale", 80.0)], 20.0, 50.0, turn=1)
+    win_close = generate_election_headline(True, [("Deine Partei", 51.0), ("Rivale", 49.0)], 51.0, 50.0, turn=1)
+
+    assert win_landslide and loss_landslide and win_close
+    assert win_landslide != loss_landslide
+    assert win_landslide != win_close  # unterschiedliche Kategorie (Erdrutsch vs. Zitterpartie)
+
+
+def test_election_headline_is_deterministic():
+    from landtag_sim.election_drama import generate_election_headline
+
+    standings = [("Deine Partei", 55.0), ("Rivale", 45.0)]
+    a = generate_election_headline(True, standings, 55.0, 50.0, turn=7)
+    b = generate_election_headline(True, standings, 55.0, 50.0, turn=7)
+    assert a == b
+
+
+def test_advance_turn_election_result_carries_a_headline():
+    """Am Wahl-Turn selbst (advance_turn, nicht nur die reine Funktion) muss
+    ElectionResult.headline gesetzt sein."""
+    state = _state_with_rivals()
+    state.turns_until_election = 1
+    for group in state.voter_groups:
+        group.satisfaction = 60.0
+    result = advance_turn(state, SAMPLE_POLICIES, [])
+    assert result.election_result is not None
+    assert result.election_result.headline != ""
+
+
+def test_wildcard_fires_sometimes_in_fully_quiet_turns():
+    from landtag_sim.wildcard_events import maybe_generate_wildcard
+
+    hits = [maybe_generate_wildcard(t) for t in range(200)]
+    fired = [h for h in hits if h is not None]
+    assert len(fired) > 0
+    assert len(fired) < len(hits)  # nicht jede Runde -- bleibt selten
+
+
+def test_wildcard_pick_is_deterministic():
+    from landtag_sim.wildcard_events import maybe_generate_wildcard
+
+    # Ueber genug Runden muss mindestens ein reproduzierbarer Treffer dabei sein.
+    turn = next(t for t in range(200) if maybe_generate_wildcard(t) is not None)
+    assert maybe_generate_wildcard(turn) == maybe_generate_wildcard(turn)
+
+
+def test_wildcard_never_fires_when_an_event_already_happened():
+    """engine.py prueft Wildcards nur in KOMPLETT leeren Runden -- eine Runde
+    mit Event darf nie zusaetzlich ein Wildcard tragen."""
+    state = build_initial_state()
+    state.statistics["unemployment_rate"] = 20.0  # loest garantiert ein Event aus
+    rule = EventRule(
+        key="hohe_arbeitslosigkeit_test",
+        statistic_key="unemployment_rate",
+        operator=">",
+        threshold=10.0,
+        template_text="Testereignis",
+    )
+    result = advance_turn(state, [], [rule])
+    assert result.events  # Event ist tatsaechlich gefeuert
+    assert result.wildcard_event is None
 
 
 def test_election_with_rivals_uses_plurality_not_threshold():

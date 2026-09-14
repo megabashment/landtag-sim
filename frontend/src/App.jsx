@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "./api";
 import { STAT_ICON_PATHS } from "./statIcons";
 import { PARTY_ICONS } from "./partyIcons";
-import { BUNDESLAND_SILHOUETTES, bundeslandKeyFromName } from "./bundeslandData";
+import { PLACEHOLDER_SILHOUETTES, bundeslandKeyFromName, bundeslandMapSrc } from "./bundeslandData";
 import "./App.css";
 
 // B14: kleines Statistik-Icon (game-icons.net, CC BY 3.0 -- siehe CREDITS.md).
@@ -17,11 +17,27 @@ function StatIcon({ statKey }) {
   );
 }
 
-// Game-Director-Review (2026-09-12): Platzhalter-Silhouette pro Bundesland
-// (siehe bundeslandData.js -- KEINE echten Landesgrenzen, nur Formsprache
-// zur Unterscheidung, bis echte Wikimedia-Commons-Umrisse eingebunden sind).
+// Nutzer-Feedback (2026-09-13): echte Vektor-Lagekarten (Wikimedia Commons,
+// TUBS, CC BY-SA 3.0 -- siehe CREDITS.md/bundeslandData.js) statt der
+// vorherigen Platzhalter-Silhouetten. Als <img> auf die statische Datei
+// (frontend/public/maps/<key>.svg) statt Inline-SVG -- die Dateien sind
+// mit ~680 KB deutlich zu gross fuers JS-Bundle, als Standalone-Datei
+// werden sie einmal vom Browser geladen und gecacht. Faellt fuer ein
+// Bundesland ohne echte Karte (noch) auf die Platzhalter-Silhouette zurueck.
 function BundeslandBadge({ bundeslandKey, size = 40 }) {
-  const shape = BUNDESLAND_SILHOUETTES[bundeslandKey];
+  const mapSrc = bundeslandMapSrc(bundeslandKey);
+  if (mapSrc) {
+    return (
+      <img
+        className="bundesland-badge"
+        src={mapSrc}
+        alt=""
+        style={{ width: size, height: size }}
+      />
+    );
+  }
+
+  const shape = PLACEHOLDER_SILHOUETTES[bundeslandKey];
   if (!shape) return null;
   return (
     <svg
@@ -354,6 +370,61 @@ function PartyDetailModal({ partyId, onClose }) {
         </button>
       </div>
     </div>
+  );
+}
+
+// "Demokratie-Drama"-Pass (Nutzer-Feedback 2026-09-13: "das Spiel ist
+// langweilig, der Punkt einer Demokratie-Sim kommt schwer rueber"): Events/
+// Presseschau/Oppositions-Zitat waren bisher schlichte <li>-Listen -- eine
+// Zeitungsseiten-Praesentation macht dieselben Daten spuerbar, ohne die
+// Sim-Logik anzufassen (reines Anzeige-Layout). Nur EIN Element pro Runde
+// je Kategorie (Event max. 1, Report max. 1, Oppositions-Zitat max. 1 --
+// alles bereits serverseitig so begrenzt), daher passt eine Titelseite
+// mit Aufmacher + Meldung + Zitat gut, ohne ueberladen zu wirken.
+function FrontPage({ events, reports, oppositionReaction, citizenVoice, wildcardEvent }) {
+  if (
+    events.length === 0 &&
+    reports.length === 0 &&
+    !oppositionReaction &&
+    !citizenVoice &&
+    !wildcardEvent
+  ) {
+    return null;
+  }
+  return (
+    <section className="panel front-page">
+      <span className="front-page__masthead">Aktuelle Ausgabe &middot; Runde im Rueckblick</span>
+      {events.map((text, i) => (
+        <div key={`event-${i}`} className="front-page__story front-page__story--lead">
+          <span className="front-page__kicker">Eilmeldung</span>
+          <h2 className="front-page__headline">{text}</h2>
+        </div>
+      ))}
+      {reports.map((text, i) => (
+        <div key={`report-${i}`} className="front-page__story">
+          <span className="front-page__kicker">Presseschau</span>
+          <h3 className="front-page__headline front-page__headline--secondary">{text}</h3>
+        </div>
+      ))}
+      {wildcardEvent && (
+        <div className="front-page__story">
+          <span className="front-page__kicker">Kuriosum</span>
+          <h3 className="front-page__headline front-page__headline--secondary">{wildcardEvent}</h3>
+        </div>
+      )}
+      {oppositionReaction && (
+        <div className="front-page__quote-block">
+          <span className="front-page__kicker">Stimme der Opposition</span>
+          <blockquote className="front-page__quote">{oppositionReaction}</blockquote>
+        </div>
+      )}
+      {citizenVoice && (
+        <div className="front-page__quote-block front-page__quote-block--citizen">
+          <span className="front-page__kicker">Stimme aus dem Volk</span>
+          <blockquote className="front-page__quote">{citizenVoice}</blockquote>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -707,6 +778,28 @@ function TrendArrow({ trend }) {
   return <span className={`delta ${cls}`} title={trend}>{glyph}</span>;
 }
 
+// Fortsetzung "Demokratie-Drama"-Pass ("mach es noch lebendiger",
+// 2026-09-13): das "Waehlergruppen"-Panel war bisher nur Name + Zahl --
+// keine Spielerin sieht auf einen Blick, wie es dieser Gruppe WIRKLICH
+// geht. Ein Stimmungs-Gesicht macht die Zahl sofort lesbar, ohne dass man
+// erst rechnen muss, ob 42 gut oder schlecht ist.
+function moodFace(satisfaction) {
+  if (satisfaction < 25) return "😠";
+  if (satisfaction < 45) return "😟";
+  if (satisfaction < 60) return "😐";
+  if (satisfaction < 80) return "🙂";
+  return "😄";
+}
+
+// Trendpfeil aus satisfaction_momentum (dieselbe Groesse, die die Sim-Engine
+// pro Runde exponentiell geglaettet auf satisfaction addiert, siehe
+// engine.py::_apply_reaction) -- reine Anzeige, keine neue Berechnung.
+function momentumTrend(momentum) {
+  if (momentum > 0.15) return "steigend";
+  if (momentum < -0.15) return "fallend";
+  return "stabil";
+}
+
 // B26 "Opposition-Kampagnen UI Verbesserung" (M7_SPRINT_PLAN.md): Kampagnen-
 // Katalog fuer den Opposition-Modus, analog zum Policy-Katalog. Nur EINE
 // Kampagne pro Runde waehlbar (siehe `opposition_campaign_key` in
@@ -798,6 +891,17 @@ export default function App() {
   // Presseschau-Meldungen (kein Sim-Effekt), hoechstens eine pro Runde und
   // nur in Runden ohne Ereignis/Dilemma.
   const [reports, setReports] = useState([]);
+  // "Demokratie-Drama"-Pass (Nutzer-Feedback 2026-09-13): Oppositions-Zitat
+  // eines Rivalen-Fraktionsvorsitzenden, hoechstens eines pro Runde (siehe
+  // opposition_voices.py). null ohne Rivalen oder in ruhigen Runden.
+  const [oppositionReaction, setOppositionReaction] = useState(null);
+  // Fortsetzung ("mach es noch lebendiger", 2026-09-13): Zitat einer
+  // Waehlergruppe, hoechstens eines pro Runde (siehe citizen_voices.py).
+  // null in ruhigen Runden -- funktioniert auch ohne Rivalen.
+  const [citizenVoice, setCitizenVoice] = useState(null);
+  // Fortsetzung ("mach weiter", 2026-09-14): seltene Ueberraschungsmeldung
+  // ohne Sim-Wirkung, nur in ansonsten leeren Runden (siehe wildcard_events.py).
+  const [wildcardEvent, setWildcardEvent] = useState(null);
   const [electionResult, setElectionResult] = useState(null);
   // M6 Phase 2 "Advanced Opposition": flag zur Kontrolle der Koalitions-Dialog-Anzeige
   const [showCoalitionDialog, setShowCoalitionDialog] = useState(false);
@@ -966,6 +1070,9 @@ export default function App() {
       setEvents([]);
       setAttributions([]);
       setReports([]);
+      setOppositionReaction(null);
+      setCitizenVoice(null);
+      setWildcardEvent(null);
       setElectionResult(null);
       setTermSummary(null);
       setSelectedPolicies([]);
@@ -997,6 +1104,9 @@ export default function App() {
       setEvents([]);
       setAttributions([]);
       setReports([]);
+      setOppositionReaction(null);
+      setCitizenVoice(null);
+      setWildcardEvent(null);
       setElectionResult(null);
       setTermSummary(null);
       setSelectedPolicies([]);
@@ -1022,6 +1132,9 @@ export default function App() {
       setEvents([]);
       setAttributions([]);
       setReports([]);
+      setOppositionReaction(null);
+      setCitizenVoice(null);
+      setWildcardEvent(null);
       setElectionResult(null);
       setTermSummary(null);
       setSelectedPolicies([]);
@@ -1047,6 +1160,9 @@ export default function App() {
       setEvents([]);
       setAttributions([]);
       setReports([]);
+      setOppositionReaction(null);
+      setCitizenVoice(null);
+      setWildcardEvent(null);
       setElectionResult(null);
       setTermSummary(null);
       setSelectedPolicies([]);
@@ -1075,6 +1191,9 @@ export default function App() {
       setEvents(result.events);
       setAttributions(result.attributions);
       setReports(result.reports ?? []);
+      setOppositionReaction(result.opposition_reaction ?? null);
+      setCitizenVoice(result.citizen_voice ?? null);
+      setWildcardEvent(result.wildcard_event ?? null);
       setElectionResult(result.election_result);
       setTermSummary(result.term_summary);
       setSelectedPolicies([]);
@@ -1147,6 +1266,9 @@ export default function App() {
       setEvents(result.events);
       setAttributions(result.attributions);
       setReports(result.reports ?? []);
+      setOppositionReaction(result.opposition_reaction ?? null);
+      setCitizenVoice(result.citizen_voice ?? null);
+      setWildcardEvent(result.wildcard_event ?? null);
       setElectionResult(result.election_result);
       setTermSummary(result.term_summary);
       setSelectedPolicies([]);
@@ -1206,6 +1328,9 @@ export default function App() {
       setAttributions(result.attributions);
       setEvents([]);
       setReports([]);
+      setOppositionReaction(null);
+      setCitizenVoice(result.citizen_voice ?? null);
+      setWildcardEvent(result.wildcard_event ?? null);
       setElectionResult(null);
       setTermSummary(null);
       pushHistoryEntry({
@@ -1385,7 +1510,11 @@ export default function App() {
 
           {electionResult && (
             <section className={`panel election-banner ${electionResult.won ? "won" : "lost"}`}>
+              <span className="election-banner__kicker">Wahlnacht</span>
               <h2>{electionResult.won ? "Wahl gewonnen!" : "Wahl verloren."}</h2>
+              {electionResult.headline && (
+                <p className="election-banner__headline">{electionResult.headline}</p>
+              )}
               <p>
                 Zufriedenheit (gewichtet): {electionResult.approval.toFixed(1)} / Schwellenwert{" "}
                 {electionResult.threshold.toFixed(1)}
@@ -1559,11 +1688,17 @@ export default function App() {
 
             <div className="panel">
               <h2>Waehlergruppen</h2>
-              <ul>
+              <ul className="voter-group-list">
                 {session.voter_groups.map((g) => (
                   <li key={g.name}>
-                    <span>{g.name}</span>
+                    <span className="voter-group-name">
+                      <span className="voter-group-mood" title={`Zufriedenheit: ${g.satisfaction.toFixed(0)}`}>
+                        {moodFace(g.satisfaction)}
+                      </span>
+                      {g.name}
+                    </span>
                     <span className="stat-value">
+                      <TrendArrow trend={momentumTrend(g.satisfaction_momentum ?? 0)} />
                       <strong>{g.satisfaction.toFixed(0)}</strong>
                       {preview && <DeltaArrow delta={preview.satisfaction_delta_by_group[g.name]} />}
                     </span>
@@ -1732,27 +1867,13 @@ export default function App() {
             </div>
           </section>
 
-          {events.length > 0 && (
-            <section className="panel events">
-              <h2>Ereignisse dieser Runde</h2>
-              <ul>
-                {events.map((text, i) => (
-                  <li key={i}>{text}</li>
-                ))}
-              </ul>
-            </section>
-          )}
-
-          {reports.length > 0 && (
-            <section className="panel reports">
-              <h2>Presseschau</h2>
-              <ul>
-                {reports.map((text, i) => (
-                  <li key={i}>{text}</li>
-                ))}
-              </ul>
-            </section>
-          )}
+          <FrontPage
+            events={events}
+            reports={reports}
+            oppositionReaction={oppositionReaction}
+            citizenVoice={citizenVoice}
+            wildcardEvent={wildcardEvent}
+          />
 
           {attributions.length > 0 && (
             <section className="panel attributions">

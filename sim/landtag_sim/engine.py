@@ -46,6 +46,10 @@ import operator as _operator
 
 from landtag_sim.dilemmas import evaluate_dilemmas
 from landtag_sim.events import evaluate_events
+from landtag_sim.citizen_voices import generate_citizen_voice
+from landtag_sim.election_drama import generate_election_headline
+from landtag_sim.opposition_voices import generate_opposition_reaction, turn_category_changes
+from landtag_sim.wildcard_events import maybe_generate_wildcard
 from landtag_sim.reports import evaluate_reports
 from landtag_sim.situations import evaluate_situations
 from landtag_sim.models import (
@@ -951,6 +955,16 @@ def advance_turn(
         if new_state.report_cooldowns[key] > 0:
             new_state.report_cooldowns[key] -= 1
 
+    # 2d) Wildcard-Ereignis (Fortsetzung "Demokratie-Drama"-Pass, "mach
+    # weiter", 2026-09-14, siehe wildcard_events.py): nur in Runden, die
+    # ansonsten KOMPLETT leer waeren (kein Event, kein Dilemma, kein
+    # Report) -- die haeufigste und "langweiligste" Situation. Rein
+    # textlich, keine Statistik-Wirkung, feuert selten (siehe
+    # WILDCARD_FIRE_PERCENT).
+    wildcard_event = None
+    if not event_texts and pending_dilemma is None and not report_texts:
+        wildcard_event = maybe_generate_wildcard(new_state.turn)
+
     # 3) Waehlerzufriedenheit auf Basis ALLER attribuierten Deltas dieser Runde
     # (Policies + Events) anpassen. Vereinfachtes, aber nachvollziehbares Modell:
     # jede Gruppe reagiert gewichtet auf Aenderungen, die grob in
@@ -989,12 +1003,20 @@ def advance_turn(
         # wenn opposition_viability >= 30.
         coalition_viability = _calculate_coalition_viability(new_state, opposition_mode=True)
 
+        # "Demokratie-Drama"-Pass, Fortsetzung: deterministische Wahlnacht-
+        # Schlagzeile passend zum Abstand des Ergebnisses (siehe
+        # election_drama.py).
+        headline = generate_election_headline(
+            won, standings, approval, ELECTION_APPROVAL_THRESHOLD, new_state.turn
+        )
+
         election_result = ElectionResult(
             approval=approval,
             threshold=ELECTION_APPROVAL_THRESHOLD,
             won=won,
             standings=standings,
             coalition_viability=coalition_viability,
+            headline=headline,
         )
         # B1 (BACKLOG.md): Bilanz der gerade abgelaufenen Legislaturperiode
         # bauen -- BEVOR das Term-Tracking auf den naechsten Zyklus
@@ -1008,6 +1030,25 @@ def advance_turn(
         new_state.term_dilemma_count = 0
         new_state.term_event_count = 0
 
+    # "Demokratie-Drama"-Pass (Nutzer-Feedback 2026-09-13): Oppositions-Zitat
+    # aus den Attributionen DIESER Runde, wenn eine Rivalen-Partei "ihre"
+    # Achse verschlechtert sieht (siehe opposition_voices.py). No-op ohne
+    # Rivalen (klassischer Modus, new_state.rival_parties ist dann leer).
+    opposition_reaction = None
+    if new_state.rival_parties:
+        this_turn_category_changes = turn_category_changes(attributions, _STAT_CATEGORY, _stat_direction)
+        opposition_reaction = generate_opposition_reaction(
+            this_turn_category_changes, new_state.rival_parties, new_state.turn
+        )
+
+    # "Demokratie-Drama"-Pass, Fortsetzung ("mach es noch lebendiger",
+    # 2026-09-13): Buerger-Zitat aus der (nach _apply_reaction) aktuellen
+    # Zufriedenheitslage -- die Waehlergruppe mit der extremsten Stimmung
+    # dieser Runde bekommt das Wort (siehe citizen_voices.py). Anders als
+    # opposition_reaction NICHT an Rivalen-Parteien gebunden -- funktioniert
+    # auch im klassischen Einzel-Partei-Modus.
+    citizen_voice = generate_citizen_voice(new_state.voter_groups, new_state.turn)
+
     return TurnResult(
         state=new_state,
         events=event_texts,
@@ -1017,6 +1058,9 @@ def advance_turn(
         term_summary=term_summary,
         reports=report_texts,
         triggered_event_keys=triggered_event_keys,
+        opposition_reaction=opposition_reaction,
+        citizen_voice=citizen_voice,
+        wildcard_event=wildcard_event,
     )
 
 
@@ -1129,7 +1173,19 @@ def resolve_dilemma(state: SimState, dilemma_rules: list[DilemmaRule], option_ke
         )
     _apply_reaction(new_state, attributions)
 
-    return TurnResult(state=new_state, events=[], attributions=attributions, election_result=None, pending_dilemma=None)
+    # "Demokratie-Drama"-Pass, Fortsetzung: eine Dilemma-Entscheidung ist ein
+    # Hoehepunkt-Moment -- genau hier soll eine Buergerstimme auch zu Wort
+    # kommen koennen (siehe advance_turn/citizen_voices.py).
+    citizen_voice = generate_citizen_voice(new_state.voter_groups, new_state.turn)
+
+    return TurnResult(
+        state=new_state,
+        events=[],
+        attributions=attributions,
+        election_result=None,
+        pending_dilemma=None,
+        citizen_voice=citizen_voice,
+    )
 
 
 # Grobe Statistik->Kategorie Zuordnung fuer die Zufriedenheits-Gewichtung.

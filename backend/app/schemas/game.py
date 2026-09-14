@@ -88,6 +88,10 @@ class RivalPartyOut(BaseModel):
     name: str
     ideology: str
     approval: float
+    # "Demokratie-Drama"-Pass (2026-09-13): Anzeigename fuer Oppositions-
+    # Zitate (siehe opposition_voices.py) -- leer bei alten, vor diesem
+    # Feature angelegten Sessions.
+    leader_name: str = ""
 
 
 class CreateSessionResponse(BaseModel):
@@ -284,6 +288,9 @@ class ElectionResultOut(BaseModel):
     # M6 Phase 2 "Advanced Opposition": Koalitionsviabilität [0, 100]
     # Bei Niederlage >= 30 kann Koalition angeboten werden
     coalition_viability: float = 0.0
+    # "Demokratie-Drama"-Pass, Fortsetzung ("mach weiter", 2026-09-14):
+    # deterministische Wahlnacht-Schlagzeile, siehe election_drama.py.
+    headline: str = ""
 
 
 class GoalResultOut(BaseModel):
@@ -340,6 +347,19 @@ class AdvanceTurnResponse(BaseModel):
     # Presseschau-Text pro Runde, nur in Runden ohne Event/Dilemma. Reine
     # Anzeige, keine Sim-Wirkung.
     reports: list[str] = []
+    # "Demokratie-Drama"-Pass (2026-09-13): hoechstens ein Zitat eines
+    # Rivalen-Fraktionsvorsitzenden pro Runde, siehe opposition_voices.py.
+    # None ohne Rivalen oder in ruhigen Runden.
+    opposition_reaction: str | None = None
+    # Fortsetzung ("mach es noch lebendiger"): hoechstens ein Zitat einer
+    # Waehlergruppe pro Runde, wenn ihre Zufriedenheit extrem ist, siehe
+    # citizen_voices.py. None in ruhigen Runden -- funktioniert auch ohne
+    # Rivalen (klassischer Modus).
+    citizen_voice: str | None = None
+    # Fortsetzung ("mach weiter", 2026-09-14): seltene Ueberraschungsmeldung
+    # ohne Statistik-Wirkung, nur in ansonsten leeren Runden, siehe
+    # wildcard_events.py.
+    wildcard_event: str | None = None
 
 
 class ResolveDilemmaRequest(BaseModel):
@@ -349,6 +369,9 @@ class ResolveDilemmaRequest(BaseModel):
 class ResolveDilemmaResponse(BaseModel):
     state: SessionStateResponse
     attributions: list[AttributionOut]
+    # "Demokratie-Drama"-Pass, Fortsetzung: eine Dilemma-Entscheidung ist ein
+    # Hoehepunkt-Moment -- siehe citizen_voices.py. None in ruhigen Faellen.
+    citizen_voice: str | None = None
 
 
 class PreviewRequest(BaseModel):
